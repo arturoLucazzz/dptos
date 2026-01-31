@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { ScraperFilters } from './types/index.js';
+import { LIMA_DISTRICT_SLUGS } from './config/districts.js';
 import { UrbaniaScraper } from './scrapers/urbania-scraper.js';
 import { BaseScraper } from './scrapers/base-scraper.js';
 import { saveResult } from './utils/file-utils.js';
@@ -35,18 +36,23 @@ async function main() {
 async function runScrapers() {
   console.log('Starting scrapers...\n');
 
-  // Define filters
+  // Same filters for all districts: venta, departamentos, 1–2 dorm, antiquity ≤ 5 years
   const filters: ScraperFilters = {
     propertyType: 'apartment',
     operationType: 'sale',
-    location: 'Lince',
+    districts: Array.from(LIMA_DISTRICT_SLUGS),
+    // for testing:
+    // districts: ['lince'],
+    city: 'Lima',
     minBedrooms: 1,
     maxBedrooms: 2,
   };
 
-  // Initialize scrapers
+  // Engine: 'playwright' | 'puppeteer' (set SCRAPER_ENGINE=puppeteer to use Puppeteer)
+  const engine = (process.env.SCRAPER_ENGINE as 'playwright' | 'puppeteer') || 'playwright';
+
   const scrapers: BaseScraper[] = [
-    new UrbaniaScraper(),
+    new UrbaniaScraper({ engine }),
     // Add more scrapers here as you implement them
   ];
 
@@ -95,14 +101,10 @@ function showHelp() {
 Real Estate Scraper
 
 Usage:
-  pnpm dev scrape          - Run all scrapers
-  pnpm dev process         - Process all result files
-  pnpm dev process <file>  - Process a specific result file
-
-Examples:
-  pnpm scrape
-  pnpm process
-  pnpm process urbania_2026-01-27T12-00-00.json
+  pnpm scrape                          - Run scrapers (Playwright + Chrome by default)
+  SCRAPER_ENGINE=puppeteer pnpm scrape  - Use Puppeteer instead
+  PLAYWRIGHT_USE_CHROME=0 pnpm scrape   - Use Playwright's Chromium instead of Chrome
+  pnpm process [file]                   - Process result files
 `);
 }
 

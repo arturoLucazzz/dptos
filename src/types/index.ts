@@ -11,6 +11,8 @@ export interface ScraperFilters {
   // Location filters
   location?: string;
   district?: string;
+  /** Multiple districts to scrape (e.g. Urbania: one URL per district). Shared list in config/districts. */
+  districts?: string[];
   city?: string;
   
   // Price range
@@ -46,6 +48,10 @@ export interface ApartmentData {
   address: string | null;
   district?: string | null;
   city?: string | null;
+  /** Lima district slug (e.g. "lince", "san-isidro") when scraping Lima. */
+  limaDistrictSlug?: string | null;
+  /** Lima district display name (e.g. "Lince", "San Isidro"). */
+  limaDistrictName?: string | null;
   
   // Pricing
   price: number | null; // Numeric value in local currency
@@ -57,6 +63,10 @@ export interface ApartmentData {
   // Property details
   propertyType: string; // e.g., "Departamento", "Casa"
   operationType: string; // e.g., "Venta", "Alquiler"
+  /** Development stage: "Entrega inmediata" | "En construcción" | "En planos" (projects only). */
+  developmentStage?: string | null;
+  /** Delivery date when stage is "En construcción" or "En planos" (e.g. "diciembre 2026"). */
+  deliveryDate?: string | null;
   
   // Features
   bedrooms?: number | null;

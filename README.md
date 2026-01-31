@@ -18,10 +18,10 @@ A TypeScript-based scraping project for multiple real estate websites. This proj
 pnpm install
 ```
 
-2. Install Playwright browsers (used to bypass Cloudflare on Urbania.pe):
-```bash
-pnpm exec playwright install chromium
-```
+2. Install a browser for scraping (used to bypass Cloudflare on Urbania.pe):
+   - **Playwright** (default) uses **Chrome** if installed: `pnpm exec playwright install chrome`
+   - To use bundled Chromium instead: `PLAYWRIGHT_USE_CHROME=0 pnpm scrape`
+   - **Puppeteer**: Chromium is installed automatically with the `puppeteer` package
 
 3. Build the project:
 ```bash
@@ -32,15 +32,25 @@ pnpm build
 
 ### Scraping
 
-Run all scrapers:
+Run all scrapers (Playwright with **Chrome** by default):
 ```bash
 pnpm scrape
 ```
 
-Or in development mode:
+Use **Puppeteer** instead:
 ```bash
-pnpm dev scrape
+SCRAPER_ENGINE=puppeteer pnpm scrape
 ```
+
+Use Playwright’s bundled Chromium instead of Chrome:
+```bash
+PLAYWRIGHT_USE_CHROME=0 pnpm scrape
+```
+
+**Getting 403 from Cloudflare?** Playwright uses installed Chrome by default. If you still get 403: try `SCRAPER_ENGINE=puppeteer`, or `CHALLENGE_WAIT_MS=20000`, or `BROWSER_TIMEOUT_MS=60000`.
+
+Urbania is scraped via the search listing page, e.g.:
+`https://urbania.pe/buscar/venta-de-departamentos-en-lince--lima--lima?bedroomMin=1&bedroomMax=2&page=2`
 
 ### Processing Results
 
@@ -59,15 +69,20 @@ pnpm process data/urbania_2026-01-27T12-00-00.json
 ```
 src/
 ├── types/
-│   └── index.ts           # Type definitions (filters, apartment data)
+│   └── index.ts              # Type definitions (filters, apartment data)
 ├── scrapers/
-│   ├── base-scraper.ts    # Base scraper class
-│   └── urbania-scraper.ts # Urbania.pe scraper implementation
+│   ├── base-scraper.ts       # Base scraper class
+│   ├── urbania-scraper.ts    # Urbania.pe scraper (Playwright or Puppeteer)
+│   └── urbania/
+│       ├── build-search-url.ts   # Build /buscar/... URL from filters
+│       └── parse-urbania-html.ts # Parse listing page HTML with Cheerio
 ├── utils/
-│   ├── anti-blocking.ts   # Anti-blocking utilities
-│   └── file-utils.ts      # File I/O utilities
-├── processor.ts           # Data processing and analysis
-└── index.ts              # Main entry point
+│   ├── anti-blocking.ts     # Anti-blocking utilities
+│   ├── browser-fetch.ts    # Playwright session for API (optional)
+│   ├── browser-loader.ts   # Playwright/Puppeteer HTML loader
+│   └── file-utils.ts       # File I/O utilities
+├── processor.ts            # Data processing and analysis
+└── index.ts                # Main entry point
 ```
 
 ## Adding a New Scraper
@@ -153,9 +168,9 @@ All scrapers accept the same filter interface:
 
 ## Anti-Blocking & Cloudflare
 
-Sites like Urbania.pe are protected by **Cloudflare**, which blocks plain HTTP clients (e.g. axios) with a 403 challenge. To avoid being blocked:
+Sites like Urbania.pe are protected by **Cloudflare**. To avoid being blocked:
 
-- **Urbania scraper** uses **Playwright** to open a real Chromium session: it loads the site once so the Cloudflare challenge runs, then reuses the same browser context (and cookies) for API requests. No headless detection issues and no 403s from the API.
+- **Urbania scraper** uses a real browser (**Playwright** or **Puppeteer**): it loads the origin once so the Cloudflare challenge runs, then loads each search page (e.g. `/buscar/venta-de-departamentos-en-lince--lima--lima?bedroomMin=1&bedroomMax=2&page=2`) and parses the HTML with Cheerio. Set `SCRAPER_ENGINE=puppeteer` to use Puppeteer.
 
 Other anti-blocking measures:
 
