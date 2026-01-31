@@ -1,28 +1,34 @@
 {
   "name": "dptos",
   "version": "1.0.0",
-  "description": "Real estate scraping project",
-  "main": "dist/index.js",
-  "type": "module",
+  "description": "Real estate scraping + Next.js app",
+  "private": true,
   "scripts": {
-    "build": "tsc",
-    "dev": "tsx src/index.ts",
-    "scrape": "tsx src/index.ts scrape",
-    "process": "tsx src/index.ts process",
-    "start": "node dist/index.js"
-  },
-  "keywords": ["scraping", "real-estate"],
-  "author": "",
-  "license": "ISC",
-  "devDependencies": {
-    "@types/node": "^20.11.0",
-    "tsx": "^4.7.0",
-    "typescript": "^5.3.3"
+    "build": "tsc -p tsconfig.scraper.json && next build",
+    "dev": "next dev",
+    "scrape": "tsx scraper/src/index.ts scrape",
+    "process": "tsx scraper/src/index.ts process",
+    "build:scraper": "tsc -p tsconfig.scraper.json",
+    "start": "next start"
   },
   "dependencies": {
     "axios": "^1.6.5",
     "cheerio": "^1.0.0-rc.12",
+    "next": "16.1.6",
     "playwright": "^1.49.0",
-    "puppeteer": "^23.0.0"
+    "puppeteer": "^23.0.0",
+    "react": "19.2.3",
+    "react-dom": "19.2.3"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "4.1.18",
+    "@types/node": "20.19.30",
+    "@types/react": "19.2.10",
+    "@types/react-dom": "19.2.3",
+    "eslint": "9.39.2",
+    "eslint-config-next": "16.1.6",
+    "tailwindcss": "4.1.18",
+    "tsx": "^4.7.0",
+    "typescript": "5.9.3"
   }
 }

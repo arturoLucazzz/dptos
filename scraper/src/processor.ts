@@ -173,7 +173,7 @@ export class DataProcessor {
 
     // Price per m²
     const pricePerM2 = apartments
-      .filter(apt => apt.price !== null && apt.area !== null && apt.area > 0)
+      .filter(apt => apt.price !== null && apt.area && apt.area > 0)
       .map(apt => (apt.price! / apt.area!))
       .filter((price): price is number => !isNaN(price));
 
@@ -181,46 +181,5 @@ export class DataProcessor {
       const avgPricePerM2 = pricePerM2.reduce((a, b) => a + b, 0) / pricePerM2.length;
       console.log(`\nAverage price per m²: ${avgPricePerM2.toFixed(2)}`);
     }
-  }
-
-  /**
-   * Filter apartments by criteria
-   */
-  filterApartments(
-    apartments: ApartmentData[],
-    filters: {
-      minPrice?: number;
-      maxPrice?: number;
-      minBedrooms?: number;
-      maxBedrooms?: number;
-      minArea?: number;
-      maxArea?: number;
-      location?: string;
-    }
-  ): ApartmentData[] {
-    return apartments.filter(apt => {
-      if (filters.minPrice !== undefined && (apt.price === null || apt.price < filters.minPrice)) {
-        return false;
-      }
-      if (filters.maxPrice !== undefined && (apt.price === null || apt.price > filters.maxPrice)) {
-        return false;
-      }
-      if (filters.minBedrooms !== undefined && (apt.bedrooms === null || apt.bedrooms < filters.minBedrooms)) {
-        return false;
-      }
-      if (filters.maxBedrooms !== undefined && (apt.bedrooms === null || apt.bedrooms > filters.maxBedrooms)) {
-        return false;
-      }
-      if (filters.minArea !== undefined && (apt.area === null || apt.area < filters.minArea)) {
-        return false;
-      }
-      if (filters.maxArea !== undefined && (apt.area === null || apt.area > filters.maxArea)) {
-        return false;
-      }
-      if (filters.location && !apt.location.toLowerCase().includes(filters.location.toLowerCase())) {
-        return false;
-      }
-      return true;
-    });
   }
 }

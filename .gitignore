@@ -1,8 +1,11 @@
 node_modules/
 dist/
+.next/
 *.log
 .env
+.env*.local
 data/
 *.json
 !package.json
 !tsconfig.json
+!tsconfig.scraper.json
