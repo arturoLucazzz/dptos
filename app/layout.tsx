@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { TopBar } from "@/components/top-bar";
+import { FavoritesProvider } from "./providers";
 
 export const metadata: Metadata = {
   title: "Dptos",
-  description: "Real estate listings",
+  description: "Análisis de departamentos en venta",
 };
 
 export default function RootLayout({
@@ -13,8 +15,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="es">
-      <body className="min-h-screen bg-zinc-950 text-zinc-100 antialiased">
-        {children}
+      <body className="min-h-screen bg-background text-foreground antialiased">
+        <FavoritesProvider>
+          <TopBar />
+          <main className="container py-6 px-4">{children}</main>
+        </FavoritesProvider>
       </body>
     </html>
   );

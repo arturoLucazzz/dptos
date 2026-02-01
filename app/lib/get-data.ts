@@ -1,21 +1,6 @@
 import { readFile, readdir } from "fs/promises";
 import path from "path";
-
-export interface ScraperResult {
-  source: string;
-  scrapedAt: string;
-  totalResults: number;
-  apartments: Array<{
-    id: string;
-    title: string | null;
-    url: string;
-    location: string;
-    priceFormatted: string | null;
-    limaDistrictName?: string | null;
-    developmentStage?: string | null;
-    deliveryDate?: string | null;
-  }>;
-}
+import type { ScraperResult } from "./types";
 
 const DATA_DIR = path.join(process.cwd(), "data");
 
