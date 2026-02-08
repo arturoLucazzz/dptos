@@ -14,45 +14,15 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { useFavorites } from "@/app/providers";
 import type { ApartmentData } from "@/app/lib/types";
-import { ArrowUpDown, ExternalLink } from "lucide-react";
-
-export interface DistrictOption {
-  value: string;
-  label: string;
-}
+import { ArrowUpDown } from "lucide-react";
 
 interface DepartamentosTableProps {
   data: ApartmentData[];
-  districtOptions: DistrictOption[];
 }
 
-export function DepartamentosTable({ data, districtOptions }: DepartamentosTableProps) {
+export function DepartamentosTable({ data }: DepartamentosTableProps) {
   const { isFavorite, toggleFavorite } = useFavorites();
   const [sorting, setSorting] = useState<SortingState>([{ id: "price", desc: false }]);
-  const [districtFilter, setDistrictFilter] = useState<string>("all");
-  const [priceMin, setPriceMin] = useState<string>("");
-  const [priceMax, setPriceMax] = useState<string>("");
-  const [stageFilter, setStageFilter] = useState<string>("all");
-
-  const filtered = useMemo(() => {
-    let list = [...data];
-    if (districtFilter !== "all") {
-      list = list.filter((r) => r.limaDistrictSlug === districtFilter);
-    }
-    const min = priceMin ? Number(priceMin) : null;
-    const max = priceMax ? Number(priceMax) : null;
-    if (min != null && !Number.isNaN(min)) list = list.filter((r) => r.price != null && r.price >= min);
-    if (max != null && !Number.isNaN(max)) list = list.filter((r) => r.price != null && r.price <= max);
-    if (stageFilter !== "all") {
-      list = list.filter((r) => (r.developmentStage ?? "") === stageFilter);
-    }
-    return list;
-  }, [data, districtFilter, priceMin, priceMax, stageFilter]);
-
-  const allDistrictOptions = useMemo(
-    () => [{ value: "all", label: "Todos los distritos" }, ...districtOptions],
-    [districtOptions]
-  );
 
   const columns = useMemo<ColumnDef<ApartmentData>[]>(
     () => [
@@ -60,20 +30,13 @@ export function DepartamentosTable({ data, districtOptions }: DepartamentosTable
         id: "favorito",
         header: "Fav",
         cell: ({ row }) => (
-          <Checkbox
-            checked={isFavorite(row.original.id)}
-            onCheckedChange={() => toggleFavorite(row.original.id)}
-            aria-label="Marcar favorito"
-          />
-        ),
-      },
-      {
-        accessorKey: "title",
-        header: "Título",
-        cell: ({ row }) => (
-          <span className="max-w-[280px] truncate block" title={row.original.title ?? ""}>
-            {row.original.title ?? "—"}
-          </span>
+          <div onClick={(e) => e.stopPropagation()}>
+            <Checkbox
+              checked={isFavorite(row.original.id)}
+              onCheckedChange={() => toggleFavorite(row.original.id)}
+              aria-label="Marcar favorito"
+            />
+          </div>
         ),
       },
       {
@@ -89,7 +52,10 @@ export function DepartamentosTable({ data, districtOptions }: DepartamentosTable
             variant="ghost"
             size="sm"
             className="-ml-2"
-            onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+            onClick={(e) => {
+              e.stopPropagation();
+              column.toggleSorting(column.getIsSorted() === "asc");
+            }}
           >
             Precio
             <ArrowUpDown className="ml-2 h-4 w-4" />
@@ -118,32 +84,12 @@ export function DepartamentosTable({ data, districtOptions }: DepartamentosTable
         header: "m²",
         cell: ({ row }) => row.original.area ?? "—",
       },
-      {
-        accessorKey: "propertyType",
-        header: "Tipo",
-        cell: ({ row }) => row.original.propertyType ?? "—",
-      },
-      {
-        id: "link",
-        header: "",
-        cell: ({ row }) => (
-          <a
-            href={row.original.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-primary hover:underline"
-            aria-label="Abrir enlace"
-          >
-            <ExternalLink className="h-4 w-4" />
-          </a>
-        ),
-      },
     ],
     [isFavorite, toggleFavorite]
   );
 
   const table = useReactTable({
-    data: filtered,
+    data,
     columns,
     state: { sorting },
     onSortingChange: setSorting,
@@ -151,63 +97,10 @@ export function DepartamentosTable({ data, districtOptions }: DepartamentosTable
     getSortedRowModel: getSortedRowModel(),
   });
 
-  const stageOptions = [
-    { value: "all", label: "Todas las etapas" },
-    { value: "Entrega inmediata", label: "Entrega inmediata" },
-    { value: "En construcción", label: "En construcción" },
-    { value: "En planos", label: "En planos" },
-  ];
-
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-4 rounded-lg border bg-card p-4">
-        <div className="flex items-center gap-2">
-          <label className="text-sm text-muted-foreground">Distrito</label>
-          <select
-            value={districtFilter}
-            onChange={(e) => setDistrictFilter(e.target.value)}
-            className="h-9 rounded-md border border-input bg-transparent px-3 text-sm"
-          >
-            {allDistrictOptions.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </select>
-        </div>
-        <div className="flex items-center gap-2">
-          <label className="text-sm text-muted-foreground">Precio mín</label>
-          <input
-            type="number"
-            placeholder="Ej. 100000"
-            value={priceMin}
-            onChange={(e) => setPriceMin(e.target.value)}
-            className="h-9 w-28 rounded-md border border-input bg-transparent px-3 text-sm"
-          />
-        </div>
-        <div className="flex items-center gap-2">
-          <label className="text-sm text-muted-foreground">Precio máx</label>
-          <input
-            type="number"
-            placeholder="Ej. 500000"
-            value={priceMax}
-            onChange={(e) => setPriceMax(e.target.value)}
-            className="h-9 w-28 rounded-md border border-input bg-transparent px-3 text-sm"
-          />
-        </div>
-        <div className="flex items-center gap-2">
-          <label className="text-sm text-muted-foreground">Etapa</label>
-          <select
-            value={stageFilter}
-            onChange={(e) => setStageFilter(e.target.value)}
-            className="h-9 rounded-md border border-input bg-transparent px-3 text-sm"
-          >
-            {stageOptions.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </select>
-        </div>
-      </div>
       <p className="text-sm text-muted-foreground">
-        {filtered.length} resultado{filtered.length !== 1 ? "s" : ""}
+        {data.length} resultado{data.length !== 1 ? "s" : ""}
       </p>
       <div className="rounded-md border">
         <Table>
@@ -229,7 +122,11 @@ export function DepartamentosTable({ data, districtOptions }: DepartamentosTable
               </TableRow>
             ) : (
               table.getRowModel().rows.map((row) => (
-                <TableRow key={row.id}>
+                <TableRow
+                  key={row.id}
+                  className="cursor-pointer"
+                  onClick={() => window.open(row.original.url, "_blank", "noopener,noreferrer")}
+                >
                   {row.getVisibleCells().map((cell) => (
                     <TableCell key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>
                   ))}

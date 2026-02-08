@@ -18,7 +18,7 @@ export default function RootLayout({
       <body className="min-h-screen bg-background text-foreground antialiased">
         <FavoritesProvider>
           <TopBar />
-          <main className="container py-6 px-4">{children}</main>
+          <main className="mx-auto w-full max-w-7xl py-6 px-4">{children}</main>
         </FavoritesProvider>
       </body>
     </html>

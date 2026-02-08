@@ -1,5 +1,5 @@
 import { getUrbaniaData } from "@/app/lib/get-data";
-import { DepartamentosTable } from "./departamentos-table";
+import { DepartamentosUnifiedClient } from "./departamentos-unified-client";
 
 export default async function DepartamentosPage() {
   const data = await getUrbaniaData();
@@ -30,7 +30,7 @@ export default async function DepartamentosPage() {
         {data.totalResults} resultados · actualizado {new Date(data.scrapedAt).toLocaleString("es-PE")}
       </p>
       <div className="mt-6">
-        <DepartamentosTable data={data.apartments} districtOptions={districtOptions} />
+        <DepartamentosUnifiedClient apartments={data.apartments} districtOptions={districtOptions} />
       </div>
     </div>
   );
