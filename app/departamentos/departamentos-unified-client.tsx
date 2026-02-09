@@ -3,6 +3,9 @@
 import { useMemo, useState } from "react";
 import { DashboardsSection } from "./dashboards-section";
 import { DepartamentosTable } from "./departamentos-table";
+import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+import { MultiSelect, MultiSelectOption } from "@/components/ui/multi-select";
 import type { ApartmentData } from "@/app/lib/types";
 
 export interface DistrictOption {
@@ -16,84 +19,92 @@ interface DepartamentosUnifiedClientProps {
 }
 
 export function DepartamentosUnifiedClient({ apartments, districtOptions }: DepartamentosUnifiedClientProps) {
-  const [districtFilter, setDistrictFilter] = useState<string>("all");
+  const [selectedDistricts, setSelectedDistricts] = useState<string[]>([]);
   const [priceMin, setPriceMin] = useState<string>("");
   const [priceMax, setPriceMax] = useState<string>("");
-  const [stageFilter, setStageFilter] = useState<string>("all");
+  const [operationType, setOperationType] = useState<string>("Venta");
+
+  // Convert district options to MultiSelectOption format
+  const multiSelectDistrictOptions: MultiSelectOption[] = useMemo(() =>
+    districtOptions.map((d) => ({
+      label: d.label,
+      value: d.value,
+    })),
+    [districtOptions]
+  );
 
   const filtered = useMemo(() => {
     let list = [...apartments];
-    if (districtFilter !== "all") {
-      list = list.filter((r) => r.limaDistrictSlug === districtFilter);
+    
+    if (selectedDistricts.length > 0) {
+      list = list.filter((r) => selectedDistricts.includes(r.limaDistrictSlug ?? ""));
     }
+    
     const min = priceMin ? Number(priceMin) : null;
     const max = priceMax ? Number(priceMax) : null;
     if (min != null && !Number.isNaN(min)) list = list.filter((r) => r.price != null && r.price >= min);
     if (max != null && !Number.isNaN(max)) list = list.filter((r) => r.price != null && r.price <= max);
-    if (stageFilter !== "all") {
-      list = list.filter((r) => (r.developmentStage ?? "") === stageFilter);
+    
+    if (operationType !== "Todos") {
+      list = list.filter((r) => (r.operationType ?? "") === operationType);
     }
+    
     return list;
-  }, [apartments, districtFilter, priceMin, priceMax, stageFilter]);
+  }, [apartments, selectedDistricts, priceMin, priceMax, operationType]);
 
-  const allDistrictOptions = useMemo(
-    () => [{ value: "all", label: "Todos los distritos" }, ...districtOptions],
-    [districtOptions]
-  );
-
-  const stageOptions = [
-    { value: "all", label: "Todas las etapas" },
-    { value: "Entrega inmediata", label: "Entrega inmediata" },
-    { value: "En construcción", label: "En construcción" },
-    { value: "En planos", label: "En planos" },
+  const operationTypeOptions = [
+    { value: "Todos", label: "Todos los tipos" },
+    { value: "Venta", label: "Venta" },
+    { value: "Alquiler", label: "Alquiler" },
   ];
 
   return (
     <div className="space-y-10">
       <div className="flex flex-wrap items-center justify-center gap-4 rounded-lg border bg-card p-4">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-col gap-2">
           <label className="text-sm text-muted-foreground">Distrito</label>
-          <select
-            value={districtFilter}
-            onChange={(e) => setDistrictFilter(e.target.value)}
-            className="h-9 rounded-md border border-input bg-transparent px-3 text-sm"
-          >
-            {allDistrictOptions.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </select>
+          <MultiSelect
+            options={multiSelectDistrictOptions}
+            onValueChange={setSelectedDistricts}
+            placeholder="Seleccionar distritos"
+            searchable={true}
+            maxCount={3}
+            variant="secondary"
+            className="w-[280px]"
+          />
         </div>
-        <div className="flex items-center gap-2">
+        
+        <div className="flex flex-col gap-2">
+          <label className="text-sm text-muted-foreground">Tipo de Operación</label>
+          <Select
+            value={operationType}
+            onValueChange={setOperationType}
+            options={operationTypeOptions}
+            className="w-[180px]"
+            placeholder="Seleccionar tipo"
+          />
+        </div>
+
+        <div className="flex flex-col gap-2">
           <label className="text-sm text-muted-foreground">Precio mín</label>
-          <input
+          <Input
             type="number"
             placeholder="Ej. 100000"
             value={priceMin}
             onChange={(e) => setPriceMin(e.target.value)}
-            className="h-9 w-28 rounded-md border border-input bg-transparent px-3 text-sm"
+            className="w-32 h-9"
           />
         </div>
-        <div className="flex items-center gap-2">
+        
+        <div className="flex flex-col gap-2">
           <label className="text-sm text-muted-foreground">Precio máx</label>
-          <input
+          <Input
             type="number"
             placeholder="Ej. 500000"
             value={priceMax}
             onChange={(e) => setPriceMax(e.target.value)}
-            className="h-9 w-28 rounded-md border border-input bg-transparent px-3 text-sm"
+            className="w-32 h-9"
           />
-        </div>
-        <div className="flex items-center gap-2">
-          <label className="text-sm text-muted-foreground">Etapa</label>
-          <select
-            value={stageFilter}
-            onChange={(e) => setStageFilter(e.target.value)}
-            className="h-9 rounded-md border border-input bg-transparent px-3 text-sm"
-          >
-            {stageOptions.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </select>
         </div>
       </div>
 

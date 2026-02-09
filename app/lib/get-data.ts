@@ -21,5 +21,24 @@ export async function getUrbaniaData(): Promise<ScraperResult | null> {
   const filePath = await getLatestUrbaniaPath();
   if (!filePath) return null;
   const raw = await readFile(filePath, "utf-8");
-  return JSON.parse(raw) as ScraperResult;
+  const data = JSON.parse(raw) as ScraperResult;
+
+  const filtered = data.apartments
+    .filter((a) => {
+      if (!a.price || a.price < 100000) return false;
+      return true;
+    })
+    .map((a) => {
+      const copy = { ...a };
+      if (!copy.developmentStage) {
+        copy.developmentStage = "Entrega inmediata";
+      }
+      return copy;
+    });
+
+  return {
+    ...data,
+    totalResults: filtered.length,
+    apartments: filtered,
+  };
 }
