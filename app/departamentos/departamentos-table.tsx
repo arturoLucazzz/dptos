@@ -13,66 +13,146 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { useFavorites } from "@/app/providers";
-import type { ApartmentData } from "@/app/lib/types";
+import type { FixedAssumptions, PanelAssumptions } from "@/lib/assumption-defaults";
+import type { ListingRow } from "@/lib/listing-row";
+import { financeForListing, formatPen, formatPct } from "@/lib/listing-finance";
 import { ArrowUpDown } from "lucide-react";
 
 interface DepartamentosTableProps {
-  data: ApartmentData[];
+  data: ListingRow[];
+  panel: PanelAssumptions;
+  fixedAssumptions: FixedAssumptions;
 }
 
-export function DepartamentosTable({ data }: DepartamentosTableProps) {
-  const { isFavorite, toggleFavorite } = useFavorites();
-  const [sorting, setSorting] = useState<SortingState>([{ id: "price", desc: false }]);
+function SortHeader({
+  label,
+  column,
+}: {
+  label: string;
+  column: { toggleSorting: (desc?: boolean) => void; getIsSorted: () => false | "asc" | "desc" };
+}) {
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      className="-ml-2"
+      onClick={(e) => {
+        e.stopPropagation();
+        column.toggleSorting(column.getIsSorted() === "asc");
+      }}
+    >
+      {label}
+      <ArrowUpDown className="ml-2 h-4 w-4" />
+    </Button>
+  );
+}
 
-  const columns = useMemo<ColumnDef<ApartmentData>[]>(
+export function DepartamentosTable({ data, panel, fixedAssumptions }: DepartamentosTableProps) {
+  const { isFavorite, toggleFavorite } = useFavorites();
+  const [sorting, setSorting] = useState<SortingState>([{ id: "coverage", desc: true }]);
+
+  const columns = useMemo<ColumnDef<ListingRow>[]>(
     () => [
       {
         id: "favorito",
         header: "Fav",
-        cell: ({ row }) => (
-          <div onClick={(e) => e.stopPropagation()}>
-            <Checkbox
-              checked={isFavorite(row.original.id)}
-              onCheckedChange={() => toggleFavorite(row.original.id)}
-              aria-label="Marcar favorito"
-            />
-          </div>
-        ),
+        cell: ({ row }) => {
+          const propertyId = row.original.propertyId;
+          return (
+            <div onClick={(e) => e.stopPropagation()}>
+              <Checkbox
+                checked={isFavorite(propertyId) || row.original.favorite}
+                disabled={!propertyId}
+                onCheckedChange={() => propertyId && toggleFavorite(propertyId)}
+                aria-label="Marcar favorito"
+              />
+            </div>
+          );
+        },
       },
       {
-        accessorKey: "limaDistrictName",
+        accessorKey: "districtName",
         id: "district",
         header: "Distrito",
-        cell: ({ row }) => row.original.limaDistrictName ?? row.original.location ?? "—",
+        cell: ({ row }) => row.original.districtName,
       },
       {
-        accessorKey: "price",
-        header: ({ column }) => (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="-ml-2"
-            onClick={(e) => {
-              e.stopPropagation();
-              column.toggleSorting(column.getIsSorted() === "asc");
-            }}
-          >
-            Precio
-            <ArrowUpDown className="ml-2 h-4 w-4" />
-          </Button>
-        ),
-        cell: ({ row }) => row.original.priceFormatted ?? "—",
+        accessorKey: "pricePen",
+        header: ({ column }) => <SortHeader label="Precio" column={column} />,
+        cell: ({ row }) => formatPen(row.original.pricePen),
         sortingFn: "basic",
       },
       {
-        accessorKey: "developmentStage",
-        header: "Etapa",
-        cell: ({ row }) => row.original.developmentStage ?? "—",
+        id: "coverage",
+        accessorFn: (row) => financeForListing(row, panel, fixedAssumptions)?.coveragePct ?? -Infinity,
+        header: ({ column }) => <SortHeader label="Cobertura" column={column} />,
+        cell: ({ row }) => {
+          const finance = financeForListing(row.original, panel, fixedAssumptions);
+          if (!finance) {
+            return (
+              <span className="text-muted-foreground" title="Sin muestra de alquileres en el distrito">
+                —
+              </span>
+            );
+          }
+          return (
+            <span title={`Alquiler estimado: ${formatPen(row.original.grossRentPen)} (n=${row.original.rentSampleN ?? 0})`}>
+              {formatPct(finance.coveragePct)}
+            </span>
+          );
+        },
+        sortingFn: "basic",
       },
       {
-        accessorKey: "deliveryDate",
-        header: "Entrega",
-        cell: ({ row }) => row.original.deliveryDate ?? "—",
+        id: "aporte",
+        accessorFn: (row) =>
+          financeForListing(row, panel, fixedAssumptions)?.monthlyContributionPen ?? Infinity,
+        header: ({ column }) => <SortHeader label="Aporte / mes" column={column} />,
+        cell: ({ row }) => {
+          const finance = financeForListing(row.original, panel, fixedAssumptions);
+          return formatPen(finance?.monthlyContributionPen);
+        },
+        sortingFn: "basic",
+      },
+      {
+        id: "cuota",
+        accessorFn: (row) => financeForListing(row, panel, fixedAssumptions)?.loan.paymentPen ?? Infinity,
+        header: ({ column }) => <SortHeader label="Cuota" column={column} />,
+        cell: ({ row }) => {
+          const finance = financeForListing(row.original, panel, fixedAssumptions);
+          return formatPen(finance?.loan.paymentPen);
+        },
+        sortingFn: "basic",
+      },
+      {
+        id: "descuento",
+        accessorFn: (row) => row.discountPct ?? -Infinity,
+        header: ({ column }) => <SortHeader label="Descuento" column={column} />,
+        cell: ({ row }) => {
+          const d = row.original.discountPct;
+          if (d == null) return "—";
+          const tone = d >= 5 ? "text-emerald-700" : d <= -10 ? "text-red-700" : "";
+          return <span className={tone}>{formatPct(d)}</span>;
+        },
+        sortingFn: "basic",
+      },
+      {
+        id: "rebaja",
+        accessorFn: (row) => row.priceCutScore,
+        header: ({ column }) => <SortHeader label="Prob. rebaja" column={column} />,
+        cell: ({ row }) => {
+          const r = row.original;
+          const title = [
+            r.listingCount > 1 ? `${r.listingCount} avisos` : null,
+            r.priceCutCount > 0 ? `${r.priceCutCount} bajada(s)` : null,
+            r.totalCutPct > 0 ? `−${(r.totalCutPct * 100).toFixed(0)}% desde el pico` : null,
+            r.inventoryMonths != null ? `${r.inventoryMonths.toFixed(1)} meses de inventario` : null,
+          ]
+            .filter(Boolean)
+            .join(" · ");
+          return <span title={title || "Sin señales todavía"}>{r.priceCutScore}</span>;
+        },
+        sortingFn: "basic",
       },
       {
         accessorKey: "bedrooms",
@@ -80,14 +160,47 @@ export function DepartamentosTable({ data }: DepartamentosTableProps) {
         cell: ({ row }) => row.original.bedrooms ?? "—",
       },
       {
-        accessorKey: "area",
+        accessorKey: "areaM2",
         header: "m²",
-        cell: ({ row }) => row.original.area ?? "—",
+        cell: ({ row }) =>
+          row.original.areaM2 != null
+            ? row.original.areaM2.toLocaleString("es-PE", { maximumFractionDigits: 0 })
+            : "—",
+      },
+      {
+        id: "dias",
+        accessorFn: (row) => row.daysPublished ?? -1,
+        header: ({ column }) => <SortHeader label="Días" column={column} />,
+        cell: ({ row }) => {
+          const d = row.original.daysPublished;
+          if (d == null) return "—";
+          return (
+            <span title={row.original.daysPublishedEstimated ? "Estimado desde el id de Urbania" : "Fecha reportada"}>
+              {d}
+              {row.original.daysPublishedEstimated ? "~" : ""}
+            </span>
+          );
+        },
+        sortingFn: "basic",
+      },
+      {
+        id: "inicial100",
+        accessorFn: (row) =>
+          financeForListing(row, panel, fixedAssumptions)?.downPaymentPctForFullCoverage ?? Infinity,
+        header: ({ column }) => <SortHeader label="Inicial p/ 100%" column={column} />,
+        cell: ({ row }) => {
+          const finance = financeForListing(row.original, panel, fixedAssumptions);
+          return formatPct(finance?.downPaymentPctForFullCoverage, 0);
+        },
+        sortingFn: "basic",
       },
     ],
-    [isFavorite, toggleFavorite]
+    [isFavorite, toggleFavorite, panel, fixedAssumptions]
   );
 
+  // TanStack Table returns unstable function identities; React Compiler skips
+  // memoizing this on purpose.
+  // eslint-disable-next-line react-hooks/incompatible-library -- expected with useReactTable
   const table = useReactTable({
     data,
     columns,
@@ -99,16 +212,25 @@ export function DepartamentosTable({ data }: DepartamentosTableProps) {
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-muted-foreground">
-        {data.length} resultado{data.length !== 1 ? "s" : ""}
-      </p>
-      <div className="rounded-md border">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <p className="text-sm text-muted-foreground">
+          {data.length} resultado{data.length !== 1 ? "s" : ""} · orden por cobertura (recalcula con los
+          supuestos)
+        </p>
+        <p className="text-xs text-muted-foreground">
+          El descuento vs precio justo es un generador de shortlist, no un veredicto: lo barato suele
+          estarlo por razones que los datos no ven.
+        </p>
+      </div>
+      <div className="overflow-x-auto rounded-md border">
         <Table>
           <TableHeader>
             {table.getHeaderGroups().map((hg) => (
               <TableRow key={hg.id}>
                 {hg.headers.map((h) => (
-                  <TableHead key={h.id}>{flexRender(h.column.columnDef.header, h.getContext())}</TableHead>
+                  <TableHead key={h.id} className="whitespace-nowrap">
+                    {flexRender(h.column.columnDef.header, h.getContext())}
+                  </TableHead>
                 ))}
               </TableRow>
             ))}
@@ -125,10 +247,15 @@ export function DepartamentosTable({ data }: DepartamentosTableProps) {
                 <TableRow
                   key={row.id}
                   className="cursor-pointer"
-                  onClick={() => window.open(row.original.url, "_blank", "noopener,noreferrer")}
+                  onClick={() => {
+                    const path = row.original.sourcePath;
+                    if (path) window.open(`https://urbania.pe${path}`, "_blank", "noopener,noreferrer");
+                  }}
                 >
                   {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>
+                    <TableCell key={cell.id} className="whitespace-nowrap">
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </TableCell>
                   ))}
                 </TableRow>
               ))

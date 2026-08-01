@@ -1,6 +1,6 @@
 import { promises as fs } from 'fs';
 import path from 'path';
-import { ScraperResult } from '../types/index.js';
+import { ScraperResult } from '../types/index';
 
 const DATA_DIR = path.join(process.cwd(), 'data');
 
@@ -28,6 +28,36 @@ export async function saveResult(result: ScraperResult): Promise<string> {
   await fs.writeFile(filepath, JSON.stringify(result, null, 2), 'utf-8');
   
   return filepath;
+}
+
+/**
+ * Append-only sink so a run that dies partway through keeps what it collected.
+ *
+ * Writing once at the end means a block at minute 100 of a 120 minute run throws
+ * away everything, which then also makes every unseen listing look delisted.
+ */
+export interface IncrementalSink {
+  path: string;
+  append(records: unknown[]): Promise<void>;
+  count(): number;
+}
+
+export async function createIncrementalSink(runId: string, source: string): Promise<IncrementalSink> {
+  const dir = path.join(DATA_DIR, 'runs');
+  await fs.mkdir(dir, { recursive: true });
+  const filePath = path.join(dir, `${source}_${runId}.ndjson`);
+  const handle = await fs.open(filePath, 'a');
+  let written = 0;
+
+  return {
+    path: filePath,
+    async append(records: unknown[]): Promise<void> {
+      if (records.length === 0) return;
+      await handle.write(records.map((r) => JSON.stringify(r)).join('\n') + '\n');
+      written += records.length;
+    },
+    count: () => written,
+  };
 }
 
 /**

@@ -1,0 +1,293 @@
+// Five tables, and the rule that produced them: only what was observed gets
+// stored, everything derivable is computed in the query.
+//
+// Nothing precomputed, no saved aggregates, no saved scores, no hand-maintained
+// counters. The exception that looks derived but is not: firstSeenAt, lastSeenAt
+// and the raw card. Those cannot be recomputed tomorrow, because the past cannot
+// be re-scraped.
+//
+// Money is always Decimal, never Float.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+  // The repository is CommonJS, so the generated client has to be too.
+  moduleFormat = "cjs"
+}
+
+// The connection URL lives in prisma.config.ts, which is where Prisma 7 expects it.
+datasource db {
+  provider = "postgresql"
+}
+
+enum ScrapeMode {
+  /// Nightly pass over the districts being tracked.
+  TARGET_DAILY
+  /// Weekend pass over every district and property type.
+  FULL_WEEKLY
+  /// Parse-quality probe. Writes nothing, recorded only when asked to.
+  PROBE
+  MANUAL
+}
+
+enum ScrapeStatus {
+  RUNNING
+  SUCCESS
+  /// Finished, but at least one district was blocked or errored.
+  PARTIAL
+  FAILED
+}
+
+enum PostingKind {
+  /// A single apartment offered by itself.
+  UNIT
+  /// A development selling many units, whose price is always a "from".
+  PROJECT
+}
+
+enum Operation {
+  SALE
+  RENT
+}
+
+enum Currency {
+  PEN
+  USD
+}
+
+/// One row per execution. The operations log, and the source of the /runs page.
+model ScrapeRun {
+  id         String       @id @default(cuid())
+  mode       ScrapeMode
+  status     ScrapeStatus @default(RUNNING)
+  startedAt  DateTime     @default(now())
+  finishedAt DateTime?
+  /// Commit the worker was running, so every row can be traced to the code that produced it.
+  gitSha     String?
+
+  /// Postings seen per district and operation: { "lince": { "SALE": 281 } }.
+  /// This is what the sanity gate compares against the previous run.
+  districtCounts Json?
+  pagesFetched   Int   @default(0)
+  /// Districts whose lastSeenAt was left untouched because the count collapsed.
+  skippedDistricts String[]
+  errors         Json?
+  notes          String?
+
+  snapshots PostingSnapshot[]
+
+  @@index([startedAt])
+  @@index([mode, startedAt])
+}
+
+/// The listing on Urbania, not the apartment. Identity and dates only: the price
+/// changes, so it lives in the snapshots.
+model Posting {
+  id     String @id @default(cuid())
+  source String @default("urbania")
+  /// Urbania's numeric posting id. The only stable identifier the platform gives.
+  sourcePostingId String
+  /// Full slug, kept for debugging and because it carries Urbania's own parse of
+  /// the district and bedroom count, which is a free quality check.
+  sourcePath String?
+  slugPrefix String?
+  /// The publisher's own reference, as free text. Useless as an identifier: real
+  /// values include "Erika" and "V&CLEI", the latter shared by twelve unrelated
+  /// listings. Stored for debugging, never for identity.
+  postingCode String?
+
+  kind         PostingKind
+  /// A listing can be offered for sale and for rent at once, so the operation is
+  /// part of its identity.
+  operation    Operation
+  districtSlug String
+
+  propertyId String?
+  property   Property? @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+
+  /// Cannot be recomputed later, so it is stored even though it looks derived.
+  firstSeenAt DateTime @default(now())
+  lastSeenAt  DateTime @default(now())
+
+  /// Pointer to the newest snapshot. Without it, "the latest snapshot of each of
+  /// 14,000 postings" is a DISTINCT ON that Prisma cannot express, which would
+  /// force raw SQL into the most used query in the app.
+  currentSnapshotId String?          @unique
+  currentSnapshot   PostingSnapshot? @relation("CurrentSnapshot", fields: [currentSnapshotId], references: [id], onDelete: SetNull)
+
+  snapshots PostingSnapshot[] @relation("PostingSnapshots")
+
+  @@unique([source, sourcePostingId, operation])
+  @@index([districtSlug, operation])
+  @@index([lastSeenAt])
+  @@index([propertyId])
+}
+
+/// One row the first time a listing is seen, and one more every time something
+/// changes. Storing a row per run would be ~730,000 rows a year to say
+/// "420, 420, 420, 399"; storing only changes is ~90,000, and every row means
+/// something. This only works because delisting is derived from lastSeenAt rather
+/// than from per-run presence accounting.
+model PostingSnapshot {
+  id        String   @id @default(cuid())
+  postingId String
+  posting   Posting  @relation("PostingSnapshots", fields: [postingId], references: [id], onDelete: Cascade)
+
+  scrapeRunId String
+  scrapeRun   ScrapeRun @relation(fields: [scrapeRunId], references: [id], onDelete: Cascade)
+
+  observedAt DateTime @default(now())
+
+  // ---- Price, as published plus the conversion ----
+  priceAmount   Decimal?  @db.Decimal(14, 2)
+  priceCurrency Currency?
+  /// Converted with the single USD_PEN constant. Recomputable, but stored so the
+  /// most common sort does not have to convert 14,000 rows per query.
+  pricePen      Decimal?  @db.Decimal(14, 2)
+  /// True when the price is a "desde" lower bound, as every project price is.
+  priceIsFrom   Boolean   @default(false)
+
+  // ---- Features ----
+  areaTotal           Decimal?  @db.Decimal(8, 2)
+  areaCovered         Decimal?  @db.Decimal(8, 2)
+  bedrooms            Int?
+  bathrooms           Int?
+  halfBathrooms       Int?
+  parkingSpots        Int?
+  maintenanceAmount   Decimal?  @db.Decimal(10, 2)
+  maintenanceCurrency Currency?
+  /// Age in years as published. Absent means new or unstated, which matters for
+  /// alcabala: the first sale by the builder is exempt.
+  antiquityYears      Int?
+
+  // ---- Project ranges, because a single value would be invented ----
+  areaMin      Decimal? @db.Decimal(8, 2)
+  areaMax      Decimal? @db.Decimal(8, 2)
+  bedroomsMin  Int?
+  bedroomsMax  Int?
+  unitsCount   Int?
+  developmentStage String?
+  deliveryDate     String?
+
+  // ---- Location and publisher ----
+  title       String?
+  address     String?
+  subzoneName String?
+  latitude    Decimal? @db.Decimal(10, 7)
+  longitude   Decimal? @db.Decimal(10, 7)
+
+  publisherId     String?
+  publisherName   String?
+  publisherTypeId String?
+
+  // ---- Platform metadata ----
+  status          String?
+  modifiedDate    DateTime?
+  firstDateOnline DateTime?
+  /// Urbania's own duplicate flag.
+  hasDuplicate    Boolean?
+  imageUrl        String?
+
+  /// Implausible values are marked, never deleted. Deleting a garbage listing
+  /// makes the next run believe it disappeared and count it as a sale.
+  qualityFlags String[]
+
+  /// The card exactly as observed. Cannot be regenerated, so it is kept whole.
+  rawCard Json
+
+  currentFor Posting? @relation("CurrentSnapshot")
+
+  @@index([postingId, observedAt])
+  @@index([scrapeRunId])
+  @@index([observedAt])
+}
+
+/// The physical apartment. The only id invented here, because Urbania has no
+/// concept of one: when a broker reposts, the posting id changes.
+model Property {
+  id           String @id @default(cuid())
+  districtSlug String
+  /// (district, normalized address, bedrooms, area bucket). Deliberately not
+  /// unique: it narrows the search, and the decision is the match score. A new
+  /// building sells dozens of identical 1-bedroom 40 m² units that share this key
+  /// without being the same apartment.
+  fingerprint  String
+
+  addressNorm String?
+  bedrooms    Int?
+  /// Area rounded into a bucket, so a 64 m² and a 65 m² listing can still match.
+  areaBucket  Int?
+  latitude    Decimal? @db.Decimal(10, 7)
+  longitude   Decimal? @db.Decimal(10, 7)
+
+  // Your own annotations. discardReason exists so that in three months you can
+  // ask why twenty apartments were discarded and find out which variable the
+  // model is missing.
+  favorite      Boolean @default(false)
+  discarded     Boolean @default(false)
+  discardReason String?
+  notes         String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  postings Posting[]
+
+  @@index([districtSlug])
+  @@index([fingerprint])
+  @@index([addressNorm])
+  @@index([favorite])
+}
+
+/// Assumptions and constants. Has no relation to anything: it is configuration.
+model Assumptions {
+  /// Single row, so it is addressable without a lookup.
+  id String @id @default("default")
+
+  /// Unidad Impositiva Tributaria. Changes every year and drives alcabala and predial.
+  uit Decimal @db.Decimal(10, 2)
+  /// Exchange rate used to convert USD prices. Changing it recomputes the history,
+  /// because the published amount and currency are both stored.
+  usdPen Decimal @db.Decimal(6, 3)
+
+  // ---- Financing defaults, all editable in the UI ----
+  downPaymentPct Decimal @db.Decimal(5, 2)
+  /// Rate of the loan itself. Splits the payment into interest and principal.
+  tea            Decimal @db.Decimal(5, 2)
+  /// Includes life and property insurance and fees, so it is the real cash outflow.
+  tcea           Decimal @db.Decimal(5, 2)
+  termYears      Int
+
+  // ---- Rental assumptions ----
+  vacancyMonthsPerYear Decimal @db.Decimal(4, 2)
+  rentGrowthPct        Decimal @db.Decimal(5, 2)
+  rentIncomeTaxPct     Decimal @db.Decimal(5, 2)
+  /// Fallback when the listing does not publish a maintenance fee.
+  defaultMaintenancePerM2 Decimal @db.Decimal(6, 2)
+
+  // ---- One-off purchase costs ----
+  alcabalaRatePct   Decimal @db.Decimal(5, 2)
+  /// Alcabala applies only above this many UIT.
+  alcabalaExemptUit Decimal @db.Decimal(5, 2)
+  /// The developer's first sale is exempt from alcabala *except* for the land
+  /// portion, and how that portion is valued is a judgement, not a formula: at 50%
+  /// the tax on a S/ 400,000 flat is S/ 4,320, at 0% it is nothing. Exposed as an
+  /// assumption instead of hidden in a constant, because it moves the entry cost by
+  /// a full percentage point.
+  alcabalaFirstSaleLandSharePct Decimal @db.Decimal(5, 2)
+  notaryCost        Decimal @db.Decimal(10, 2)
+  registryPct       Decimal @db.Decimal(5, 3)
+  appraisalCost     Decimal @db.Decimal(10, 2)
+  titleStudyCost    Decimal @db.Decimal(10, 2)
+
+  // ---- Monthly costs ----
+  /// Assessed value as a fraction of market price, for the predial calculation.
+  assessedValueRatio Decimal @db.Decimal(5, 3)
+  /// No programmatic source per district, so it is filled in by hand.
+  /// { "lince": 100, "miraflores": 180 } in soles per month.
+  arbitriosByDistrict Json
+  /// Used when a district is missing from the table above, and marked as estimated.
+  defaultArbitrios Decimal @db.Decimal(10, 2)
+
+  updatedAt DateTime @updatedAt
+}

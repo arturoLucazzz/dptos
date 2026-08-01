@@ -1,475 +1,305 @@
 "use client";
 
-import { useMemo, useState } from "react";
 import {
-  BarChart,
   Bar,
+  BarChart,
+  CartesianGrid,
+  Legend,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
   XAxis,
   YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-  Legend,
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import type { ApartmentData } from "@/app/lib/types";
+import type { AnalyticsBundle } from "@/lib/analytics";
 
-const CHART_COLORS = ["#3b82f6", "#22c55e", "#eab308", "#ef4444", "#8b5cf6", "#ec4899", "#06b6d4", "#f97316"];
-
-interface EstadisticasClientProps {
-  apartments: ApartmentData[];
-  districtOptions: { value: string; label: string }[];
+function formatPerM2(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return "—";
+  return `S/ ${Math.round(value).toLocaleString("es-PE")}`;
 }
 
-export function EstadisticasClient({ apartments, districtOptions }: EstadisticasClientProps) {
-  const [districtFilter, setDistrictFilter] = useState<string>("all");
-  const [stageFilter, setStageFilter] = useState<string>("all");
-  const [priceMin, setPriceMin] = useState<string>("");
-  const [priceMax, setPriceMax] = useState<string>("");
+function formatPct(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return "—";
+  return `${(value * 100).toFixed(0)}%`;
+}
 
-  const filtered = useMemo(() => {
-    let list = apartments.filter((a) => a.price != null);
-    if (districtFilter !== "all") list = list.filter((a) => a.limaDistrictSlug === districtFilter);
-    if (stageFilter !== "all") list = list.filter((a) => a.developmentStage === stageFilter);
-    const min = priceMin ? Number(priceMin) : null;
-    const max = priceMax ? Number(priceMax) : null;
-    if (min != null && !Number.isNaN(min)) list = list.filter((a) => a.price! >= min);
-    if (max != null && !Number.isNaN(max)) list = list.filter((a) => a.price! <= max);
-    return list;
-  }, [apartments, districtFilter, stageFilter, priceMin, priceMax]);
+function IndexChart({
+  title,
+  subtitle,
+  points,
+}: {
+  title: string;
+  subtitle: string;
+  points: AnalyticsBundle["saleIndex"];
+}) {
+  if (points.length === 0) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">{title}</CardTitle>
+          <p className="text-sm text-muted-foreground">{subtitle}</p>
+        </CardHeader>
+        <CardContent className="text-sm text-muted-foreground">
+          Todavía no hay historia suficiente. El índice de salidas aparece cuando hay
+          avisos posiblemente vendidos (varias corridas).
+        </CardContent>
+      </Card>
+    );
+  }
 
-  const byDistrict = useMemo(() => {
-    const map = new Map<string, { count: number; totalPrice: number; prices: number[]; areas: number[] }>();
-    for (const a of filtered) {
-      const key = a.limaDistrictName ?? a.limaDistrictSlug ?? "Otro";
-      if (!map.has(key)) map.set(key, { count: 0, totalPrice: 0, prices: [], areas: [] });
-      const v = map.get(key)!;
-      v.count++;
-      if (a.price != null) {
-        v.totalPrice += a.price;
-        v.prices.push(a.price);
-      }
-      if (a.area != null) v.areas.push(a.area);
-    }
-    return Array.from(map.entries())
-      .map(([name, v]) => ({
-        name,
-        cantidad: v.count,
-        precioPromedio: v.prices.length ? Math.round(v.totalPrice / v.prices.length) : 0,
-        precioMin: v.prices.length ? Math.min(...v.prices) : 0,
-        precioMax: v.prices.length ? Math.max(...v.prices) : 0,
-        areaPromedio: v.areas.length ? Math.round(v.areas.reduce((s, x) => s + x, 0) / v.areas.length) : 0,
-      }))
-      .sort((a, b) => b.cantidad - a.cantidad);
-  }, [filtered]);
-
-  const byDistrictWithArea = useMemo(() => {
-    const map = new Map<string, { areas: number[]; prices: number[] }>();
-    for (const a of filtered) {
-      const key = a.limaDistrictName ?? a.limaDistrictSlug ?? "Otro";
-      if (!map.has(key)) map.set(key, { areas: [], prices: [] });
-      const v = map.get(key)!;
-      if (a.area != null) v.areas.push(a.area);
-      if (a.price != null) v.prices.push(a.price);
-    }
-    return Array.from(map.entries()).map(([name, v]) => ({
-      name,
-      areaPromedio: v.areas.length ? Math.round(v.areas.reduce((s, x) => s + x, 0) / v.areas.length) : 0,
-      precioPromedio: v.prices.length ? Math.round(v.prices.reduce((s, x) => s + x, 0) / v.prices.length) : 0,
-    }));
-  }, [filtered]);
-
-  const byStage = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const a of filtered) {
-      const key = a.developmentStage ?? "Sin etapa";
-      map.set(key, (map.get(key) ?? 0) + 1);
-    }
-    return Array.from(map.entries()).map(([name, value]) => ({ name, value }));
-  }, [filtered]);
-
-  const byPropertyType = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const a of filtered) {
-      const key = a.propertyType ?? "Otro";
-      map.set(key, (map.get(key) ?? 0) + 1);
-    }
-    return Array.from(map.entries()).map(([name, value]) => ({ name, value }));
-  }, [filtered]);
-
-  const byBedrooms = useMemo(() => {
-    const map = new Map<number, number>();
-    for (const a of filtered) {
-      const k = a.bedrooms ?? 0;
-      map.set(k, (map.get(k) ?? 0) + 1);
-    }
-    return Array.from(map.entries())
-      .map(([name, cantidad]) => ({ name: name === 0 ? "Sin dato" : `${name}`, cantidad }))
-      .sort((a, b) => (a.name === "Sin dato" ? 1 : Number(a.name) - Number(b.name)));
-  }, [filtered]);
-
-  const priceRanges = useMemo(() => {
-    const prices = filtered.map((a) => a.price!).filter(Boolean).sort((a, b) => a - b);
-    if (prices.length === 0) return [];
-    const min = prices[0];
-    const max = prices[prices.length - 1];
-    const step = Math.ceil((max - min) / 10) || 1;
-    const buckets: { rango: string; cantidad: number }[] = [];
-    for (let i = 0; i < 10; i++) {
-      const low = min + i * step;
-      const high = i === 9 ? max + 1 : min + (i + 1) * step;
-      const count = prices.filter((p) => p >= low && p < high).length;
-      buckets.push({ rango: `${(low / 1000).toFixed(0)}k-${(high / 1000).toFixed(0)}k`, cantidad: count });
-    }
-    return buckets;
-  }, [filtered]);
-
-  const totals = useMemo(() => {
-    const prices = filtered.map((a) => a.price!).filter(Boolean);
-    const areas = filtered.map((a) => a.area!).filter(Boolean);
-    return {
-      total: filtered.length,
-      precioMin: prices.length ? Math.min(...prices) : 0,
-      precioMax: prices.length ? Math.max(...prices) : 0,
-      precioPromedio: prices.length ? Math.round(prices.reduce((a, b) => a + b, 0) / prices.length) : 0,
-      precioMediano: prices.length ? prices[Math.floor(prices.length / 2)] : 0,
-      areaPromedio: areas.length ? Math.round(areas.reduce((a, b) => a + b, 0) / areas.length) : 0,
-      precioPorM2: areas.length && prices.length
-        ? filtered
-            .filter((a) => a.price != null && a.area != null && a.area > 0)
-            .map((a) => a.price! / a.area!)
-            .reduce((a, b, _, arr) => a + b / arr.length, 0)
-        : 0,
-    };
-  }, [filtered]);
-
-  const topDistricts = useMemo(() => byDistrict.slice(0, 5), [byDistrict]);
-  const precioPorM2PorDistrito = useMemo(() => {
-    return byDistrictWithArea
-      .map((d) => {
-        const list = filtered.filter(
-          (a) => (a.limaDistrictName ?? a.limaDistrictSlug) === d.name && a.price != null && a.area != null && a.area > 0
-        );
-        const avg = list.length ? list.reduce((s, a) => s + a.price! / a.area!, 0) / list.length : 0;
-        return { name: d.name, "Precio/m²": Math.round(avg) };
-      })
-      .filter((d) => d["Precio/m²"] > 0);
-  }, [filtered, byDistrictWithArea]);
+  const data = points.map((p) => ({
+    week: p.week.slice(5),
+    vivos: p.livePerM2 != null ? Math.round(p.livePerM2) : null,
+    salidas: p.exitedPerM2 != null ? Math.round(p.exitedPerM2) : null,
+    liveN: p.liveN,
+    exitedN: p.exitedN,
+  }));
 
   return (
-    <div className="space-y-8">
-      <div className="flex flex-wrap items-center gap-4 rounded-lg border bg-card p-4">
-        <div className="flex items-center gap-2">
-          <label className="text-sm text-muted-foreground">Distrito</label>
-          <select
-            value={districtFilter}
-            onChange={(e) => setDistrictFilter(e.target.value)}
-            className="h-9 rounded-md border border-input bg-transparent px-3 text-sm"
-          >
-            <option value="all">Todos</option>
-            {districtOptions.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </select>
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">{title}</CardTitle>
+        <p className="text-sm text-muted-foreground">{subtitle}</p>
+      </CardHeader>
+      <CardContent className="h-72">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
+            <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+            <XAxis dataKey="week" tick={{ fontSize: 11 }} />
+            <YAxis
+              tick={{ fontSize: 11 }}
+              tickFormatter={(v) => `${Math.round(Number(v) / 1000)}k`}
+            />
+            <Tooltip
+              formatter={(value, name) => [
+                typeof value === "number" ? `S/ ${value.toLocaleString("es-PE")}/m²` : "—",
+                name === "vivos" ? "Vivos" : "Salidas",
+              ]}
+            />
+            <Legend />
+            <Line
+              type="monotone"
+              dataKey="vivos"
+              name="Vivos"
+              stroke="#d97706"
+              strokeWidth={2}
+              dot={false}
+              connectNulls
+            />
+            <Line
+              type="monotone"
+              dataKey="salidas"
+              name="Salidas"
+              stroke="#0f766e"
+              strokeWidth={2}
+              dot={false}
+              connectNulls
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      </CardContent>
+    </Card>
+  );
+}
+
+export function EstadisticasClient({ data }: { data: AnalyticsBundle }) {
+  const inventoryChart = data.inventory.map((d) => ({
+    name: d.districtName,
+    venta: d.saleProperties,
+    alquiler: d.rentProperties,
+  }));
+
+  const constructionChart = data.construction.map((d) => ({
+    name: d.districtName,
+    planos: d.enPlanos,
+    construccion: d.enConstruccion,
+    inmediata: d.entregaInmediata,
+    units: d.unitsApprox,
+  }));
+
+  return (
+    <div className="space-y-10">
+      <section className="space-y-4">
+        <div>
+          <h2 className="text-lg font-medium">Evolución de precios</h2>
+          <p className="text-sm text-muted-foreground">
+            Mediana S//m². La serie de salidas usa el último precio de avisos que
+            desaparecieron — sin eso, lo barato se vende y el promedio de vivos sube
+            solo por sesgo de supervivencia.
+          </p>
         </div>
-        <div className="flex items-center gap-2">
-          <label className="text-sm text-muted-foreground">Etapa</label>
-          <select
-            value={stageFilter}
-            onChange={(e) => setStageFilter(e.target.value)}
-            className="h-9 rounded-md border border-input bg-transparent px-3 text-sm"
-          >
-            <option value="all">Todas</option>
-            <option value="Entrega inmediata">Entrega inmediata</option>
-            <option value="En construcción">En construcción</option>
-            <option value="En planos">En planos</option>
-          </select>
-        </div>
-        <div className="flex items-center gap-2">
-          <label className="text-sm text-muted-foreground">Precio mín</label>
-          <input
-            type="number"
-            placeholder="Ej. 100000"
-            value={priceMin}
-            onChange={(e) => setPriceMin(e.target.value)}
-            className="h-9 w-28 rounded-md border border-input bg-transparent px-3 text-sm"
+        <div className="grid gap-4 lg:grid-cols-2">
+          <IndexChart
+            title="Venta"
+            subtitle="Vivos vs. posiblemente vendidos"
+            points={data.saleIndex}
+          />
+          <IndexChart
+            title="Alquiler"
+            subtitle="Vivos vs. que dejaron de publicarse"
+            points={data.rentIndex}
           />
         </div>
-        <div className="flex items-center gap-2">
-          <label className="text-sm text-muted-foreground">Precio máx</label>
-          <input
-            type="number"
-            placeholder="Ej. 500000"
-            value={priceMax}
-            onChange={(e) => setPriceMax(e.target.value)}
-            className="h-9 w-28 rounded-md border border-input bg-transparent px-3 text-sm"
-          />
+      </section>
+
+      <section className="space-y-4">
+        <div>
+          <h2 className="text-lg font-medium">Inventario por distrito</h2>
+          <p className="text-sm text-muted-foreground">
+            Contado por departamento físico, no por aviso. Tres corredores en el mismo
+            flat cuentan como uno. La dispersión alta sugiere más mal precificados.
+          </p>
         </div>
-      </div>
 
-      <p className="text-sm text-muted-foreground">{filtered.length} registros con precio</p>
-
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Total inmuebles</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">{totals.total.toLocaleString("es-PE")}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Precio mínimo</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">S/ {totals.precioMin.toLocaleString("es-PE")}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Precio máximo</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">S/ {totals.precioMax.toLocaleString("es-PE")}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Precio promedio</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">S/ {totals.precioPromedio.toLocaleString("es-PE")}</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Inmuebles por distrito</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[300px]">
+        {inventoryChart.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Propiedades en venta y alquiler</CardTitle>
+            </CardHeader>
+            <CardContent className="h-72">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={byDistrict} margin={{ top: 5, right: 5, left: 5, bottom: 60 }}>
+                <BarChart data={inventoryChart} margin={{ top: 8, right: 8, left: 0, bottom: 24 }}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                  <XAxis dataKey="name" tick={{ fontSize: 11 }} angle={-45} textAnchor="end" height={60} />
+                  <XAxis dataKey="name" tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} />
-                  <Tooltip formatter={(v: number) => v.toLocaleString("es-PE")} />
-                  <Bar dataKey="cantidad" fill={CHART_COLORS[0]} name="Cantidad" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Precio promedio por distrito</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[300px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={byDistrict} margin={{ top: 5, right: 5, left: 5, bottom: 60 }}>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                  <XAxis dataKey="name" tick={{ fontSize: 11 }} angle={-45} textAnchor="end" height={60} />
-                  <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
-                  <Tooltip formatter={(v: number) => `S/ ${v.toLocaleString("es-PE")}`} />
-                  <Bar dataKey="precioPromedio" fill={CHART_COLORS[1]} name="Precio promedio" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Precio min y max por distrito</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[300px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={byDistrict} margin={{ top: 5, right: 5, left: 5, bottom: 60 }}>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                  <XAxis dataKey="name" tick={{ fontSize: 11 }} angle={-45} textAnchor="end" height={60} />
-                  <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
-                  <Tooltip formatter={(v: number) => `S/ ${v.toLocaleString("es-PE")}`} />
-                  <Bar dataKey="precioMin" fill={CHART_COLORS[2]} name="Mínimo" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="precioMax" fill={CHART_COLORS[3]} name="Máximo" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Por etapa de desarrollo</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[300px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={byStage}
-                    dataKey="value"
-                    nameKey="name"
-                    cx="50%"
-                    cy="50%"
-                    outerRadius={80}
-                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                  >
-                    {byStage.map((_, i) => (
-                      <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip formatter={(v: number) => [v.toLocaleString("es-PE"), "Cantidad"]} />
+                  <Tooltip />
                   <Legend />
-                </PieChart>
+                  <Bar dataKey="venta" name="Venta" fill="#d97706" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="alquiler" name="Alquiler" fill="#0f766e" radius={[4, 4, 0, 0]} />
+                </BarChart>
               </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        )}
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Tipo de propiedad</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[300px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={byPropertyType}
-                    dataKey="value"
-                    nameKey="name"
-                    cx="50%"
-                    cy="50%"
-                    outerRadius={80}
-                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+        <div className="overflow-x-auto rounded-md border">
+          <table className="w-full text-sm">
+            <thead className="border-b bg-muted/40 text-left">
+              <tr>
+                <th className="px-3 py-2 font-medium">Distrito</th>
+                <th className="px-3 py-2 font-medium">Venta</th>
+                <th className="px-3 py-2 font-medium">Alquiler</th>
+                <th className="px-3 py-2 font-medium">Venta/Alq.</th>
+                <th className="px-3 py-2 font-medium">Mediana S//m²</th>
+                <th className="px-3 py-2 font-medium">p25–p75</th>
+                <th className="px-3 py-2 font-medium">Dispersión</th>
+                <th className="px-3 py-2 font-medium">n</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.inventory.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="px-3 py-8 text-center text-muted-foreground">
+                    Sin inventario vivo todavía.
+                  </td>
+                </tr>
+              ) : (
+                data.inventory.map((d) => (
+                  <tr key={d.districtSlug} className="border-b last:border-0">
+                    <td className="px-3 py-2 font-medium">{d.districtName}</td>
+                    <td className="px-3 py-2">{d.saleProperties}</td>
+                    <td className="px-3 py-2">{d.rentProperties}</td>
+                    <td className="px-3 py-2">
+                      {d.saleToRent != null ? d.saleToRent.toFixed(1) : "—"}
+                    </td>
+                    <td className="px-3 py-2">{formatPerM2(d.saleMedianPerM2)}</td>
+                    <td className="px-3 py-2">
+                      {d.saleP25PerM2 != null && d.saleP75PerM2 != null
+                        ? `${Math.round(d.saleP25PerM2).toLocaleString("es-PE")}–${Math.round(d.saleP75PerM2).toLocaleString("es-PE")}`
+                        : "—"}
+                    </td>
+                    <td className="px-3 py-2">
+                      <span
+                        className={
+                          d.saleDispersion != null && d.saleDispersion > 0.35
+                            ? "text-amber-700"
+                            : undefined
+                        }
+                        title="(p75 − p25) / mediana. Alta = más oportunidad o más ruido."
+                      >
+                        {formatPct(d.saleDispersion)}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-muted-foreground">{d.saleN}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="space-y-4">
+        <div>
+          <h2 className="text-lg font-medium">Pipeline de construcción</h2>
+          <p className="text-sm text-muted-foreground">
+            Proyectos, no candidatos de compra. Son un indicador adelantado de presión
+            sobre los alquileres futuros en ese distrito.
+          </p>
+        </div>
+
+        {constructionChart.length === 0 ? (
+          <Card>
+            <CardContent className="py-8 text-sm text-muted-foreground">
+              No hay proyectos vivos en la base. Aparecen cuando el scrape incluye kind
+              PROJECT (la corrida semanal los trae).
+            </CardContent>
+          </Card>
+        ) : (
+          <>
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Proyectos por etapa</CardTitle>
+              </CardHeader>
+              <CardContent className="h-72">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={constructionChart}
+                    margin={{ top: 8, right: 8, left: 0, bottom: 24 }}
                   >
-                    {byPropertyType.map((_, i) => (
-                      <Cell key={i} fill={CHART_COLORS[(i + 1) % CHART_COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip formatter={(v: number) => [v.toLocaleString("es-PE"), "Cantidad"]} />
-                  <Legend />
-                </PieChart>
-              </ResponsiveContainer>
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                    <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                    <YAxis tick={{ fontSize: 11 }} />
+                    <Tooltip />
+                    <Legend />
+                    <Bar dataKey="planos" name="En planos" stackId="a" fill="#fde68a" />
+                    <Bar dataKey="construccion" name="En construcción" stackId="a" fill="#f59e0b" />
+                    <Bar dataKey="inmediata" name="Entrega inmediata" stackId="a" fill="#b45309" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+            <div className="overflow-x-auto rounded-md border">
+              <table className="w-full text-sm">
+                <thead className="border-b bg-muted/40 text-left">
+                  <tr>
+                    <th className="px-3 py-2 font-medium">Distrito</th>
+                    <th className="px-3 py-2 font-medium">En planos</th>
+                    <th className="px-3 py-2 font-medium">En construcción</th>
+                    <th className="px-3 py-2 font-medium">Entrega inmediata</th>
+                    <th className="px-3 py-2 font-medium">Proyectos</th>
+                    <th className="px-3 py-2 font-medium">Unidades ≈</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.construction.map((d) => (
+                    <tr key={d.districtSlug} className="border-b last:border-0">
+                      <td className="px-3 py-2 font-medium">{d.districtName}</td>
+                      <td className="px-3 py-2">{d.enPlanos}</td>
+                      <td className="px-3 py-2">{d.enConstruccion}</td>
+                      <td className="px-3 py-2">{d.entregaInmediata}</td>
+                      <td className="px-3 py-2">{d.total}</td>
+                      <td className="px-3 py-2">{d.unitsApprox}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Distribución de precios</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[300px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={priceRanges} margin={{ top: 5, right: 5, left: 5, bottom: 30 }}>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                  <XAxis dataKey="rango" tick={{ fontSize: 10 }} />
-                  <YAxis tick={{ fontSize: 11 }} />
-                  <Tooltip />
-                  <Bar dataKey="cantidad" fill={CHART_COLORS[4]} name="Cantidad" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Dormitorios</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[300px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={byBedrooms} margin={{ top: 5, right: 5, left: 5, bottom: 30 }}>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                  <XAxis dataKey="name" />
-                  <YAxis />
-                  <Tooltip />
-                  <Bar dataKey="cantidad" fill={CHART_COLORS[5]} name="Cantidad" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Área promedio por distrito (m²)</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[300px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={byDistrict.filter((d) => d.areaPromedio > 0)} margin={{ top: 5, right: 5, left: 5, bottom: 60 }}>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                  <XAxis dataKey="name" tick={{ fontSize: 11 }} angle={-45} textAnchor="end" height={60} />
-                  <YAxis tick={{ fontSize: 11 }} />
-                  <Tooltip formatter={(v: number) => [`${v} m²`, "Área promedio"]} />
-                  <Bar dataKey="areaPromedio" fill={CHART_COLORS[7]} name="Área prom. (m²)" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Precio por m² por distrito</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[300px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={precioPorM2PorDistrito} margin={{ top: 5, right: 5, left: 5, bottom: 60 }}>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                  <XAxis dataKey="name" tick={{ fontSize: 11 }} angle={-45} textAnchor="end" height={60} />
-                  <YAxis tick={{ fontSize: 11 }} />
-                  <Tooltip formatter={(v: number) => [`S/ ${v.toLocaleString("es-PE")}`, "Precio/m²"]} />
-                  <Bar dataKey="Precio/m²" fill={CHART_COLORS[6]} name="Precio/m²" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Top 5 distritos por cantidad</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[300px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={topDistricts} layout="vertical" margin={{ top: 5, right: 30, left: 80, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                  <XAxis type="number" />
-                  <YAxis dataKey="name" type="category" width={70} tick={{ fontSize: 11 }} />
-                  <Tooltip />
-                  <Bar dataKey="cantidad" fill={CHART_COLORS[0]} name="Cantidad" radius={[0, 4, 4, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Resumen numérico</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2 text-sm">
-            <p><span className="text-muted-foreground">Precio mediano:</span> S/ {totals.precioMediano.toLocaleString("es-PE")}</p>
-            <p><span className="text-muted-foreground">Área promedio:</span> {totals.areaPromedio} m²</p>
-            <p><span className="text-muted-foreground">Precio/m² promedio:</span> S/ {Math.round(totals.precioPorM2).toLocaleString("es-PE")}</p>
-          </CardContent>
-        </Card>
-      </div>
+          </>
+        )}
+      </section>
     </div>
   );
 }

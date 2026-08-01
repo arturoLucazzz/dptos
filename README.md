@@ -1,185 +1,143 @@
-# Real Estate Scraper
+# dptos
 
-A TypeScript-based scraping project for multiple real estate websites. This project provides a standardized framework for scraping apartment listings from different sources while maintaining consistent input/output formats.
+Herramienta para analizar departamentos en venta en Lima: scrapea Urbania, guarda solo lo observado en Postgres, y calcula en el cliente cobertura de cuota, precio justo y probabilidad de rebaja.
 
-## Features
+## Arquitectura
 
-- **Multi-website support**: Easily add new scrapers for different real estate websites
-- **Standardized format**: All scrapers output the same JSON structure
-- **Anti-blocking measures**: Built-in rate limiting, random delays, and user agent rotation
-- **Flexible filtering**: Common filter interface across all scrapers
-- **Data processing**: Tools to analyze and process scraped data
-- **Type-safe**: Full TypeScript support with type definitions
+```
+Urbania.pe
+    │
+    ▼
+scraper/  (Playwright, headed) ──NDJSON──► data/runs/
+    │
+    ▼ ingest
+Postgres (Prisma)
+    │
+    ├── ScrapeRun          historial y salud de cada corrida
+    ├── Posting            identidad del aviso (id de Urbania)
+    ├── PostingSnapshot    precio/features solo cuando cambian
+    ├── Property           departamento físico (agrupa reposts)
+    └── Assumptions        UIT, tasas, costos — una sola fila
+    │
+    ▼ queries + modelos en memoria
+lib/  (dominio puro + loaders)
+    │
+    ▼ proyecciones delgadas (~10 números/fila)
+app/  (Next.js) ── panel de supuestos en URL ──► tablas y dashboards
+```
+
+### Principio: guardar poco, calcular mucho
+
+Solo se persiste lo que no se puede reconstruir mañana (`firstSeenAt`, `lastSeenAt`, el precio publicado, el `rawCard`). Todo lo demás — cobertura, descuento, yield, predial, probabilidad de rebaja — se calcula on-demand.
+
+Por eso el panel de supuestos (inicial, TEA, TCEA, plazo) vive en el query string y recalcula la tabla en el cliente: mover un slider no toca el servidor.
+
+### Identidad
+
+| Concepto | Qué es | Clave |
+|---|---|---|
+| **Posting** | Un aviso de Urbania | `(source, sourcePostingId, operation)` |
+| **Property** | El departamento físico | fingerprint + match conservador |
+| **Snapshot** | Una observación del aviso | solo si cambió un campo trackeado |
+
+El matcher de properties es deliberadamente estricto: exige dirección normalizada **con número**, área ±2 m² y precio ±5%. Sub-mergear deja duplicados visibles; sobre-mergear destruye observaciones en silencio.
+
+### Modelos en memoria (no columnas)
+
+- **Precio justo** (`lib/fair-price.ts`): regresión log-log sobre ventas `UNIT` vivas. Cache invalidada cuando termina una corrida.
+- **Alquiler estimado** (`lib/rent.ts`): mediana S//m² por distrito × dormitorios.
+- **Edad del aviso** (`lib/posting-age.ts`): cuando falta `firstDateOnline`, se estima con id→fecha (ids de Urbania son aproximadamente secuenciales).
+- **Costos y finanzas** (`lib/costs.ts`, `lib/finance.ts`): funciones puras; corren en el navegador.
+
+### Compuerta de sanidad
+
+Si un distrito trae &lt;20% de lo que trajo la corrida anterior, **no** se toca `lastSeenAt`. Evita que un parser roto marque Lima entera como vendida.
+
+## Estructura
+
+```
+app/                  Next.js (App Router)
+  departamentos/      ranking por cobertura + panel de supuestos
+  estadisticas/       precios (vivos vs salidas), inventario, pipeline
+  alertas/            bajadas y nuevos con cobertura alta (24h)
+  favoritos/          Property.favorite (sobrevive a reposts)
+  runs/               salud de ScrapeRun
+lib/                  dominio compartido (app + scraper)
+  finance.ts          cuota, cobertura, año de cruce
+  fair-price.ts       regresión de precio justo
+  fingerprint.ts      agrupación en Property
+  listings.ts         proyección delgada para la UI
+  analytics.ts        índices y pipeline
+  alerts.ts           cambios recientes
+scraper/              worker de Urbania
+  scrapers/urbania/   parse (__PRELOADED_STATE__ + DOM), bandas de precio
+  db/ingest.ts        escritura a Prisma + sanity gate
+prisma/               schema + migraciones + seed sintético
+ops/launchd/          jobs diarios/semanales
+scripts/              wrapper con kill switch y caffeinate
+```
 
 ## Setup
 
-1. Install dependencies:
 ```bash
 pnpm install
+cp .env.example .env          # DATABASE_URL=postgresql://...
+pnpm exec playwright install chromium
+pnpm db:migrate
+pnpm db:seed                  # fila de Assumptions
+pnpm db:generate
 ```
 
-2. Install a browser for scraping (used to bypass Cloudflare on Urbania.pe):
-   - **Playwright** (default) uses **Chrome** if installed: `pnpm exec playwright install chrome`
-   - To use bundled Chromium instead: `PLAYWRIGHT_USE_CHROME=0 pnpm scrape`
-   - **Puppeteer**: Chromium is installed automatically with the `puppeteer` package
+## Comandos
 
-3. Build the project:
+| Comando | Qué hace |
+|---|---|
+| `pnpm dev` | App en http://localhost:3000 |
+| `pnpm scrape` | Scrapea y escribe a Postgres + NDJSON |
+| `pnpm scrape --districts=lince --operations=sale,rent` | Un subconjunto |
+| `pnpm scrape:probe` | Reporte de calidad de parseo (no escribe) |
+| `pnpm replay --reset data/runs/*.ndjson` | Re-ingesta sin red |
+| `pnpm db:seed:market -- --weeks=16 --reset` | Mercado sintético con precio conocido |
+| `pnpm test` | Tests del dominio (159) |
+| `pnpm typecheck` | `tsc` de la app y del scraper |
+| `pnpm lint` | ESLint (flat config, Next) |
+| `pnpm ops:install-launchd` | Instala jobs 3am diario + sábado |
+
+### Kill switch y operación
+
 ```bash
-pnpm build
+# Pausar sin tocar launchd
+SCRAPER_ENABLED=false   # en .env
+
+# Correr ahora
+launchctl kickstart -k gui/$(id -u)/com.dptos.scrape.daily
+
+# Logs
+tail -f ~/Library/Logs/dptos/scrape-$(date +%Y-%m-%d).log
 ```
 
-## Usage
+Urbania bloquea Chromium headless (403). El scraper corre **headed** por defecto. Ver `.env.example` para `SCRAPER_HEADLESS`, canales de Playwright, etc.
 
-### Scraping
+## Flujo de datos de una corrida
 
-Run all scrapers (Playwright with **Chrome** by default):
-```bash
-pnpm scrape
-```
+1. Wrapper revisa `SCRAPER_ENABLED`, hace `git pull --ff-only`, arranca con `caffeinate`.
+2. Por distrito y operación: probe → si hay demasiados resultados, bisecta por precio (`sort=low_price`).
+3. Cada página: clasifica (ok / fin / bloqueo), parsea `__PRELOADED_STATE__` (fallback DOM).
+4. Cards van a NDJSON incremental y se bufferizan por distrito.
+5. Sanity gate por distrito → `ingestCards` (Property match, snapshot-on-change, qualityFlags).
+6. `ScrapeRun` queda con conteos, errores, `gitSha`.
 
-Use **Puppeteer** instead:
-```bash
-SCRAPER_ENGINE=puppeteer pnpm scrape
-```
-
-Use Playwright’s bundled Chromium instead of Chrome:
-```bash
-PLAYWRIGHT_USE_CHROME=0 pnpm scrape
-```
-
-**Getting 403 from Cloudflare?** Playwright uses installed Chrome by default. If you still get 403: try `SCRAPER_ENGINE=puppeteer`, or `CHALLENGE_WAIT_MS=20000`, or `BROWSER_TIMEOUT_MS=60000`.
-
-Urbania is scraped via the search listing page, e.g.:
-`https://urbania.pe/buscar/venta-de-departamentos-en-lince--lima--lima?bedroomMin=1&bedroomMax=2&page=2`
-
-### Processing Results
-
-Process all result files:
-```bash
-pnpm process
-```
-
-Process a specific file:
-```bash
-pnpm process data/urbania_2026-01-27T12-00-00.json
-```
-
-## Project Structure
+## UI: supuestos en la URL
 
 ```
-src/
-├── types/
-│   └── index.ts              # Type definitions (filters, apartment data)
-├── scrapers/
-│   ├── base-scraper.ts       # Base scraper class
-│   ├── urbania-scraper.ts    # Urbania.pe scraper (Playwright or Puppeteer)
-│   └── urbania/
-│       ├── build-search-url.ts   # Build /buscar/... URL from filters
-│       └── parse-urbania-html.ts # Parse listing page HTML with Cheerio
-├── utils/
-│   ├── anti-blocking.ts     # Anti-blocking utilities
-│   ├── browser-fetch.ts    # Playwright session for API (optional)
-│   ├── browser-loader.ts   # Playwright/Puppeteer HTML loader
-│   └── file-utils.ts       # File I/O utilities
-├── processor.ts            # Data processing and analysis
-└── index.ts                # Main entry point
+/departamentos?inicial=20&tea=8&tcea=9&plazo=20
 ```
 
-## Adding a New Scraper
+Cambiar un control recalcula cobertura, aporte y cuota en todas las filas y reordena el ranking. Los avisos del panel:
 
-1. Create a new file in `src/scrapers/` (e.g., `new-site-scraper.ts`)
-2. Extend the `BaseScraper` class:
-```typescript
-import { BaseScraper } from './base-scraper.js';
-import { ScraperFilters, ApartmentData } from '../types/index.js';
+- Inicial &lt; 20%: bancos suelen pedir más en segunda vivienda.
+- TCEA &lt; TEA: inconsistente (la TCEA incluye seguros).
 
-export class NewSiteScraper extends BaseScraper {
-  constructor() {
-    super('newsite', 'https://newsite.com', 1000, 3000);
-  }
+## Qué no está en alcance
 
-  protected async fetchApartments(filters: ScraperFilters): Promise<ApartmentData[]> {
-    // Implement your scraping logic here
-    // Use this.getHeaders() for HTTP requests
-    // Use this.rateLimiter.wait() between requests
-    // Return normalized ApartmentData[]
-  }
-}
-```
-
-3. Register it in `src/index.ts`:
-```typescript
-const scrapers: BaseScraper[] = [
-  new UrbaniaScraper(),
-  new NewSiteScraper(),
-];
-```
-
-## Data Format
-
-All scrapers output data in the same format:
-
-```json
-{
-  "source": "urbania",
-  "scrapedAt": "2026-01-27T12:00:00.000Z",
-  "totalResults": 20,
-  "apartments": [
-    {
-      "id": "148173999",
-      "source": "urbania",
-      "title": "Departamento en Lince",
-      "url": "https://urbania.pe/...",
-      "location": "Lince, Lima",
-      "address": "Jr. Coronel Domingo Casanova",
-      "price": 750060,
-      "priceFormatted": "S/ 750,060",
-      "bedrooms": 3,
-      "bathrooms": 0,
-      "area": 116,
-      ...
-    }
-  ],
-  "filters": { ... }
-}
-```
-
-## Filters
-
-All scrapers accept the same filter interface:
-
-```typescript
-{
-  propertyType?: 'apartment' | 'house' | 'office' | 'land' | 'all';
-  operationType?: 'sale' | 'rent' | 'all';
-  location?: string;
-  district?: string;
-  city?: string;
-  minPrice?: number;
-  maxPrice?: number;
-  minBedrooms?: number;
-  maxBedrooms?: number;
-  minBathrooms?: number;
-  minArea?: number;
-  maxArea?: number;
-  customFilters?: Record<string, any>; // Website-specific filters
-}
-```
-
-## Anti-Blocking & Cloudflare
-
-Sites like Urbania.pe are protected by **Cloudflare**. To avoid being blocked:
-
-- **Urbania scraper** uses a real browser (**Playwright** or **Puppeteer**): it loads the origin once so the Cloudflare challenge runs, then loads each search page (e.g. `/buscar/venta-de-departamentos-en-lince--lima--lima?bedroomMin=1&bedroomMax=2&page=2`) and parses the HTML with Cheerio. Set `SCRAPER_ENGINE=puppeteer` to use Puppeteer.
-
-Other anti-blocking measures:
-
-- Random user agent rotation (for scrapers that don’t use the browser)
-- Random delays between requests (configurable per scraper)
-- Rate limiting
-- Realistic HTTP headers
-- Respectful request patterns
-
-## License
-
-ISC
+Multi-fuente (Nexo, Infocasas), geocodificación fina dentro de Surco/San Miguel, páginas de detalle masivas, modelado del tipo de cambio.

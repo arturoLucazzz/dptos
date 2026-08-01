@@ -1,4 +1,4 @@
-import { ScraperFilters } from '../types/index.js';
+import { ScraperFilters } from '../types/index';
 
 /**
  * Example filter configurations

@@ -11,116 +11,139 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import type { ApartmentData } from "@/app/lib/types";
-
-const CHART_COLORS = ["#f59e0b", "#d97706", "#b45309", "#fbbf24", "#fcd34d", "#fde68a", "#fef3c7", "#fffbeb"];
+import type { FixedAssumptions, PanelAssumptions } from "@/lib/assumption-defaults";
+import type { ListingRow } from "@/lib/listing-row";
+import { financeForListing, formatPen, formatPct } from "@/lib/listing-finance";
+import { median } from "@/lib/linalg";
 
 interface DashboardsSectionProps {
-  filtered: ApartmentData[];
+  filtered: ListingRow[];
+  panel: PanelAssumptions;
+  fixedAssumptions: FixedAssumptions;
 }
 
-export function DashboardsSection({ filtered }: DashboardsSectionProps) {
-  const withPrice = filtered.filter((a) => a.price != null);
+export function DashboardsSection({ filtered, panel, fixedAssumptions }: DashboardsSectionProps) {
+  const withFinance = useMemo(
+    () =>
+      filtered
+        .map((listing) => ({ listing, finance: financeForListing(listing, panel, fixedAssumptions) }))
+        .filter((row): row is { listing: ListingRow; finance: NonNullable<typeof row.finance> } => row.finance != null),
+    [filtered, panel, fixedAssumptions]
+  );
+
+  const totals = useMemo(() => {
+    const coverages = withFinance.map((r) => r.finance.coveragePct);
+    const aportes = withFinance.map((r) => r.finance.monthlyContributionPen);
+    const prices = filtered.map((r) => r.pricePen);
+    const above40 = coverages.filter((c) => c >= 40).length;
+    return {
+      total: filtered.length,
+      withRent: withFinance.length,
+      coverageMedian: coverages.length ? median(coverages) : null,
+      aporteMedian: aportes.length ? median(aportes) : null,
+      above40,
+      precioMediano: prices.length ? median(prices) : null,
+    };
+  }, [filtered, withFinance]);
 
   const byDistrict = useMemo(() => {
-    const map = new Map<string, { count: number; totalPrice: number; prices: number[]; areas: number[] }>();
-    for (const a of filtered) {
-      const key = a.limaDistrictName ?? a.limaDistrictSlug ?? "Otro";
-      if (!map.has(key)) map.set(key, { count: 0, totalPrice: 0, prices: [], areas: [] });
+    const map = new Map<
+      string,
+      { coverages: number[]; aportes: number[]; count: number }
+    >();
+    for (const { listing, finance } of withFinance) {
+      const key = listing.districtName;
+      if (!map.has(key)) map.set(key, { coverages: [], aportes: [], count: 0 });
       const v = map.get(key)!;
       v.count++;
-      if (a.price != null) {
-        v.totalPrice += a.price;
-        v.prices.push(a.price);
-      }
-      if (a.area != null) v.areas.push(a.area);
+      v.coverages.push(finance.coveragePct);
+      v.aportes.push(finance.monthlyContributionPen);
     }
     return Array.from(map.entries())
       .map(([name, v]) => ({
         name,
         cantidad: v.count,
-        precioPromedio: v.prices.length ? Math.round(v.totalPrice / v.prices.length) : 0,
-        precioMin: v.prices.length ? Math.min(...v.prices) : 0,
-        precioMax: v.prices.length ? Math.max(...v.prices) : 0,
+        coberturaMediana: Math.round(median(v.coverages) * 10) / 10,
+        aporteMediano: Math.round(median(v.aportes)),
       }))
-      .sort((a, b) => ("cantidad" in b ? b.cantidad : 0) - ("cantidad" in a ? a.cantidad : 0));
-  }, [filtered]);
-
-  const totals = useMemo(() => {
-    const prices = withPrice.map((a) => a.price!);
-    const areas = withPrice.map((a) => a.area!).filter(Boolean);
-    const precioPorM2 = withPrice
-      .filter((a) => a.price != null && a.area != null && a.area > 0)
-      .map((a) => a.price! / a.area!)
-      .reduce((a, b, _, arr) => (arr.length ? a + b / arr.length : 0), 0);
-    return {
-      total: withPrice.length,
-      precioMin: prices.length ? Math.min(...prices) : 0,
-      precioMax: prices.length ? Math.max(...prices) : 0,
-      precioPromedio: prices.length ? Math.round(prices.reduce((a, b) => a + b, 0) / prices.length) : 0,
-      precioMediano: prices.length ? prices[Math.floor(prices.length / 2)] : 0,
-      areaPromedio: areas.length ? Math.round(areas.reduce((a, b) => a + b, 0) / areas.length) : 0,
-      precioPorM2: precioPorM2,
-    };
-  }, [withPrice]);
+      .sort((a, b) => b.coberturaMediana - a.coberturaMediana);
+  }, [withFinance]);
 
   return (
     <div className="space-y-8">
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Total inmuebles</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">Avisos</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-bold">{totals.total.toLocaleString("es-PE")}</p>
+            <p className="text-xs text-muted-foreground">
+              {totals.withRent} con alquiler estimado
+            </p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Precio mínimo</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Cobertura mediana
+            </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">S/ {totals.precioMin.toLocaleString("es-PE")}</p>
+            <p className="text-2xl font-bold">{formatPct(totals.coverageMedian)}</p>
+            <p className="text-xs text-muted-foreground">con los supuestos actuales</p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Precio máximo</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Aporte mediano / mes
+            </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">S/ {totals.precioMax.toLocaleString("es-PE")}</p>
+            <p className="text-2xl font-bold">{formatPen(totals.aporteMedian)}</p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Precio promedio</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Cobertura ≥ 40%
+            </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">S/ {totals.precioPromedio.toLocaleString("es-PE")}</p>
+            <p className="text-2xl font-bold">{totals.above40.toLocaleString("es-PE")}</p>
+            <p className="text-xs text-muted-foreground">
+              precio mediano {formatPen(totals.precioMediano)}
+            </p>
           </CardContent>
         </Card>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-1">
+      {byDistrict.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>Precio promedio por distrito</CardTitle>
+            <CardTitle className="text-base">Cobertura mediana por distrito</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              El ranking de distritos cambia con la inicial: no es el mismo con 10% que con 40%.
+            </p>
           </CardHeader>
-          <CardContent>
-            <div className="h-[300px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={byDistrict} margin={{ top: 5, right: 5, left: 5, bottom: 30 }}>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                  <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                  <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
-                  <Tooltip formatter={(v: number | undefined) => v ? `S/ ${v.toLocaleString("es-PE")}` : "S/ 0"} />
-                  <Bar dataKey="precioPromedio" fill={CHART_COLORS[1]} name="Precio promedio" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
+          <CardContent className="h-72">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={byDistrict} margin={{ top: 8, right: 8, left: 0, bottom: 24 }}>
+                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+                <YAxis tick={{ fontSize: 12 }} unit="%" />
+                <Tooltip
+                  formatter={(value) =>
+                    typeof value === "number" ? [`${value}%`, "Cobertura mediana"] : [String(value), ""]
+                  }
+                />
+                <Bar dataKey="coberturaMediana" fill="#d97706" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
           </CardContent>
         </Card>
-      </div>
+      )}
     </div>
   );
 }

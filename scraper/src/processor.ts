@@ -1,5 +1,5 @@
-import { ScraperResult, ApartmentData } from './types/index.js';
-import { readAllResults, readResult } from './utils/file-utils.js';
+import { ScraperResult, ApartmentData } from './types/index';
+import { readAllResults, readResult } from './utils/file-utils';
 
 /**
  * Process scraped apartment data

@@ -9,3 +9,6 @@ data/
 !package.json
 !tsconfig.json
 !tsconfig.scraper.json
+lib/generated/
+.tmp/
+*.tsbuildinfo

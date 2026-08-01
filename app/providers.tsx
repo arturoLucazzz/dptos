@@ -1,71 +1,63 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-
-const STORAGE_KEY = "dptos-favoritos";
+import { createContext, useCallback, useContext, useMemo, useOptimistic, useTransition } from "react";
+import { setFavorite } from "@/app/actions";
 
 type FavoritesContextValue = {
   favoriteIds: Set<string>;
-  toggleFavorite: (id: string) => void;
-  isFavorite: (id: string) => boolean;
+  toggleFavorite: (propertyId: string) => void;
+  isFavorite: (propertyId: string | null | undefined) => boolean;
 };
 
 const FavoritesContext = createContext<FavoritesContextValue | null>(null);
 
-export function FavoritesProvider({ children }: { children: React.ReactNode }) {
-  const [favoriteIds, setFavoriteIds] = useState<Set<string>>(() => new Set());
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const arr = JSON.parse(raw) as string[];
-        setFavoriteIds(new Set(Array.isArray(arr) ? arr : []));
-      }
-    } catch {
-      // ignore
-    }
-  }, []);
-
-  const persist = useCallback((updater: (prev: Set<string>) => Set<string>) => {
-    setFavoriteIds((prev) => {
-      const next = updater(prev);
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify([...next]));
-      } catch {
-        // ignore
-      }
-      return next;
-    });
-  }, []);
+/**
+ * Favorites live on `Property`, not in localStorage.
+ *
+ * A favorite keyed by posting id vanishes when the broker reposts — which is exactly
+ * when you most want to remember you already looked at the apartment. Optimistic
+ * updates keep the checkbox snappy; the server action is the source of truth.
+ */
+export function FavoritesProvider({
+  initialFavoriteIds,
+  children,
+}: {
+  initialFavoriteIds: string[];
+  children: React.ReactNode;
+}) {
+  const [optimistic, setOptimistic] = useOptimistic(
+    new Set(initialFavoriteIds),
+    (_current: Set<string>, next: Set<string>) => next
+  );
+  const [, startTransition] = useTransition();
 
   const toggleFavorite = useCallback(
-    (id: string) => {
-      persist((prev) => {
-        const next = new Set(prev);
-        if (next.has(id)) next.delete(id);
-        else next.add(id);
-        return next;
+    (propertyId: string) => {
+      if (!propertyId) return;
+      const next = new Set(optimistic);
+      const becoming = !next.has(propertyId);
+      if (becoming) next.add(propertyId);
+      else next.delete(propertyId);
+
+      startTransition(async () => {
+        setOptimistic(next);
+        await setFavorite(propertyId, becoming);
       });
     },
-    [persist]
+    [optimistic, setOptimistic]
   );
 
   const isFavorite = useCallback(
-    (id: string) => favoriteIds.has(id),
-    [favoriteIds]
+    (propertyId: string | null | undefined) => !!propertyId && optimistic.has(propertyId),
+    [optimistic]
   );
 
   const value = useMemo<FavoritesContextValue>(
-    () => ({ favoriteIds, toggleFavorite, isFavorite }),
-    [favoriteIds, toggleFavorite, isFavorite]
+    () => ({ favoriteIds: optimistic, toggleFavorite, isFavorite }),
+    [optimistic, toggleFavorite, isFavorite]
   );
 
-  return (
-    <FavoritesContext.Provider value={value}>
-      {children}
-    </FavoritesContext.Provider>
-  );
+  return <FavoritesContext.Provider value={value}>{children}</FavoritesContext.Provider>;
 }
 
 export function useFavorites() {

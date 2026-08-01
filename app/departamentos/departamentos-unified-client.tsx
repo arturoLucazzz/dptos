@@ -4,9 +4,11 @@ import { useMemo, useState } from "react";
 import { DashboardsSection } from "./dashboards-section";
 import { DepartamentosTable } from "./departamentos-table";
 import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
-import { MultiSelect, MultiSelectOption } from "@/components/ui/multi-select";
-import type { ApartmentData } from "@/app/lib/types";
+import { MultiSelect, type MultiSelectOption } from "@/components/ui/multi-select";
+import { useAssumptionsContext } from "@/components/assumptions-provider";
+import type { FixedAssumptions } from "@/lib/assumption-defaults";
+import type { ListingRow } from "@/lib/listing-row";
+import { financeForListing } from "@/lib/listing-finance";
 
 export interface DistrictOption {
   value: string;
@@ -14,49 +16,49 @@ export interface DistrictOption {
 }
 
 interface DepartamentosUnifiedClientProps {
-  apartments: ApartmentData[];
+  listings: ListingRow[];
   districtOptions: DistrictOption[];
+  fixedAssumptions: FixedAssumptions;
 }
 
-export function DepartamentosUnifiedClient({ apartments, districtOptions }: DepartamentosUnifiedClientProps) {
+export function DepartamentosUnifiedClient({
+  listings,
+  districtOptions,
+  fixedAssumptions,
+}: DepartamentosUnifiedClientProps) {
+  const { panel } = useAssumptionsContext();
   const [selectedDistricts, setSelectedDistricts] = useState<string[]>([]);
   const [priceMin, setPriceMin] = useState<string>("");
   const [priceMax, setPriceMax] = useState<string>("");
-  const [operationType, setOperationType] = useState<string>("Venta");
+  const [coverageMin, setCoverageMin] = useState<string>("");
 
-  // Convert district options to MultiSelectOption format
-  const multiSelectDistrictOptions: MultiSelectOption[] = useMemo(() =>
-    districtOptions.map((d) => ({
-      label: d.label,
-      value: d.value,
-    })),
+  const multiSelectDistrictOptions: MultiSelectOption[] = useMemo(
+    () => districtOptions.map((d) => ({ label: d.label, value: d.value })),
     [districtOptions]
   );
 
   const filtered = useMemo(() => {
-    let list = [...apartments];
-    
+    let list = listings;
+
     if (selectedDistricts.length > 0) {
-      list = list.filter((r) => selectedDistricts.includes(r.limaDistrictSlug ?? ""));
+      list = list.filter((r) => selectedDistricts.includes(r.districtSlug));
     }
-    
+
     const min = priceMin ? Number(priceMin) : null;
     const max = priceMax ? Number(priceMax) : null;
-    if (min != null && !Number.isNaN(min)) list = list.filter((r) => r.price != null && r.price >= min);
-    if (max != null && !Number.isNaN(max)) list = list.filter((r) => r.price != null && r.price <= max);
-    
-    if (operationType !== "Todos") {
-      list = list.filter((r) => (r.operationType ?? "") === operationType);
-    }
-    
-    return list;
-  }, [apartments, selectedDistricts, priceMin, priceMax, operationType]);
+    if (min != null && !Number.isNaN(min)) list = list.filter((r) => r.pricePen >= min);
+    if (max != null && !Number.isNaN(max)) list = list.filter((r) => r.pricePen <= max);
 
-  const operationTypeOptions = [
-    { value: "Todos", label: "Todos los tipos" },
-    { value: "Venta", label: "Venta" },
-    { value: "Alquiler", label: "Alquiler" },
-  ];
+    const minCoverage = coverageMin ? Number(coverageMin) : null;
+    if (minCoverage != null && !Number.isNaN(minCoverage)) {
+      list = list.filter((r) => {
+        const finance = financeForListing(r, panel, fixedAssumptions);
+        return finance != null && finance.coveragePct >= minCoverage;
+      });
+    }
+
+    return list;
+  }, [listings, selectedDistricts, priceMin, priceMax, coverageMin, panel, fixedAssumptions]);
 
   return (
     <div className="space-y-10">
@@ -73,17 +75,6 @@ export function DepartamentosUnifiedClient({ apartments, districtOptions }: Depa
             className="w-[280px]"
           />
         </div>
-        
-        <div className="flex flex-col gap-2">
-          <label className="text-sm text-muted-foreground">Tipo de Operación</label>
-          <Select
-            value={operationType}
-            onValueChange={setOperationType}
-            options={operationTypeOptions}
-            className="w-[180px]"
-            placeholder="Seleccionar tipo"
-          />
-        </div>
 
         <div className="flex flex-col gap-2">
           <label className="text-sm text-muted-foreground">Precio mín</label>
@@ -92,31 +83,43 @@ export function DepartamentosUnifiedClient({ apartments, districtOptions }: Depa
             placeholder="Ej. 100000"
             value={priceMin}
             onChange={(e) => setPriceMin(e.target.value)}
-            className="w-32 h-9"
+            className="h-9 w-32"
           />
         </div>
-        
+
         <div className="flex flex-col gap-2">
           <label className="text-sm text-muted-foreground">Precio máx</label>
           <Input
             type="number"
-            placeholder="Ej. 500000"
+            placeholder="Ej. 800000"
             value={priceMax}
             onChange={(e) => setPriceMax(e.target.value)}
-            className="w-32 h-9"
+            className="h-9 w-32"
+          />
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <label className="text-sm text-muted-foreground">Cobertura mín %</label>
+          <Input
+            type="number"
+            placeholder="Ej. 40"
+            value={coverageMin}
+            onChange={(e) => setCoverageMin(e.target.value)}
+            className="h-9 w-28"
           />
         </div>
       </div>
 
-      <section>
-        <h2 className="mb-6 text-xl font-semibold">Estadísticas</h2>
-        <DashboardsSection filtered={filtered} />
-      </section>
-
-      <section>
-        <h2 className="mb-6 text-xl font-semibold">Tabla de departamentos</h2>
-        <DepartamentosTable data={filtered} />
-      </section>
+      <DashboardsSection
+        filtered={filtered}
+        panel={panel}
+        fixedAssumptions={fixedAssumptions}
+      />
+      <DepartamentosTable
+        data={filtered}
+        panel={panel}
+        fixedAssumptions={fixedAssumptions}
+      />
     </div>
   );
 }

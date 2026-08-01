@@ -1,20 +1,15 @@
 {
+  // Build/emit entry. The IDE picks up scraper/tsconfig.json when editing files
+  // under scraper/; this file is what `pnpm typecheck` / `pnpm build:scraper` run.
+  "extends": "./scraper/tsconfig.json",
   "compilerOptions": {
-    "target": "ES2022",
-    "module": "ES2022",
-    "lib": ["ES2022"],
-    "moduleResolution": "node",
-    "outDir": "./dist",
-    "rootDir": "scraper/src",
-    "strict": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
-    "resolveJsonModule": true,
+    "noEmit": false,
     "declaration": true,
     "declarationMap": true,
-    "sourceMap": true
+    "sourceMap": true,
+    "outDir": "./dist",
+    "rootDir": "."
   },
-  "include": ["scraper/src/**/*"],
-  "exclude": ["node_modules", "dist"]
+  "include": ["scraper/src/**/*", "lib/**/*", "prisma/**/*.ts"],
+  "exclude": ["node_modules", "dist", "lib/generated/**", "lib/utils.ts"]
 }

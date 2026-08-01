@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ES2022",
+    "lib": ["ES2022"],
+    "moduleResolution": "node",
+    "outDir": "../dist",
+    // Repo root, so `@/lib/...` resolves the same as in the Next app.
+    "baseUrl": "..",
+    "paths": { "@/*": ["./*"] },
+    "rootDir": "..",
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    // Surfaces Map/Set for-of and similar under older targets; keep it on so a
+    // misconfigured editor project cannot silently accept patterns that break
+    // when emitted for ES5.
+    "downlevelIteration": true
+  },
+  "include": ["src/**/*", "../lib/**/*", "../prisma/**/*.ts"],
+  "exclude": ["../node_modules", "../dist", "../lib/generated/**", "../lib/utils.ts"]
+}

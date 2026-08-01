@@ -1,37 +1,58 @@
-import { getUrbaniaData } from "@/app/lib/get-data";
+import { loadSaleListings } from "@/lib/listings";
+import { AssumptionsShell } from "@/components/assumptions-panel";
 import { DepartamentosUnifiedClient } from "./departamentos-unified-client";
 
-export default async function DepartamentosPage() {
-  const data = await getUrbaniaData();
+export const dynamic = "force-dynamic";
 
-  if (!data) {
+export default async function DepartamentosPage() {
+  let page;
+  try {
+    page = await loadSaleListings();
+  } catch (error) {
     return (
       <div className="rounded-lg border bg-card p-8 text-center">
         <h1 className="text-xl font-semibold">Departamentos</h1>
         <p className="mt-4 text-muted-foreground">
-          No hay datos. Ejecuta <code className="rounded bg-muted px-1.5 py-0.5">pnpm scrape</code> para generar el JSON en <code className="rounded bg-muted px-1.5 py-0.5">data/</code>.
+          No se pudo leer la base. ¿Corriste{" "}
+          <code className="rounded bg-muted px-1.5 py-0.5">pnpm db:migrate</code> y{" "}
+          <code className="rounded bg-muted px-1.5 py-0.5">pnpm scrape</code>?
+        </p>
+        <p className="mt-2 text-xs text-muted-foreground">
+          {error instanceof Error ? error.message : String(error)}
         </p>
       </div>
     );
   }
 
-  const districtOptions = Array.from(
-    new Map(
-      data.apartments
-        .filter((a) => a.limaDistrictSlug && a.limaDistrictName)
-        .map((a) => [a.limaDistrictSlug!, { value: a.limaDistrictSlug!, label: a.limaDistrictName! }])
-    ).values()
-  ).sort((a, b) => a.label.localeCompare(b.label));
+  if (page.listings.length === 0) {
+    return (
+      <div className="rounded-lg border bg-card p-8 text-center">
+        <h1 className="text-xl font-semibold">Departamentos</h1>
+        <p className="mt-4 text-muted-foreground">
+          No hay avisos de venta. Ejecuta{" "}
+          <code className="rounded bg-muted px-1.5 py-0.5">pnpm scrape</code> o{" "}
+          <code className="rounded bg-muted px-1.5 py-0.5">pnpm replay</code>.
+        </p>
+      </div>
+    );
+  }
 
   return (
-    <div>
+    <AssumptionsShell>
       <h1 className="text-2xl font-semibold">Departamentos</h1>
       <p className="mt-1 text-sm text-muted-foreground">
-        {data.totalResults} resultados · actualizado {new Date(data.scrapedAt).toLocaleString("es-PE")}
+        {page.listings.length.toLocaleString("es-PE")} avisos
+        {page.scrapedAt
+          ? ` · actualizado ${new Date(page.scrapedAt).toLocaleString("es-PE")}`
+          : ""}
       </p>
       <div className="mt-6">
-        <DepartamentosUnifiedClient apartments={data.apartments} districtOptions={districtOptions} />
+        <DepartamentosUnifiedClient
+          listings={page.listings}
+          districtOptions={page.districtOptions}
+          fixedAssumptions={page.fixedAssumptions}
+        />
       </div>
-    </div>
+    </AssumptionsShell>
   );
 }

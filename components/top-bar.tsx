@@ -3,10 +3,13 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { Building2, Heart } from "lucide-react";
+import { Building2, Heart, Activity, BarChart3, Bell } from "lucide-react";
 
 const links = [
   { href: "/departamentos", label: "Departamentos", icon: Building2 },
+  { href: "/estadisticas", label: "Estadísticas", icon: BarChart3 },
+  { href: "/alertas", label: "Alertas", icon: Bell },
+  { href: "/runs", label: "Corridas", icon: Activity },
   { href: "/favoritos", label: "Favoritos", icon: Heart },
 ];
 

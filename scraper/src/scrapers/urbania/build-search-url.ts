@@ -5,9 +5,22 @@
  * Example: https://urbania.pe/buscar/venta-de-departamentos-en-lince--lima--lima?bedroomMin=1&bedroomMax=2&page=2
  */
 
-import { ScraperFilters } from '../../types/index.js';
+import { ScraperFilters, UrbaniaSort } from '../../types/index';
 
 const BASE = 'https://urbania.pe/buscar';
+
+/** Query values Urbania accepts for the "Ordenar" dropdown. */
+const SORT_PARAM: Record<UrbaniaSort, string> = {
+  relevance: 'relevance',
+  priceAsc: 'low_price',
+  priceDesc: 'high_price',
+  newest: 'more_recent',
+  mostViewed: 'most_visit',
+  priceDropped: 'most_lowered_price',
+};
+
+/** Urbania's currency ids, used by the price filter. */
+const CURRENCY_ID = { PEN: '6', USD: '2' } as const;
 
 function slug(str: string): string {
   return str
@@ -41,12 +54,17 @@ export function buildUrbaniaSearchUrl(filters: ScraperFilters, page: number = 1)
 
   if (filters.minBedrooms != null) params.set('bedroomMin', String(filters.minBedrooms));
   if (filters.maxBedrooms != null) params.set('bedroomMax', String(filters.maxBedrooms));
-  if (filters.minPrice != null) params.set('minPrice', String(filters.minPrice));
-  if (filters.maxPrice != null) params.set('maxPrice', String(filters.maxPrice));
+  // These are the names the site's own filter uses. `minPrice`/`maxPrice` parse
+  // fine and are then ignored, which is worse than an error.
+  if (filters.minPrice != null) params.set('priceMin', String(Math.round(filters.minPrice)));
+  if (filters.maxPrice != null) params.set('priceMax', String(Math.round(filters.maxPrice)));
+  if (filters.minPrice != null || filters.maxPrice != null) {
+    params.set('currencyId', CURRENCY_ID.PEN);
+  }
+  // Price banding only works if the ordering is stable and price-based, so the
+  // sort is part of the same mechanism rather than a cosmetic option.
+  if (filters.sort) params.set('sort', SORT_PARAM[filters.sort]);
   if (page > 1) params.set('page', String(page));
-
-  // const antiquity = filters.customFilters?.antiquity;
-  // if (antiquity != null) params.set('antiquity', String(antiquity));
 
   const query = params.toString();
   return query ? `${BASE}/${path}?${query}` : `${BASE}/${path}`;

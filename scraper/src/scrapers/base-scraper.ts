@@ -1,5 +1,5 @@
-import { ScraperFilters, ScraperResult, ApartmentData } from '../types/index.js';
-import { RateLimiter, createHeaders } from '../utils/anti-blocking.js';
+import { ScraperFilters, ScraperResult, ApartmentData } from '../types/index';
+import { RateLimiter, createHeaders } from '../utils/anti-blocking';
 
 /**
  * Base scraper interface that all website-specific scrapers must implement
