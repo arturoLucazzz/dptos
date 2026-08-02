@@ -11,6 +11,7 @@ import {
 import { useMemo, useState } from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useFavorites } from "@/app/providers";
 import type { FixedAssumptions, PanelAssumptions } from "@/lib/assumption-defaults";
 import type { ListingRow } from "@/lib/listing-row";
@@ -27,18 +28,17 @@ interface DepartamentosTableProps {
 function SortHeader({
   label,
   column,
-  title,
+  tip,
 }: {
   label: string;
   column: { toggleSorting: (desc?: boolean) => void; getIsSorted: () => false | "asc" | "desc" };
-  title?: string;
+  tip?: string;
 }) {
-  return (
+  const button = (
     <Button
       variant="ghost"
       size="sm"
-      className="-ml-2"
-      title={title}
+      className={cn("-ml-2", tip && "cursor-help")}
       onClick={(e) => {
         e.stopPropagation();
         column.toggleSorting(column.getIsSorted() === "asc");
@@ -47,6 +47,15 @@ function SortHeader({
       {label}
       <ArrowUpDown className="ml-2 h-4 w-4" />
     </Button>
+  );
+
+  if (!tip) return button;
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{button}</TooltipTrigger>
+      <TooltipContent>{tip}</TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -67,7 +76,7 @@ export function DepartamentosTable({ data, panel, fixedAssumptions }: Departamen
               type="button"
               disabled={!propertyId}
               aria-label={favorited ? "Quitar de favoritos" : "Marcar favorito"}
-              className="inline-flex items-center justify-center rounded p-1 text-muted-foreground hover:text-amber-500 disabled:opacity-40"
+              className="inline-flex cursor-pointer items-center justify-center rounded p-1 text-muted-foreground hover:text-amber-500 disabled:cursor-not-allowed disabled:opacity-40"
               onClick={(e) => {
                 e.stopPropagation();
                 if (propertyId) toggleFavorite(propertyId);
@@ -112,7 +121,7 @@ export function DepartamentosTable({ data, panel, fixedAssumptions }: Departamen
           <SortHeader
             label="Cuota"
             column={column}
-            title="Pago mensual del préstamo con tus supuestos"
+            tip="Pago mensual del préstamo con tus supuestos (precio, inicial %, TCEA, plazo)."
           />
         ),
         cell: ({ row }) => {
@@ -128,7 +137,7 @@ export function DepartamentosTable({ data, panel, fixedAssumptions }: Departamen
           <SortHeader
             label="% cobertura"
             column={column}
-            title="% de la cuota que cubre el alquiler neto estimado"
+            tip="% de la cuota (TCEA) que cubre el alquiler neto estimado. 100% = el alquiler paga la cuota sola."
           />
         ),
         cell: ({ row }) => {
@@ -156,7 +165,7 @@ export function DepartamentosTable({ data, panel, fixedAssumptions }: Departamen
           <SortHeader
             label="De bolsillo"
             column={column}
-            title="Cuota − alquiler neto: lo que pones de tu bolsillo cada mes"
+            tip="Lo que falta poner de tu bolsillo cada mes: cuota − alquiler neto."
           />
         ),
         cell: ({ row }) => {
@@ -172,7 +181,7 @@ export function DepartamentosTable({ data, panel, fixedAssumptions }: Departamen
           <SortHeader
             label="% vs precio justo"
             column={column}
-            title="Diferencia vs el precio que estima el modelo. Positivo = más barato que el modelo"
+            tip="Diferencia vs el precio que estima el modelo. Positivo = más barato que el modelo."
           />
         ),
         cell: ({ row }) => {
@@ -191,7 +200,7 @@ export function DepartamentosTable({ data, panel, fixedAssumptions }: Departamen
           <SortHeader
             label="% inicial necesario"
             column={column}
-            title="Enganche requerido para que el alquiler cubra el 100% de la cuota"
+            tip="Enganche requerido para que el alquiler cubra el 100% de la cuota."
           />
         ),
         cell: ({ row }) => {
@@ -217,52 +226,54 @@ export function DepartamentosTable({ data, panel, fixedAssumptions }: Departamen
   });
 
   return (
-    <div className="space-y-4">
-      <p className="text-sm text-muted-foreground">
-        {data.length} resultado{data.length !== 1 ? "s" : ""} · orden por % cobertura (recalcula con los
-        supuestos)
-      </p>
-      <div className="overflow-x-auto rounded-md border">
-        <Table>
-          <TableHeader>
-            {table.getHeaderGroups().map((hg) => (
-              <TableRow key={hg.id}>
-                {hg.headers.map((h) => (
-                  <TableHead key={h.id} className="whitespace-nowrap">
-                    {flexRender(h.column.columnDef.header, h.getContext())}
-                  </TableHead>
-                ))}
-              </TableRow>
-            ))}
-          </TableHeader>
-          <TableBody>
-            {table.getRowModel().rows.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={columns.length} className="h-24 text-center text-muted-foreground">
-                  Sin resultados
-                </TableCell>
-              </TableRow>
-            ) : (
-              table.getRowModel().rows.map((row) => (
-                <TableRow
-                  key={row.id}
-                  className="cursor-pointer"
-                  onClick={() => {
-                    const path = row.original.sourcePath;
-                    if (path) window.open(`https://urbania.pe${path}`, "_blank", "noopener,noreferrer");
-                  }}
-                >
-                  {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id} className="whitespace-nowrap">
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </TableCell>
+    <TooltipProvider>
+      <div className="space-y-4">
+        <p className="text-sm text-muted-foreground">
+          {data.length} resultado{data.length !== 1 ? "s" : ""} · orden por % cobertura (recalcula con los
+          supuestos)
+        </p>
+        <div className="overflow-x-auto rounded-md border">
+          <Table>
+            <TableHeader>
+              {table.getHeaderGroups().map((hg) => (
+                <TableRow key={hg.id}>
+                  {hg.headers.map((h) => (
+                    <TableHead key={h.id} className="whitespace-nowrap">
+                      {flexRender(h.column.columnDef.header, h.getContext())}
+                    </TableHead>
                   ))}
                 </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
+              ))}
+            </TableHeader>
+            <TableBody>
+              {table.getRowModel().rows.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={columns.length} className="h-24 text-center text-muted-foreground">
+                    Sin resultados
+                  </TableCell>
+                </TableRow>
+              ) : (
+                table.getRowModel().rows.map((row) => (
+                  <TableRow
+                    key={row.id}
+                    className="cursor-pointer"
+                    onClick={() => {
+                      const path = row.original.sourcePath;
+                      if (path) window.open(`https://urbania.pe${path}`, "_blank", "noopener,noreferrer");
+                    }}
+                  >
+                    {row.getVisibleCells().map((cell) => (
+                      <TableCell key={cell.id} className="whitespace-nowrap">
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
       </div>
-    </div>
+    </TooltipProvider>
   );
 }

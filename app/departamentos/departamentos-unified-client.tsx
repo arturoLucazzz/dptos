@@ -22,33 +22,6 @@ interface DepartamentosUnifiedClientProps {
   fixedAssumptions: FixedAssumptions;
 }
 
-const GLOSSARY: { term: string; meaning: string }[] = [
-  {
-    term: "% cobertura",
-    meaning: "% de la cuota (TCEA) que cubre el alquiler neto estimado. 100% = el alquiler paga la cuota sola.",
-  },
-  {
-    term: "De bolsillo",
-    meaning: "Lo que falta poner de tu bolsillo cada mes: cuota − alquiler neto.",
-  },
-  {
-    term: "Cuota",
-    meaning: "Pago mensual del préstamo con tus supuestos (precio, inicial %, TCEA, plazo).",
-  },
-  {
-    term: "% vs precio justo",
-    meaning: "Diferencia vs el precio que estima el modelo. Positivo = más barato que el modelo.",
-  },
-  {
-    term: "% inicial necesario",
-    meaning: "Enganche requerido para que el alquiler cubra el 100% de la cuota.",
-  },
-  {
-    term: "Inicial / TEA / TCEA / Plazo",
-    meaning: "Supuestos del panel: enganche, tasa del préstamo, tasa total con seguros/comisiones, y años del crédito.",
-  },
-];
-
 export function DepartamentosUnifiedClient({
   listings,
   districtOptions,
@@ -140,21 +113,6 @@ export function DepartamentosUnifiedClient({
         </div>
 
         <AssumptionsFields />
-
-        <details className="text-sm text-muted-foreground">
-          <summary className="cursor-pointer font-medium text-foreground/80 hover:text-foreground">
-            Glosario
-          </summary>
-          <ul className="mt-2 space-y-1.5 border-t pt-2">
-            {GLOSSARY.map((item) => (
-              <li key={item.term}>
-                <span className="font-medium text-foreground/90">{item.term}</span>
-                {" — "}
-                {item.meaning}
-              </li>
-            ))}
-          </ul>
-        </details>
       </div>
 
       <DashboardsSection
