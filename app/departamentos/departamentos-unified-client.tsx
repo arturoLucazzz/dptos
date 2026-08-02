@@ -5,7 +5,10 @@ import { useQueryStates } from "nuqs";
 import useSWR from "swr";
 import { DashboardsSection } from "./dashboards-section";
 import { DepartamentosTable } from "./departamentos-table";
-import { AssumptionsFields } from "@/components/assumptions-panel";
+import {
+  AssumptionsFields,
+  type PanelDraftStrings,
+} from "@/components/assumptions-panel";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { MultiSelect, type MultiSelectOption } from "@/components/ui/multi-select";
@@ -20,6 +23,7 @@ import {
   departamentosSearchParams,
 } from "@/lib/departamentos-search-params";
 import { assumptionWarnings } from "@/lib/finance";
+import { parseNumericInput, sanitizeNumericInput } from "@/lib/numeric-input";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 
 interface DistrictOption {
@@ -48,17 +52,30 @@ type DraftFilters = {
   bedroomsMin: string;
   bedroomsMax: string;
   coverageMin: string;
-  panel: PanelAssumptions;
+  panel: PanelDraftStrings;
 };
 
 function optionalNumberString(n: number | null): string {
   return n == null ? "" : String(n);
 }
 
-function parseOptionalInput(raw: string): number | null {
-  if (raw.trim() === "") return null;
-  const n = Number(raw);
-  return Number.isFinite(n) ? n : null;
+function panelToStrings(panel: PanelAssumptions): PanelDraftStrings {
+  return {
+    downPaymentPct: String(panel.downPaymentPct),
+    tea: String(panel.tea),
+    tcea: String(panel.tcea),
+    termYears: String(panel.termYears),
+  };
+}
+
+function parsePanelDraft(panel: PanelDraftStrings): PanelAssumptions {
+  return {
+    downPaymentPct:
+      parseNumericInput(panel.downPaymentPct) ?? DEFAULT_PANEL.downPaymentPct,
+    tea: parseNumericInput(panel.tea) ?? DEFAULT_PANEL.tea,
+    tcea: parseNumericInput(panel.tcea) ?? DEFAULT_PANEL.tcea,
+    termYears: Math.round(parseNumericInput(panel.termYears) ?? DEFAULT_PANEL.termYears),
+  };
 }
 
 function draftEqualsUrl(a: DraftFilters, b: DraftFilters): boolean {
@@ -89,12 +106,12 @@ export function DepartamentosUnifiedClient() {
     bedroomsMin: optionalNumberString(urlState.bedroomsMin),
     bedroomsMax: optionalNumberString(urlState.bedroomsMax),
     coverageMin: optionalNumberString(urlState.coverageMin),
-    panel: {
+    panel: panelToStrings({
       downPaymentPct: urlState.inicial,
       tea: urlState.tea,
       tcea: urlState.tcea,
       termYears: urlState.plazo,
-    },
+    }),
   }));
 
   // Sync draft from URL on back/forward (URL is an external system here).
@@ -106,12 +123,12 @@ export function DepartamentosUnifiedClient() {
       bedroomsMin: optionalNumberString(urlState.bedroomsMin),
       bedroomsMax: optionalNumberString(urlState.bedroomsMax),
       coverageMin: optionalNumberString(urlState.coverageMin),
-      panel: {
+      panel: panelToStrings({
         downPaymentPct: urlState.inicial,
         tea: urlState.tea,
         tcea: urlState.tcea,
         termYears: urlState.plazo,
-      },
+      }),
     };
     // eslint-disable-next-line react-hooks/set-state-in-effect -- sync from URL navigation
     setDraft((prev) => (draftEqualsUrl(prev, next) ? prev : next));
@@ -139,15 +156,20 @@ export function DepartamentosUnifiedClient() {
     const current = urlStateRef.current;
     const next = {
       districts: debouncedDraft.districts,
-      priceMin: parseOptionalInput(debouncedDraft.priceMin),
-      priceMax: parseOptionalInput(debouncedDraft.priceMax),
-      bedroomsMin: parseOptionalInput(debouncedDraft.bedroomsMin),
-      bedroomsMax: parseOptionalInput(debouncedDraft.bedroomsMax),
-      coverageMin: parseOptionalInput(debouncedDraft.coverageMin),
-      inicial: debouncedDraft.panel.downPaymentPct,
-      tea: debouncedDraft.panel.tea,
-      tcea: debouncedDraft.panel.tcea,
-      plazo: Math.round(debouncedDraft.panel.termYears),
+      priceMin: parseNumericInput(debouncedDraft.priceMin),
+      priceMax: parseNumericInput(debouncedDraft.priceMax),
+      bedroomsMin: parseNumericInput(debouncedDraft.bedroomsMin),
+      bedroomsMax: parseNumericInput(debouncedDraft.bedroomsMax),
+      coverageMin: parseNumericInput(debouncedDraft.coverageMin),
+      // Keep previous URL value while the field is empty / mid-edit (e.g. "0.").
+      inicial:
+        parseNumericInput(debouncedDraft.panel.downPaymentPct) ?? current.inicial,
+      tea: parseNumericInput(debouncedDraft.panel.tea) ?? current.tea,
+      tcea: parseNumericInput(debouncedDraft.panel.tcea) ?? current.tcea,
+      plazo:
+        parseNumericInput(debouncedDraft.panel.termYears) != null
+          ? Math.round(parseNumericInput(debouncedDraft.panel.termYears)!)
+          : current.plazo,
     };
 
     const filtersChanged =
@@ -201,7 +223,7 @@ export function DepartamentosUnifiedClient() {
   const warnings = useMemo(
     () =>
       assumptionWarnings({
-        ...draft.panel,
+        ...parsePanelDraft(draft.panel),
         vacancyMonthsPerYear: 1,
         rentGrowthPct: 3,
         rentIncomeTaxPct: 5,
@@ -210,14 +232,14 @@ export function DepartamentosUnifiedClient() {
   );
 
   const setPanelField = useCallback(
-    <K extends keyof PanelAssumptions>(key: K, value: PanelAssumptions[K]) => {
+    <K extends keyof PanelAssumptions>(key: K, value: string) => {
       setDraft((prev) => ({ ...prev, panel: { ...prev.panel, [key]: value } }));
     },
     []
   );
 
   const resetPanel = useCallback(() => {
-    setDraft((prev) => ({ ...prev, panel: { ...DEFAULT_PANEL } }));
+    setDraft((prev) => ({ ...prev, panel: panelToStrings(DEFAULT_PANEL) }));
   }, []);
 
   const onSortChange = useCallback(
@@ -281,20 +303,26 @@ export function DepartamentosUnifiedClient() {
 
               {(
                 [
-                  ["priceMin", "Precio mín", "Ej. 100000"],
-                  ["priceMax", "Precio máx", "Ej. 800000"],
-                  ["bedroomsMin", "Cuartos mín", "Ej. 2"],
-                  ["bedroomsMax", "Cuartos máx", "Ej. 4"],
-                  ["coverageMin", "% cobertura mín", "Ej. 40"],
+                  ["priceMin", "Precio mín", "Ej. 100000", false],
+                  ["priceMax", "Precio máx", "Ej. 800000", false],
+                  ["bedroomsMin", "Cuartos mín", "Ej. 2", false],
+                  ["bedroomsMax", "Cuartos máx", "Ej. 4", false],
+                  ["coverageMin", "% cobertura mín", "Ej. 40", true],
                 ] as const
-              ).map(([key, label, placeholder]) => (
+              ).map(([key, label, placeholder, allowDecimal]) => (
                 <div key={key} className="flex flex-col gap-1.5">
                   <label className="text-sm font-medium text-muted-foreground">{label}</label>
                   <Input
-                    type="number"
+                    type="text"
+                    inputMode={allowDecimal ? "decimal" : "numeric"}
                     placeholder={placeholder}
                     value={draft[key]}
-                    onChange={(e) => setDraft((prev) => ({ ...prev, [key]: e.target.value }))}
+                    onChange={(e) =>
+                      setDraft((prev) => ({
+                        ...prev,
+                        [key]: sanitizeNumericInput(e.target.value, { allowDecimal }),
+                      }))
+                    }
                     className="h-11 w-36 text-center text-base"
                   />
                 </div>

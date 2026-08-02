@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import type { PanelAssumptions } from "@/lib/assumption-defaults";
 import type { AssumptionWarning } from "@/lib/finance";
+import { sanitizeNumericInput } from "@/lib/numeric-input";
 import { cn } from "@/lib/utils";
 
 interface FieldSpec {
@@ -12,9 +13,7 @@ interface FieldSpec {
   label: string;
   suffix: string;
   tip: string;
-  min: number;
-  max: number;
-  step: number;
+  allowDecimal: boolean;
 }
 
 const FIELDS: FieldSpec[] = [
@@ -23,42 +22,37 @@ const FIELDS: FieldSpec[] = [
     label: "Inicial",
     suffix: "%",
     tip: "Enganche: porcentaje del precio que pagas al inicio.",
-    min: 0,
-    max: 100,
-    step: 1,
+    allowDecimal: false,
   },
   {
     key: "tea",
     label: "TEA",
     suffix: "%",
     tip: "Tasa efectiva anual del préstamo.",
-    min: 0,
-    max: 30,
-    step: 0.1,
+    allowDecimal: true,
   },
   {
     key: "tcea",
     label: "TCEA",
     suffix: "%",
     tip: "Tasa total con seguros y comisiones (usada para la cuota).",
-    min: 0,
-    max: 40,
-    step: 0.1,
+    allowDecimal: true,
   },
   {
     key: "termYears",
     label: "Plazo",
     suffix: "años",
     tip: "Años del crédito hipotecario.",
-    min: 5,
-    max: 30,
-    step: 1,
+    allowDecimal: false,
   },
 ];
 
+/** String draft of the four Hipoteca fields (avoids type=number leading-zero quirks). */
+export type PanelDraftStrings = Record<keyof PanelAssumptions, string>;
+
 interface AssumptionsFieldsProps {
-  panel: PanelAssumptions;
-  setField: <K extends keyof PanelAssumptions>(key: K, value: PanelAssumptions[K]) => void;
+  panel: PanelDraftStrings;
+  setField: <K extends keyof PanelAssumptions>(key: K, value: string) => void;
   reset: () => void;
   warnings?: AssumptionWarning[];
   className?: string;
@@ -90,7 +84,7 @@ export function AssumptionsFields({
                 <TooltipTrigger asChild>
                   <span
                     className={cn(
-                      "cursor-help text-muted-foreground",
+                      "cursor-pointer text-muted-foreground",
                       prominent ? "text-sm font-medium" : "text-xs"
                     )}
                   >
@@ -100,15 +94,16 @@ export function AssumptionsFields({
                 <TooltipContent>{field.tip}</TooltipContent>
               </Tooltip>
               <Input
-                type="number"
-                min={field.min}
-                max={field.max}
-                step={field.step}
+                type="text"
+                inputMode={field.allowDecimal ? "decimal" : "numeric"}
                 value={panel[field.key]}
                 onChange={(e) => {
-                  const n = Number(e.target.value);
-                  if (!Number.isFinite(n)) return;
-                  setField(field.key, n as PanelAssumptions[typeof field.key]);
+                  setField(
+                    field.key,
+                    sanitizeNumericInput(e.target.value, {
+                      allowDecimal: field.allowDecimal,
+                    })
+                  );
                 }}
                 className={cn(
                   prominent ? "h-11 w-28 text-center text-base" : "h-9 w-24"

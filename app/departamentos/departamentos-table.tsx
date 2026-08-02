@@ -13,7 +13,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { useFavorites } from "@/app/providers";
 import type { DepartamentosRow, DepartamentosSortId } from "@/lib/departamentos-query";
 import { formatPen, formatPct } from "@/lib/listing-finance";
-import { ArrowUpDown, ChevronLeft, ChevronRight, Star } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, Star } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface DepartamentosTableProps {
@@ -31,26 +31,30 @@ interface DepartamentosTableProps {
 function SortHeader({
   label,
   active,
+  order,
   tip,
   onToggle,
 }: {
   label: string;
   active: boolean;
+  order: "asc" | "desc";
   tip?: string;
   onToggle: () => void;
 }) {
+  const SortIcon = !active ? ArrowUpDown : order === "asc" ? ArrowUp : ArrowDown;
+
   const button = (
     <Button
       variant="ghost"
       size="sm"
-      className={cn("-ml-2", tip && "cursor-help", active && "text-foreground")}
+      className={cn("-ml-2 cursor-pointer", active && "text-foreground")}
       onClick={(e) => {
         e.stopPropagation();
         onToggle();
       }}
     >
       {label}
-      <ArrowUpDown className="ml-2 h-4 w-4" />
+      <SortIcon className="ml-2 h-4 w-4" />
     </Button>
   );
 
@@ -116,6 +120,7 @@ export function DepartamentosTable({
           <SortHeader
             label="Precio"
             active={sort === "pricePen"}
+            order={order}
             onToggle={() => onSortChange("pricePen")}
           />
         ),
@@ -140,6 +145,7 @@ export function DepartamentosTable({
           <SortHeader
             label="Cuota"
             active={sort === "cuota"}
+            order={order}
             onToggle={() => onSortChange("cuota")}
             tip="Pago mensual del préstamo con tu hipoteca (precio, inicial %, TCEA, plazo)."
           />
@@ -152,6 +158,7 @@ export function DepartamentosTable({
           <SortHeader
             label="% cobertura"
             active={sort === "coverage"}
+            order={order}
             onToggle={() => onSortChange("coverage")}
             tip="% de la cuota (TCEA) que cubre el alquiler neto estimado. Debajo se muestra el alquiler bruto promedio (mediana distrito × dormitorios) usado en el cálculo."
           />
@@ -186,6 +193,7 @@ export function DepartamentosTable({
           <SortHeader
             label="De bolsillo"
             active={sort === "aporte"}
+            order={order}
             onToggle={() => onSortChange("aporte")}
             tip="Lo que falta poner de tu bolsillo cada mes: cuota − alquiler neto."
           />
@@ -198,6 +206,7 @@ export function DepartamentosTable({
           <SortHeader
             label="% vs precio justo"
             active={sort === "descuento"}
+            order={order}
             onToggle={() => onSortChange("descuento")}
             tip="Diferencia vs el precio que estima el modelo. Verde = pides menos que el precio justo (oportunidad). Rojo = pides más que el precio justo (sobreprecio)."
           />
@@ -216,6 +225,7 @@ export function DepartamentosTable({
           <SortHeader
             label="% inicial necesario"
             active={sort === "inicial100"}
+            order={order}
             onToggle={() => onSortChange("inicial100")}
             tip="Enganche requerido para que el alquiler cubra el 100% de la cuota."
           />
@@ -223,7 +233,7 @@ export function DepartamentosTable({
         cell: ({ row }) => formatPct(row.original.downPaymentPctForFullCoverage, 0),
       },
     ],
-    [isFavorite, toggleFavorite, sort, onSortChange]
+    [isFavorite, toggleFavorite, sort, order, onSortChange]
   );
 
   // eslint-disable-next-line react-hooks/incompatible-library -- expected with useReactTable
