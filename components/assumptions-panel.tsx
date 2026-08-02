@@ -1,11 +1,10 @@
 "use client";
 
-import { Suspense, type ReactNode } from "react";
-import { AssumptionsProvider, useAssumptionsContext } from "@/components/assumptions-provider";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import type { PanelAssumptions } from "@/lib/assumption-defaults";
+import type { AssumptionWarning } from "@/lib/finance";
 import { cn } from "@/lib/utils";
 
 interface FieldSpec {
@@ -57,22 +56,44 @@ const FIELDS: FieldSpec[] = [
   },
 ];
 
-/** Editable panel fields (Inicial / TEA / TCEA / Plazo). Renders inline next to filters. */
-export function AssumptionsFields({ className }: { className?: string }) {
-  const { panel, setField, reset, warnings, ready } = useAssumptionsContext();
+interface AssumptionsFieldsProps {
+  panel: PanelAssumptions;
+  setField: <K extends keyof PanelAssumptions>(key: K, value: PanelAssumptions[K]) => void;
+  reset: () => void;
+  warnings?: AssumptionWarning[];
+  className?: string;
+  /** Larger, centered controls for the Hipoteca card. */
+  prominent?: boolean;
+}
 
+/** Editable panel fields (Inicial / TEA / TCEA / Plazo). */
+export function AssumptionsFields({
+  panel,
+  setField,
+  reset,
+  warnings = [],
+  className,
+  prominent = false,
+}: AssumptionsFieldsProps) {
   return (
     <TooltipProvider>
-      <div className={cn("flex flex-col gap-2", className)}>
-        <div className="flex flex-wrap items-end gap-4">
-          <div className="mr-2 hidden text-sm font-medium text-muted-foreground sm:block">
-            Supuestos
-          </div>
+      <div className={cn("flex flex-col gap-3", className)}>
+        <div
+          className={cn(
+            "flex flex-wrap items-end gap-4",
+            prominent && "justify-center gap-6"
+          )}
+        >
           {FIELDS.map((field) => (
-            <label key={field.key} className="flex flex-col gap-1">
+            <label key={field.key} className="flex flex-col gap-1.5">
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <span className="cursor-help text-xs text-muted-foreground">
+                  <span
+                    className={cn(
+                      "cursor-help text-muted-foreground",
+                      prominent ? "text-sm font-medium" : "text-xs"
+                    )}
+                  >
                     {field.label} ({field.suffix})
                   </span>
                 </TooltipTrigger>
@@ -83,14 +104,15 @@ export function AssumptionsFields({ className }: { className?: string }) {
                 min={field.min}
                 max={field.max}
                 step={field.step}
-                value={ready ? panel[field.key] : ""}
-                disabled={!ready}
+                value={panel[field.key]}
                 onChange={(e) => {
                   const n = Number(e.target.value);
                   if (!Number.isFinite(n)) return;
                   setField(field.key, n as PanelAssumptions[typeof field.key]);
                 }}
-                className="h-9 w-24"
+                className={cn(
+                  prominent ? "h-11 w-28 text-center text-base" : "h-9 w-24"
+                )}
               />
             </label>
           ))}
@@ -99,7 +121,7 @@ export function AssumptionsFields({ className }: { className?: string }) {
           </Button>
         </div>
         {warnings.length > 0 && (
-          <ul className="space-y-1 text-xs text-amber-700 dark:text-amber-400">
+          <ul className="space-y-1 text-center text-xs text-amber-700 dark:text-amber-400">
             {warnings.map((w) => (
               <li key={w.kind}>{w.message}</li>
             ))}
@@ -107,14 +129,5 @@ export function AssumptionsFields({ className }: { className?: string }) {
         )}
       </div>
     </TooltipProvider>
-  );
-}
-
-/** Shared assumptions state for the page. Fields render inside the filters card. */
-export function AssumptionsShell({ children }: { children: ReactNode }) {
-  return (
-    <Suspense fallback={null}>
-      <AssumptionsProvider>{children}</AssumptionsProvider>
-    </Suspense>
   );
 }

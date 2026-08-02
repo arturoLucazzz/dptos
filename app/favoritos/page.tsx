@@ -1,10 +1,10 @@
-import { loadSaleListings } from "@/lib/listings";
+import { getCachedSaleListings } from "@/lib/listings";
 import { FavoritosClient } from "./favoritos-client";
 
 export const dynamic = "force-dynamic";
 
 export default async function FavoritosPage() {
-  const page = await loadSaleListings();
+  const page = await getCachedSaleListings();
   const favorites = page.listings.filter((l) => l.favorite);
 
   return (

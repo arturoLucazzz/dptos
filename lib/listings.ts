@@ -6,6 +6,7 @@
  * made the old JSON pipeline count a S/ 1 listing as a sale the next run.
  */
 
+import { unstable_cache } from 'next/cache';
 import { getFixedAssumptions } from './assumptions';
 import { prisma } from './db';
 import { Operation, PostingKind, ScrapeStatus } from './generated/prisma/enums';
@@ -282,4 +283,29 @@ export async function loadSaleListings(): Promise<ListingsPage> {
     fixedAssumptions,
     districtOptions,
   };
+}
+
+async function latestScrapeCacheKey(): Promise<string> {
+  const run = await prisma.scrapeRun.findFirst({
+    where: { status: { in: [ScrapeStatus.SUCCESS, ScrapeStatus.PARTIAL] } },
+    orderBy: { startedAt: 'desc' },
+    select: { id: true, finishedAt: true, startedAt: true },
+  });
+  if (!run) return 'none';
+  return `${run.id}:${(run.finishedAt ?? run.startedAt).toISOString()}`;
+}
+
+const loadSaleListingsCached = unstable_cache(
+  async (_scrapeKey: string) => loadSaleListings(),
+  ['sale-listings'],
+  { revalidate: 3600, tags: ['sale-listings'] }
+);
+
+/**
+ * Enriched sale universe cached per scrape run so filter/finance requests do not
+ * re-fit fair-price and rent models on every keystroke.
+ */
+export async function getCachedSaleListings(): Promise<ListingsPage> {
+  const scrapeKey = await latestScrapeCacheKey();
+  return loadSaleListingsCached(scrapeKey);
 }

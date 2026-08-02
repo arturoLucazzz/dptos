@@ -1,13 +1,12 @@
 /**
- * The thin listing projection the browser receives.
+ * The thin listing projection shared by the API and (for favorites) the RSC pages.
  *
  * Roughly ten numbers per row plus a few strings. Coverage, payment and entry cost
- * are *not* here: they depend on the assumptions panel and are computed client-side
- * so dragging a slider reorders the table without a round-trip.
+ * are *not* here: they depend on Hipoteca params and are computed per request in
+ * `queryDepartamentos` so the browser only receives one page of results.
  *
  * Gross rent *is* here, labelled as estimated, because it comes from the rent index
- * which needs the whole rental market. Deductions (vacancy, tax, costs) still happen
- * in the browser.
+ * which needs the whole rental market.
  */
 
 export interface ListingRow {

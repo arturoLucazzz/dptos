@@ -2,46 +2,51 @@
 
 import {
   type ColumnDef,
-  type SortingState,
   flexRender,
   getCoreRowModel,
-  getSortedRowModel,
   useReactTable,
 } from "@tanstack/react-table";
-import { useMemo, useState } from "react";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { useMemo } from "react";
+import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useFavorites } from "@/app/providers";
-import type { FixedAssumptions, PanelAssumptions } from "@/lib/assumption-defaults";
-import type { ListingRow } from "@/lib/listing-row";
-import { financeForListing, formatPen, formatPct, loanForListing } from "@/lib/listing-finance";
-import { ArrowUpDown, Star } from "lucide-react";
+import type { DepartamentosRow, DepartamentosSortId } from "@/lib/departamentos-query";
+import { formatPen, formatPct } from "@/lib/listing-finance";
+import { ArrowUpDown, ChevronLeft, ChevronRight, Star } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface DepartamentosTableProps {
-  data: ListingRow[];
-  panel: PanelAssumptions;
-  fixedAssumptions: FixedAssumptions;
+  data: DepartamentosRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+  sort: DepartamentosSortId;
+  order: "asc" | "desc";
+  isValidating?: boolean;
+  onSortChange: (sort: DepartamentosSortId) => void;
+  onPageChange: (page: number) => void;
 }
 
 function SortHeader({
   label,
-  column,
+  active,
   tip,
+  onToggle,
 }: {
   label: string;
-  column: { toggleSorting: (desc?: boolean) => void; getIsSorted: () => false | "asc" | "desc" };
+  active: boolean;
   tip?: string;
+  onToggle: () => void;
 }) {
   const button = (
     <Button
       variant="ghost"
       size="sm"
-      className={cn("-ml-2", tip && "cursor-help")}
+      className={cn("-ml-2", tip && "cursor-help", active && "text-foreground")}
       onClick={(e) => {
         e.stopPropagation();
-        column.toggleSorting(column.getIsSorted() === "asc");
+        onToggle();
       }}
     >
       {label}
@@ -54,16 +59,26 @@ function SortHeader({
   return (
     <Tooltip>
       <TooltipTrigger asChild>{button}</TooltipTrigger>
-      <TooltipContent>{tip}</TooltipContent>
+      <TooltipContent className="max-w-xs">{tip}</TooltipContent>
     </Tooltip>
   );
 }
 
-export function DepartamentosTable({ data, panel, fixedAssumptions }: DepartamentosTableProps) {
+export function DepartamentosTable({
+  data,
+  total,
+  page,
+  pageSize,
+  sort,
+  order,
+  isValidating,
+  onSortChange,
+  onPageChange,
+}: DepartamentosTableProps) {
   const { isFavorite, toggleFavorite } = useFavorites();
-  const [sorting, setSorting] = useState<SortingState>([{ id: "coverage", desc: true }]);
+  const pageCount = Math.max(1, Math.ceil(total / pageSize) || 1);
 
-  const columns = useMemo<ColumnDef<ListingRow>[]>(
+  const columns = useMemo<ColumnDef<DepartamentosRow>[]>(
     () => [
       {
         id: "favorito",
@@ -97,9 +112,14 @@ export function DepartamentosTable({ data, panel, fixedAssumptions }: Departamen
       },
       {
         accessorKey: "pricePen",
-        header: ({ column }) => <SortHeader label="Precio" column={column} />,
+        header: () => (
+          <SortHeader
+            label="Precio"
+            active={sort === "pricePen"}
+            onToggle={() => onSortChange("pricePen")}
+          />
+        ),
         cell: ({ row }) => formatPen(row.original.pricePen),
-        sortingFn: "basic",
       },
       {
         accessorKey: "areaM2",
@@ -116,33 +136,29 @@ export function DepartamentosTable({ data, panel, fixedAssumptions }: Departamen
       },
       {
         id: "cuota",
-        accessorFn: (row) => loanForListing(row, panel, fixedAssumptions)?.paymentPen ?? Infinity,
-        header: ({ column }) => (
+        header: () => (
           <SortHeader
             label="Cuota"
-            column={column}
-            tip="Pago mensual del préstamo con tus supuestos (precio, inicial %, TCEA, plazo)."
+            active={sort === "cuota"}
+            onToggle={() => onSortChange("cuota")}
+            tip="Pago mensual del préstamo con tu hipoteca (precio, inicial %, TCEA, plazo)."
           />
         ),
-        cell: ({ row }) => {
-          const loan = loanForListing(row.original, panel, fixedAssumptions);
-          return formatPen(loan?.paymentPen);
-        },
-        sortingFn: "basic",
+        cell: ({ row }) => formatPen(row.original.paymentPen),
       },
       {
         id: "coverage",
-        accessorFn: (row) => financeForListing(row, panel, fixedAssumptions)?.coveragePct ?? -Infinity,
-        header: ({ column }) => (
+        header: () => (
           <SortHeader
             label="% cobertura"
-            column={column}
-            tip="% de la cuota (TCEA) que cubre el alquiler neto estimado. 100% = el alquiler paga la cuota sola."
+            active={sort === "coverage"}
+            onToggle={() => onSortChange("coverage")}
+            tip="% de la cuota (TCEA) que cubre el alquiler neto estimado. Debajo se muestra el alquiler bruto promedio (mediana distrito × dormitorios) usado en el cálculo."
           />
         ),
         cell: ({ row }) => {
-          const finance = financeForListing(row.original, panel, fixedAssumptions);
-          if (!finance) {
+          const { coveragePct, grossRentPen, rentSampleN, rentConfidence } = row.original;
+          if (coveragePct == null) {
             return (
               <span className="text-muted-foreground" title="Sin muestra de alquileres en el distrito">
                 —
@@ -150,93 +166,117 @@ export function DepartamentosTable({ data, panel, fixedAssumptions }: Departamen
             );
           }
           return (
-            <span title={`Alquiler estimado: ${formatPen(row.original.grossRentPen)} (n=${row.original.rentSampleN ?? 0})`}>
-              {formatPct(finance.coveragePct)}
-            </span>
+            <div
+              className="leading-tight"
+              title={`Alquiler estimado: ${formatPen(grossRentPen)} (n=${rentSampleN ?? 0}${
+                rentConfidence ? `, ${rentConfidence}` : ""
+              })`}
+            >
+              <div>{formatPct(coveragePct)}</div>
+              <div className="text-xs text-muted-foreground">
+                alquiler {formatPen(grossRentPen)}
+              </div>
+            </div>
           );
         },
-        sortingFn: "basic",
       },
       {
         id: "aporte",
-        accessorFn: (row) =>
-          financeForListing(row, panel, fixedAssumptions)?.monthlyContributionPen ?? Infinity,
-        header: ({ column }) => (
+        header: () => (
           <SortHeader
             label="De bolsillo"
-            column={column}
+            active={sort === "aporte"}
+            onToggle={() => onSortChange("aporte")}
             tip="Lo que falta poner de tu bolsillo cada mes: cuota − alquiler neto."
           />
         ),
-        cell: ({ row }) => {
-          const finance = financeForListing(row.original, panel, fixedAssumptions);
-          return formatPen(finance?.monthlyContributionPen);
-        },
-        sortingFn: "basic",
+        cell: ({ row }) => formatPen(row.original.monthlyContributionPen),
       },
       {
         id: "descuento",
-        accessorFn: (row) => row.discountPct ?? -Infinity,
-        header: ({ column }) => (
+        header: () => (
           <SortHeader
             label="% vs precio justo"
-            column={column}
-            tip="Diferencia vs el precio que estima el modelo. Positivo = más barato que el modelo."
+            active={sort === "descuento"}
+            onToggle={() => onSortChange("descuento")}
+            tip="Diferencia vs el precio que estima el modelo. Verde = pides menos que el precio justo (oportunidad). Rojo = pides más que el precio justo (sobreprecio)."
           />
         ),
         cell: ({ row }) => {
           const d = row.original.discountPct;
           if (d == null) return "—";
-          const tone = d >= 5 ? "text-emerald-700" : d <= -10 ? "text-red-700" : "";
+          // Positive discountPct = asking below model (good). Negative = above model (bad).
+          const tone = d > 0 ? "text-emerald-700" : d < 0 ? "text-red-700" : "";
           return <span className={tone}>{formatPct(d)}</span>;
         },
-        sortingFn: "basic",
       },
       {
         id: "inicial100",
-        accessorFn: (row) =>
-          financeForListing(row, panel, fixedAssumptions)?.downPaymentPctForFullCoverage ?? Infinity,
-        header: ({ column }) => (
+        header: () => (
           <SortHeader
             label="% inicial necesario"
-            column={column}
+            active={sort === "inicial100"}
+            onToggle={() => onSortChange("inicial100")}
             tip="Enganche requerido para que el alquiler cubra el 100% de la cuota."
           />
         ),
-        cell: ({ row }) => {
-          const finance = financeForListing(row.original, panel, fixedAssumptions);
-          return formatPct(finance?.downPaymentPctForFullCoverage, 0);
-        },
-        sortingFn: "basic",
+        cell: ({ row }) => formatPct(row.original.downPaymentPctForFullCoverage, 0),
       },
     ],
-    [isFavorite, toggleFavorite, panel, fixedAssumptions]
+    [isFavorite, toggleFavorite, sort, onSortChange]
   );
 
-  // TanStack Table returns unstable function identities; React Compiler skips
-  // memoizing this on purpose.
   // eslint-disable-next-line react-hooks/incompatible-library -- expected with useReactTable
   const table = useReactTable({
     data,
     columns,
-    state: { sorting },
-    onSortingChange: setSorting,
     getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
+    manualSorting: true,
   });
 
   return (
     <TooltipProvider>
-      <div className="space-y-4">
-        <p className="text-sm text-muted-foreground">
-          {data.length} resultado{data.length !== 1 ? "s" : ""} · orden por % cobertura (recalcula con los
-          supuestos)
-        </p>
-        <div className="overflow-x-auto rounded-md border">
-          <Table>
-            <TableHeader>
+      <div className={cn("space-y-4", isValidating && "opacity-70")}>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-muted-foreground">
+            {total.toLocaleString("es-PE")} resultado{total !== 1 ? "s" : ""}
+            {" · "}
+            página {page} de {pageCount}
+            {" · "}
+            orden {sort} ({order === "desc" ? "↓" : "↑"})
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={page <= 1}
+              onClick={() => onPageChange(page - 1)}
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Anterior
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={page >= pageCount}
+              onClick={() => onPageChange(page + 1)}
+            >
+              Siguiente
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+        {/*
+          Avoid the shared Table wrapper (relative + overflow-auto): that makes
+          position:sticky attach to the table box instead of the page viewport.
+        */}
+        <div className="rounded-md border">
+          <table className="w-full caption-bottom text-sm">
+            <TableHeader className="sticky top-14 z-20 bg-background shadow-[0_1px_0_0_hsl(var(--border))] [&_th]:bg-background">
               {table.getHeaderGroups().map((hg) => (
-                <TableRow key={hg.id}>
+                <TableRow key={hg.id} className="hover:bg-background">
                   {hg.headers.map((h) => (
                     <TableHead key={h.id} className="whitespace-nowrap">
                       {flexRender(h.column.columnDef.header, h.getContext())}
@@ -271,7 +311,7 @@ export function DepartamentosTable({ data, panel, fixedAssumptions }: Departamen
                 ))
               )}
             </TableBody>
-          </Table>
+          </table>
         </div>
       </div>
     </TooltipProvider>

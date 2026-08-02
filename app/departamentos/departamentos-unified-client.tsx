@@ -1,130 +1,339 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useQueryStates } from "nuqs";
+import useSWR from "swr";
 import { DashboardsSection } from "./dashboards-section";
 import { DepartamentosTable } from "./departamentos-table";
 import { AssumptionsFields } from "@/components/assumptions-panel";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { MultiSelect, type MultiSelectOption } from "@/components/ui/multi-select";
-import { useAssumptionsContext } from "@/components/assumptions-provider";
-import type { FixedAssumptions } from "@/lib/assumption-defaults";
-import type { ListingRow } from "@/lib/listing-row";
-import { financeForListing } from "@/lib/listing-finance";
+import { DEFAULT_PANEL, type FixedAssumptions, type PanelAssumptions } from "@/lib/assumption-defaults";
+import type {
+  DepartamentosQueryResult,
+  DepartamentosSortId,
+  DepartamentosStats,
+} from "@/lib/departamentos-query";
+import {
+  departamentosApiQuery,
+  departamentosSearchParams,
+} from "@/lib/departamentos-search-params";
+import { assumptionWarnings } from "@/lib/finance";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 
-export interface DistrictOption {
+interface DistrictOption {
   value: string;
   label: string;
 }
 
-interface DepartamentosUnifiedClientProps {
-  listings: ListingRow[];
+interface ApiResponse extends DepartamentosQueryResult {
+  scrapedAt: string | null;
   districtOptions: DistrictOption[];
   fixedAssumptions: FixedAssumptions;
+  error?: string;
 }
 
-export function DepartamentosUnifiedClient({
-  listings,
-  districtOptions,
-  fixedAssumptions,
-}: DepartamentosUnifiedClientProps) {
-  const { panel } = useAssumptionsContext();
-  const [selectedDistricts, setSelectedDistricts] = useState<string[]>([]);
-  const [priceMin, setPriceMin] = useState<string>("");
-  const [priceMax, setPriceMax] = useState<string>("");
-  const [coverageMin, setCoverageMin] = useState<string>("");
+async function fetchDepartamentos(url: string): Promise<ApiResponse> {
+  const res = await fetch(url);
+  const json = (await res.json()) as ApiResponse;
+  if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
+  return json;
+}
 
-  const multiSelectDistrictOptions: MultiSelectOption[] = useMemo(
-    () => districtOptions.map((d) => ({ label: d.label, value: d.value })),
-    [districtOptions]
+type DraftFilters = {
+  districts: string[];
+  priceMin: string;
+  priceMax: string;
+  bedroomsMin: string;
+  bedroomsMax: string;
+  coverageMin: string;
+  panel: PanelAssumptions;
+};
+
+function optionalNumberString(n: number | null): string {
+  return n == null ? "" : String(n);
+}
+
+function parseOptionalInput(raw: string): number | null {
+  if (raw.trim() === "") return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
+function draftEqualsUrl(a: DraftFilters, b: DraftFilters): boolean {
+  return (
+    JSON.stringify(a.districts) === JSON.stringify(b.districts) &&
+    a.priceMin === b.priceMin &&
+    a.priceMax === b.priceMax &&
+    a.bedroomsMin === b.bedroomsMin &&
+    a.bedroomsMax === b.bedroomsMax &&
+    a.coverageMin === b.coverageMin &&
+    a.panel.downPaymentPct === b.panel.downPaymentPct &&
+    a.panel.tea === b.panel.tea &&
+    a.panel.tcea === b.panel.tcea &&
+    a.panel.termYears === b.panel.termYears
+  );
+}
+
+export function DepartamentosUnifiedClient() {
+  const [urlState, setUrlState] = useQueryStates(departamentosSearchParams, {
+    history: "replace",
+    shallow: true,
+  });
+
+  const [draft, setDraft] = useState<DraftFilters>(() => ({
+    districts: urlState.districts,
+    priceMin: optionalNumberString(urlState.priceMin),
+    priceMax: optionalNumberString(urlState.priceMax),
+    bedroomsMin: optionalNumberString(urlState.bedroomsMin),
+    bedroomsMax: optionalNumberString(urlState.bedroomsMax),
+    coverageMin: optionalNumberString(urlState.coverageMin),
+    panel: {
+      downPaymentPct: urlState.inicial,
+      tea: urlState.tea,
+      tcea: urlState.tcea,
+      termYears: urlState.plazo,
+    },
+  }));
+
+  // Sync draft from URL on back/forward (URL is an external system here).
+  useEffect(() => {
+    const next: DraftFilters = {
+      districts: urlState.districts,
+      priceMin: optionalNumberString(urlState.priceMin),
+      priceMax: optionalNumberString(urlState.priceMax),
+      bedroomsMin: optionalNumberString(urlState.bedroomsMin),
+      bedroomsMax: optionalNumberString(urlState.bedroomsMax),
+      coverageMin: optionalNumberString(urlState.coverageMin),
+      panel: {
+        downPaymentPct: urlState.inicial,
+        tea: urlState.tea,
+        tcea: urlState.tcea,
+        termYears: urlState.plazo,
+      },
+    };
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- sync from URL navigation
+    setDraft((prev) => (draftEqualsUrl(prev, next) ? prev : next));
+  }, [
+    urlState.districts,
+    urlState.priceMin,
+    urlState.priceMax,
+    urlState.bedroomsMin,
+    urlState.bedroomsMax,
+    urlState.coverageMin,
+    urlState.inicial,
+    urlState.tea,
+    urlState.tcea,
+    urlState.plazo,
+  ]);
+
+  const debouncedDraft = useDebouncedValue(draft, 300);
+  const urlStateRef = useRef(urlState);
+  useEffect(() => {
+    urlStateRef.current = urlState;
+  }, [urlState]);
+
+  // Push debounced draft → URL (resets page when filters/hipoteca change).
+  useEffect(() => {
+    const current = urlStateRef.current;
+    const next = {
+      districts: debouncedDraft.districts,
+      priceMin: parseOptionalInput(debouncedDraft.priceMin),
+      priceMax: parseOptionalInput(debouncedDraft.priceMax),
+      bedroomsMin: parseOptionalInput(debouncedDraft.bedroomsMin),
+      bedroomsMax: parseOptionalInput(debouncedDraft.bedroomsMax),
+      coverageMin: parseOptionalInput(debouncedDraft.coverageMin),
+      inicial: debouncedDraft.panel.downPaymentPct,
+      tea: debouncedDraft.panel.tea,
+      tcea: debouncedDraft.panel.tcea,
+      plazo: Math.round(debouncedDraft.panel.termYears),
+    };
+
+    const filtersChanged =
+      JSON.stringify(next.districts) !== JSON.stringify(current.districts) ||
+      next.priceMin !== current.priceMin ||
+      next.priceMax !== current.priceMax ||
+      next.bedroomsMin !== current.bedroomsMin ||
+      next.bedroomsMax !== current.bedroomsMax ||
+      next.coverageMin !== current.coverageMin ||
+      next.inicial !== current.inicial ||
+      next.tea !== current.tea ||
+      next.tcea !== current.tcea ||
+      next.plazo !== current.plazo;
+
+    if (!filtersChanged) return;
+
+    void setUrlState({ ...next, page: 1 });
+  }, [debouncedDraft, setUrlState]);
+
+  const apiQuery = useMemo(
+    () =>
+      departamentosApiQuery({
+        districts: urlState.districts,
+        priceMin: urlState.priceMin,
+        priceMax: urlState.priceMax,
+        bedroomsMin: urlState.bedroomsMin,
+        bedroomsMax: urlState.bedroomsMax,
+        coverageMin: urlState.coverageMin,
+        inicial: urlState.inicial,
+        tea: urlState.tea,
+        tcea: urlState.tcea,
+        plazo: urlState.plazo,
+        sort: urlState.sort,
+        order: urlState.order,
+        page: urlState.page,
+      }),
+    [urlState]
   );
 
-  const filtered = useMemo(() => {
-    let list = listings;
+  const { data, error, isLoading, isValidating } = useSWR(
+    `/api/departamentos?${apiQuery}`,
+    fetchDepartamentos,
+    { keepPreviousData: true, revalidateOnFocus: false }
+  );
 
-    if (selectedDistricts.length > 0) {
-      list = list.filter((r) => selectedDistricts.includes(r.districtSlug));
-    }
+  const districtOptions: MultiSelectOption[] = useMemo(
+    () => (data?.districtOptions ?? []).map((d) => ({ label: d.label, value: d.value })),
+    [data?.districtOptions]
+  );
 
-    const min = priceMin ? Number(priceMin) : null;
-    const max = priceMax ? Number(priceMax) : null;
-    if (min != null && !Number.isNaN(min)) list = list.filter((r) => r.pricePen >= min);
-    if (max != null && !Number.isNaN(max)) list = list.filter((r) => r.pricePen <= max);
+  const warnings = useMemo(
+    () =>
+      assumptionWarnings({
+        ...draft.panel,
+        vacancyMonthsPerYear: 1,
+        rentGrowthPct: 3,
+        rentIncomeTaxPct: 5,
+      }),
+    [draft.panel]
+  );
 
-    const minCoverage = coverageMin ? Number(coverageMin) : null;
-    if (minCoverage != null && !Number.isNaN(minCoverage)) {
-      list = list.filter((r) => {
-        const finance = financeForListing(r, panel, fixedAssumptions);
-        return finance != null && finance.coveragePct >= minCoverage;
-      });
-    }
+  const setPanelField = useCallback(
+    <K extends keyof PanelAssumptions>(key: K, value: PanelAssumptions[K]) => {
+      setDraft((prev) => ({ ...prev, panel: { ...prev.panel, [key]: value } }));
+    },
+    []
+  );
 
-    return list;
-  }, [listings, selectedDistricts, priceMin, priceMax, coverageMin, panel, fixedAssumptions]);
+  const resetPanel = useCallback(() => {
+    setDraft((prev) => ({ ...prev, panel: { ...DEFAULT_PANEL } }));
+  }, []);
+
+  const onSortChange = useCallback(
+    (sort: DepartamentosSortId) => {
+      if (urlState.sort === sort) {
+        void setUrlState({ order: urlState.order === "desc" ? "asc" : "desc", page: 1 });
+      } else {
+        void setUrlState({ sort, order: "desc", page: 1 });
+      }
+    },
+    [setUrlState, urlState.order, urlState.sort]
+  );
+
+  const onPageChange = useCallback(
+    (page: number) => {
+      void setUrlState({ page });
+    },
+    [setUrlState]
+  );
+
+  const stats: DepartamentosStats | null = data?.stats ?? null;
+  const scrapedAt = data?.scrapedAt ?? null;
 
   return (
-    <div className="space-y-10">
-      <div className="space-y-4 rounded-lg border bg-card p-4">
-        <div className="flex flex-wrap items-end gap-4">
-          <div className="flex flex-col gap-2">
-            <label className="text-sm text-muted-foreground">Distrito</label>
-            <MultiSelect
-              options={multiSelectDistrictOptions}
-              onValueChange={setSelectedDistricts}
-              placeholder="Seleccionar distritos"
-              searchable={true}
-              maxCount={3}
-              variant="secondary"
-              className="w-[280px]"
-            />
-          </div>
-
-          <div className="flex flex-col gap-2">
-            <label className="text-sm text-muted-foreground">Precio mín</label>
-            <Input
-              type="number"
-              placeholder="Ej. 100000"
-              value={priceMin}
-              onChange={(e) => setPriceMin(e.target.value)}
-              className="h-9 w-32"
-            />
-          </div>
-
-          <div className="flex flex-col gap-2">
-            <label className="text-sm text-muted-foreground">Precio máx</label>
-            <Input
-              type="number"
-              placeholder="Ej. 800000"
-              value={priceMax}
-              onChange={(e) => setPriceMax(e.target.value)}
-              className="h-9 w-32"
-            />
-          </div>
-
-          <div className="flex flex-col gap-2">
-            <label className="text-sm text-muted-foreground">% cobertura mín</label>
-            <Input
-              type="number"
-              placeholder="Ej. 40"
-              value={coverageMin}
-              onChange={(e) => setCoverageMin(e.target.value)}
-              className="h-9 w-28"
-            />
-          </div>
-        </div>
-
-        <AssumptionsFields />
+    <div className="space-y-8">
+      <div>
+        <h1 className="text-2xl font-semibold">Departamentos</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {stats ? `${stats.total.toLocaleString("es-PE")} avisos filtrados` : "Cargando…"}
+          {scrapedAt ? ` · actualizado ${new Date(scrapedAt).toLocaleString("es-PE")}` : ""}
+        </p>
+        {error && (
+          <p className="mt-2 text-sm text-red-700">
+            {error instanceof Error ? error.message : String(error)}
+          </p>
+        )}
       </div>
 
-      <DashboardsSection
-        filtered={filtered}
-        panel={panel}
-        fixedAssumptions={fixedAssumptions}
-      />
-      <DepartamentosTable
-        data={filtered}
-        panel={panel}
-        fixedAssumptions={fixedAssumptions}
-      />
+      <DashboardsSection stats={stats} isValidating={isValidating && !isLoading} />
+
+      <div className="space-y-4">
+        <Card>
+          <CardHeader className="pb-3 text-center">
+            <CardTitle className="text-lg">Filtros</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap items-end justify-center gap-5">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-sm font-medium text-muted-foreground">Distrito</label>
+                <MultiSelect
+                  options={districtOptions}
+                  defaultValue={draft.districts}
+                  onValueChange={(districts) => setDraft((prev) => ({ ...prev, districts }))}
+                  placeholder="Seleccionar distritos"
+                  searchable={true}
+                  maxCount={3}
+                  variant="secondary"
+                  className="h-11 min-w-70"
+                />
+              </div>
+
+              {(
+                [
+                  ["priceMin", "Precio mín", "Ej. 100000"],
+                  ["priceMax", "Precio máx", "Ej. 800000"],
+                  ["bedroomsMin", "Cuartos mín", "Ej. 2"],
+                  ["bedroomsMax", "Cuartos máx", "Ej. 4"],
+                  ["coverageMin", "% cobertura mín", "Ej. 40"],
+                ] as const
+              ).map(([key, label, placeholder]) => (
+                <div key={key} className="flex flex-col gap-1.5">
+                  <label className="text-sm font-medium text-muted-foreground">{label}</label>
+                  <Input
+                    type="number"
+                    placeholder={placeholder}
+                    value={draft[key]}
+                    onChange={(e) => setDraft((prev) => ({ ...prev, [key]: e.target.value }))}
+                    className="h-11 w-36 text-center text-base"
+                  />
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-3 text-center">
+            <CardTitle className="text-lg">Hipoteca</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <AssumptionsFields
+              panel={draft.panel}
+              setField={setPanelField}
+              reset={resetPanel}
+              warnings={warnings}
+              prominent
+            />
+          </CardContent>
+        </Card>
+      </div>
+
+      {isLoading && !data ? (
+        <p className="text-sm text-muted-foreground">Cargando avisos…</p>
+      ) : (
+        <DepartamentosTable
+          data={data?.rows ?? []}
+          total={data?.total ?? 0}
+          page={data?.page ?? urlState.page}
+          pageSize={data?.pageSize ?? 50}
+          sort={urlState.sort}
+          order={urlState.order}
+          isValidating={isValidating && !isLoading}
+          onSortChange={onSortChange}
+          onPageChange={onPageChange}
+        />
+      )}
     </div>
   );
 }
