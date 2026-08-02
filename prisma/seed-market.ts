@@ -22,7 +22,10 @@
  *   7. Junk          — 8 m² for S/ 493,000, and S/ 55,275,000 for 60 m².
  *   8. A dead district in one run, to trip the sanity gate.
  *
- *   pnpm db:seed:market --weeks=16 --reset
+ *   pnpm db:seed:market --weeks=8 --reset
+ *
+ * Sale S/m² and rent S/m² (ticket ~100 m² / 100) calibrated to Urbania Index /
+ * Gestión 2024–2025 for Lima Top and adjacent districts.
  */
 
 import { prisma } from '../lib/db';
@@ -40,11 +43,16 @@ const MS_PER_WEEK = 7 * 86_400_000;
 
 /** The known market. Every price in the seed derives from these numbers. */
 const DISTRICTS = [
-  { slug: 'lince', name: 'Lince', salePerM2: 7_500, rentPerM2: 44, lat: -12.0865, lon: -77.0365 },
-  { slug: 'jesus-maria', name: 'Jesús María', salePerM2: 7_900, rentPerM2: 46, lat: -12.0742, lon: -77.0489 },
-  { slug: 'san-miguel', name: 'San Miguel', salePerM2: 6_600, rentPerM2: 38, lat: -12.0776, lon: -77.0925 },
-  { slug: 'surquillo', name: 'Surquillo', salePerM2: 7_100, rentPerM2: 41, lat: -12.1122, lon: -77.0175 },
-  { slug: 'miraflores', name: 'Miraflores', salePerM2: 13_400, rentPerM2: 72, lat: -12.1211, lon: -77.0296 },
+  { slug: 'lince', name: 'Lince', salePerM2: 7_400, rentPerM2: 35, lat: -12.0865, lon: -77.0365 },
+  { slug: 'jesus-maria', name: 'Jesús María', salePerM2: 7_000, rentPerM2: 32, lat: -12.0742, lon: -77.0489 },
+  { slug: 'san-isidro', name: 'San Isidro', salePerM2: 9_200, rentPerM2: 38, lat: -12.0970, lon: -77.0360 },
+  { slug: 'pueblo-libre', name: 'Pueblo Libre', salePerM2: 6_500, rentPerM2: 28, lat: -12.0760, lon: -77.0620 },
+  { slug: 'magdalena', name: 'Magdalena', salePerM2: 6_750, rentPerM2: 30, lat: -12.0920, lon: -77.0700 },
+  { slug: 'surquillo', name: 'Surquillo', salePerM2: 7_100, rentPerM2: 35, lat: -12.1122, lon: -77.0175 },
+  { slug: 'miraflores', name: 'Miraflores', salePerM2: 8_700, rentPerM2: 36, lat: -12.1211, lon: -77.0296 },
+  { slug: 'san-borja', name: 'San Borja', salePerM2: 7_350, rentPerM2: 27, lat: -12.1080, lon: -76.9980 },
+  { slug: 'santiago-de-surco', name: 'Santiago de Surco', salePerM2: 6_800, rentPerM2: 27, lat: -12.1350, lon: -76.9930 },
+  { slug: 'san-miguel', name: 'San Miguel', salePerM2: 6_600, rentPerM2: 27, lat: -12.0776, lon: -77.0925 },
 ] as const;
 
 const STREETS = [
@@ -337,14 +345,16 @@ const BROKER_CODES = [
  *
  * Both properties are needed and they pull against each other. The age model only works
  * because Urbania's ids run roughly in chronological order, so ids have to track the
- * week. But hashing into a per-week range collides: with four hundred listings created
- * in week zero, the birthday bound predicts about four collisions, and two apartments
- * sharing an id are indistinguishable from one apartment listed twice — which quietly
- * looks like a matcher bug rather than a generator bug. A counter per week gives both.
+ * week. But hashing into a per-week range collides: with thousands of listings created
+ * in week zero, two apartments sharing an id are indistinguishable from one apartment
+ * listed twice — which quietly looks like a matcher bug rather than a generator bug.
+ * A counter per week with a large stride gives both uniqueness and chronology.
  */
 function assignIds(units: Unit[]): void {
   const random = rng(913);
   const perWeek = new Map<number, number>();
+  /** Headroom for ~15k units × variants with random gaps; must not wrap within a week. */
+  const WEEK_STRIDE = 2_000_000;
   const next = (week: number): string => {
     // Gaps, because Urbania allocates ids across the whole country and we only see a
     // few districts of Lima. Without them the ids come out perfectly ordered and the
@@ -352,7 +362,7 @@ function assignIds(units: Unit[]): void {
     // exercise it.
     const index = (perWeek.get(week) ?? 0) + 1 + Math.floor(random() * 40);
     perWeek.set(week, index);
-    return String(140_000_000 + week * 20_000 + (index % 20_000));
+    return String(140_000_000 + week * WEEK_STRIDE + index);
   };
 
   // In creation order, so ids increase with time across the whole market.
@@ -482,7 +492,7 @@ function isPresent(unit: Unit, week: number, isRepost: boolean): boolean {
 
 async function main() {
   const args = process.argv.slice(2);
-  const weeks = Number(args.find((a) => a.startsWith('--weeks='))?.split('=')[1] ?? 16);
+  const weeks = Number(args.find((a) => a.startsWith('--weeks='))?.split('=')[1] ?? 8);
   const reset = args.includes('--reset');
   /** The week the sanity gate is exercised, with one district nearly empty. */
   const brokenWeek = Math.max(2, weeks - 3);
@@ -497,7 +507,8 @@ async function main() {
     console.log('Cleared listings, snapshots, properties and runs.');
   }
 
-  const units = buildUnits({ weeks, saleUnitsPerDistrict: 90, rentUnitsPerDistrict: 45 });
+  // 10 districts × 1000 sale + 500 rent → 10k ventas + 5k alquileres (+ junk).
+  const units = buildUnits({ weeks, saleUnitsPerDistrict: 1_000, rentUnitsPerDistrict: 500 });
   console.log(`${units.length} synthetic apartments across ${DISTRICTS.length} districts, ${weeks} weekly runs.`);
 
   const now = Date.now();

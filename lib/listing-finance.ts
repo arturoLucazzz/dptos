@@ -4,8 +4,21 @@
 
 import { financeFrom, type FixedAssumptions, type PanelAssumptions } from "@/lib/assumption-defaults";
 import { monthlyCosts, purchaseCosts } from "@/lib/costs";
-import { listingFinance, type ListingFinance } from "@/lib/finance";
+import { listingFinance, loanFor, type ListingFinance, type Loan } from "@/lib/finance";
 import type { ListingRow } from "@/lib/listing-row";
+
+/** Monthly payment from price + panel. Does not need a rent estimate. */
+export function loanForListing(
+  listing: ListingRow,
+  panel: PanelAssumptions,
+  fixed: FixedAssumptions
+): Loan | null {
+  if (!(listing.pricePen > 0)) return null;
+  return loanFor({
+    pricePen: listing.pricePen,
+    assumptions: financeFrom(panel, fixed),
+  });
+}
 
 export function financeForListing(
   listing: ListingRow,

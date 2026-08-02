@@ -86,7 +86,7 @@ export function DashboardsSection({ filtered, panel, fixedAssumptions }: Dashboa
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Cobertura mediana
+              % cobertura mediana
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -97,7 +97,7 @@ export function DashboardsSection({ filtered, panel, fixedAssumptions }: Dashboa
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Aporte mediano / mes
+              De bolsillo mediano
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -107,7 +107,7 @@ export function DashboardsSection({ filtered, panel, fixedAssumptions }: Dashboa
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Cobertura ≥ 40%
+              % cobertura ≥ 40%
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -122,7 +122,7 @@ export function DashboardsSection({ filtered, panel, fixedAssumptions }: Dashboa
       {byDistrict.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Cobertura mediana por distrito</CardTitle>
+            <CardTitle className="text-base">% cobertura mediana por distrito</CardTitle>
             <p className="text-sm text-muted-foreground">
               El ranking de distritos cambia con la inicial: no es el mismo con 10% que con 40%.
             </p>
@@ -135,7 +135,7 @@ export function DashboardsSection({ filtered, panel, fixedAssumptions }: Dashboa
                 <YAxis tick={{ fontSize: 12 }} unit="%" />
                 <Tooltip
                   formatter={(value) =>
-                    typeof value === "number" ? [`${value}%`, "Cobertura mediana"] : [String(value), ""]
+                    typeof value === "number" ? [`${value}%`, "% cobertura mediana"] : [String(value), ""]
                   }
                 />
                 <Bar dataKey="coberturaMediana" fill="#d97706" radius={[4, 4, 0, 0]} />

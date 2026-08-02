@@ -75,7 +75,7 @@ export function FavoritosClient({
                 <p>{listing.districtName}</p>
                 <p className="font-medium text-foreground">{formatPen(listing.pricePen)}</p>
                 <p>
-                  Cobertura {formatPct(finance?.coveragePct)} · aporte{" "}
+                  % cobertura {formatPct(finance?.coveragePct)} · de bolsillo{" "}
                   {formatPen(finance?.monthlyContributionPen)}
                 </p>
                 {listing.discountPct != null && (

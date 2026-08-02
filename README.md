@@ -97,7 +97,7 @@ pnpm db:generate
 | `pnpm scrape --districts=lince --operations=sale,rent` | Un subconjunto |
 | `pnpm scrape:probe` | Reporte de calidad de parseo (no escribe) |
 | `pnpm replay --reset data/runs/*.ndjson` | Re-ingesta sin red |
-| `pnpm db:seed:market -- --weeks=16 --reset` | Mercado sintético con precio conocido |
+| `pnpm db:seed:market -- --weeks=8 --reset` | Mercado sintético (~10k ventas + 5k alquileres, 10 distritos) |
 | `pnpm test` | Tests del dominio (159) |
 | `pnpm typecheck` | `tsc` de la app y del scraper |
 | `pnpm lint` | ESLint (flat config, Next) |

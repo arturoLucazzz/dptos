@@ -345,14 +345,6 @@ export function assumptionWarnings(a: FinanceAssumptions): AssumptionWarning[] {
     });
   }
 
-  if (a.downPaymentPct < 20) {
-    warnings.push({
-      kind: 'DOWN_PAYMENT_BELOW_BANK_MINIMUM',
-      message:
-        'Con menos de 20% de inicial: en segunda vivienda los bancos suelen pedir 20-30%, y no calificarías a programas de primera vivienda.',
-    });
-  }
-
   return warnings;
 }
 

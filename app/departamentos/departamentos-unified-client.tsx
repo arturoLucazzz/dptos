@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { DashboardsSection } from "./dashboards-section";
 import { DepartamentosTable } from "./departamentos-table";
+import { AssumptionsFields } from "@/components/assumptions-panel";
 import { Input } from "@/components/ui/input";
 import { MultiSelect, type MultiSelectOption } from "@/components/ui/multi-select";
 import { useAssumptionsContext } from "@/components/assumptions-provider";
@@ -20,6 +21,33 @@ interface DepartamentosUnifiedClientProps {
   districtOptions: DistrictOption[];
   fixedAssumptions: FixedAssumptions;
 }
+
+const GLOSSARY: { term: string; meaning: string }[] = [
+  {
+    term: "% cobertura",
+    meaning: "% de la cuota (TCEA) que cubre el alquiler neto estimado. 100% = el alquiler paga la cuota sola.",
+  },
+  {
+    term: "De bolsillo",
+    meaning: "Lo que falta poner de tu bolsillo cada mes: cuota − alquiler neto.",
+  },
+  {
+    term: "Cuota",
+    meaning: "Pago mensual del préstamo con tus supuestos (precio, inicial %, TCEA, plazo).",
+  },
+  {
+    term: "% vs precio justo",
+    meaning: "Diferencia vs el precio que estima el modelo. Positivo = más barato que el modelo.",
+  },
+  {
+    term: "% inicial necesario",
+    meaning: "Enganche requerido para que el alquiler cubra el 100% de la cuota.",
+  },
+  {
+    term: "Inicial / TEA / TCEA / Plazo",
+    meaning: "Supuestos del panel: enganche, tasa del préstamo, tasa total con seguros/comisiones, y años del crédito.",
+  },
+];
 
 export function DepartamentosUnifiedClient({
   listings,
@@ -62,52 +90,71 @@ export function DepartamentosUnifiedClient({
 
   return (
     <div className="space-y-10">
-      <div className="flex flex-wrap items-center justify-center gap-4 rounded-lg border bg-card p-4">
-        <div className="flex flex-col gap-2">
-          <label className="text-sm text-muted-foreground">Distrito</label>
-          <MultiSelect
-            options={multiSelectDistrictOptions}
-            onValueChange={setSelectedDistricts}
-            placeholder="Seleccionar distritos"
-            searchable={true}
-            maxCount={3}
-            variant="secondary"
-            className="w-[280px]"
-          />
+      <div className="space-y-4 rounded-lg border bg-card p-4">
+        <div className="flex flex-wrap items-end gap-4">
+          <div className="flex flex-col gap-2">
+            <label className="text-sm text-muted-foreground">Distrito</label>
+            <MultiSelect
+              options={multiSelectDistrictOptions}
+              onValueChange={setSelectedDistricts}
+              placeholder="Seleccionar distritos"
+              searchable={true}
+              maxCount={3}
+              variant="secondary"
+              className="w-[280px]"
+            />
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <label className="text-sm text-muted-foreground">Precio mín</label>
+            <Input
+              type="number"
+              placeholder="Ej. 100000"
+              value={priceMin}
+              onChange={(e) => setPriceMin(e.target.value)}
+              className="h-9 w-32"
+            />
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <label className="text-sm text-muted-foreground">Precio máx</label>
+            <Input
+              type="number"
+              placeholder="Ej. 800000"
+              value={priceMax}
+              onChange={(e) => setPriceMax(e.target.value)}
+              className="h-9 w-32"
+            />
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <label className="text-sm text-muted-foreground">% cobertura mín</label>
+            <Input
+              type="number"
+              placeholder="Ej. 40"
+              value={coverageMin}
+              onChange={(e) => setCoverageMin(e.target.value)}
+              className="h-9 w-28"
+            />
+          </div>
         </div>
 
-        <div className="flex flex-col gap-2">
-          <label className="text-sm text-muted-foreground">Precio mín</label>
-          <Input
-            type="number"
-            placeholder="Ej. 100000"
-            value={priceMin}
-            onChange={(e) => setPriceMin(e.target.value)}
-            className="h-9 w-32"
-          />
-        </div>
+        <AssumptionsFields />
 
-        <div className="flex flex-col gap-2">
-          <label className="text-sm text-muted-foreground">Precio máx</label>
-          <Input
-            type="number"
-            placeholder="Ej. 800000"
-            value={priceMax}
-            onChange={(e) => setPriceMax(e.target.value)}
-            className="h-9 w-32"
-          />
-        </div>
-
-        <div className="flex flex-col gap-2">
-          <label className="text-sm text-muted-foreground">Cobertura mín %</label>
-          <Input
-            type="number"
-            placeholder="Ej. 40"
-            value={coverageMin}
-            onChange={(e) => setCoverageMin(e.target.value)}
-            className="h-9 w-28"
-          />
-        </div>
+        <details className="text-sm text-muted-foreground">
+          <summary className="cursor-pointer font-medium text-foreground/80 hover:text-foreground">
+            Glosario
+          </summary>
+          <ul className="mt-2 space-y-1.5 border-t pt-2">
+            {GLOSSARY.map((item) => (
+              <li key={item.term}>
+                <span className="font-medium text-foreground/90">{item.term}</span>
+                {" — "}
+                {item.meaning}
+              </li>
+            ))}
+          </ul>
+        </details>
       </div>
 
       <DashboardsSection

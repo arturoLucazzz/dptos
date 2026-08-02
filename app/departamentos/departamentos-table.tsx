@@ -10,13 +10,13 @@ import {
 } from "@tanstack/react-table";
 import { useMemo, useState } from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { useFavorites } from "@/app/providers";
 import type { FixedAssumptions, PanelAssumptions } from "@/lib/assumption-defaults";
 import type { ListingRow } from "@/lib/listing-row";
-import { financeForListing, formatPen, formatPct } from "@/lib/listing-finance";
-import { ArrowUpDown } from "lucide-react";
+import { financeForListing, formatPen, formatPct, loanForListing } from "@/lib/listing-finance";
+import { ArrowUpDown, Star } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface DepartamentosTableProps {
   data: ListingRow[];
@@ -27,15 +27,18 @@ interface DepartamentosTableProps {
 function SortHeader({
   label,
   column,
+  title,
 }: {
   label: string;
   column: { toggleSorting: (desc?: boolean) => void; getIsSorted: () => false | "asc" | "desc" };
+  title?: string;
 }) {
   return (
     <Button
       variant="ghost"
       size="sm"
       className="-ml-2"
+      title={title}
       onClick={(e) => {
         e.stopPropagation();
         column.toggleSorting(column.getIsSorted() === "asc");
@@ -55,18 +58,25 @@ export function DepartamentosTable({ data, panel, fixedAssumptions }: Departamen
     () => [
       {
         id: "favorito",
-        header: "Fav",
+        header: () => <span className="sr-only">Favorito</span>,
         cell: ({ row }) => {
           const propertyId = row.original.propertyId;
+          const favorited = Boolean(propertyId && (isFavorite(propertyId) || row.original.favorite));
           return (
-            <div onClick={(e) => e.stopPropagation()}>
-              <Checkbox
-                checked={isFavorite(propertyId) || row.original.favorite}
-                disabled={!propertyId}
-                onCheckedChange={() => propertyId && toggleFavorite(propertyId)}
-                aria-label="Marcar favorito"
+            <button
+              type="button"
+              disabled={!propertyId}
+              aria-label={favorited ? "Quitar de favoritos" : "Marcar favorito"}
+              className="inline-flex items-center justify-center rounded p-1 text-muted-foreground hover:text-amber-500 disabled:opacity-40"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (propertyId) toggleFavorite(propertyId);
+              }}
+            >
+              <Star
+                className={cn("h-4 w-4", favorited && "fill-amber-400 text-amber-500")}
               />
-            </div>
+            </button>
           );
         },
       },
@@ -83,9 +93,44 @@ export function DepartamentosTable({ data, panel, fixedAssumptions }: Departamen
         sortingFn: "basic",
       },
       {
+        accessorKey: "areaM2",
+        header: "m²",
+        cell: ({ row }) =>
+          row.original.areaM2 != null
+            ? row.original.areaM2.toLocaleString("es-PE", { maximumFractionDigits: 0 })
+            : "—",
+      },
+      {
+        accessorKey: "bedrooms",
+        header: "Dorm.",
+        cell: ({ row }) => row.original.bedrooms ?? "—",
+      },
+      {
+        id: "cuota",
+        accessorFn: (row) => loanForListing(row, panel, fixedAssumptions)?.paymentPen ?? Infinity,
+        header: ({ column }) => (
+          <SortHeader
+            label="Cuota"
+            column={column}
+            title="Pago mensual del préstamo con tus supuestos"
+          />
+        ),
+        cell: ({ row }) => {
+          const loan = loanForListing(row.original, panel, fixedAssumptions);
+          return formatPen(loan?.paymentPen);
+        },
+        sortingFn: "basic",
+      },
+      {
         id: "coverage",
         accessorFn: (row) => financeForListing(row, panel, fixedAssumptions)?.coveragePct ?? -Infinity,
-        header: ({ column }) => <SortHeader label="Cobertura" column={column} />,
+        header: ({ column }) => (
+          <SortHeader
+            label="% cobertura"
+            column={column}
+            title="% de la cuota que cubre el alquiler neto estimado"
+          />
+        ),
         cell: ({ row }) => {
           const finance = financeForListing(row.original, panel, fixedAssumptions);
           if (!finance) {
@@ -107,7 +152,13 @@ export function DepartamentosTable({ data, panel, fixedAssumptions }: Departamen
         id: "aporte",
         accessorFn: (row) =>
           financeForListing(row, panel, fixedAssumptions)?.monthlyContributionPen ?? Infinity,
-        header: ({ column }) => <SortHeader label="Aporte / mes" column={column} />,
+        header: ({ column }) => (
+          <SortHeader
+            label="De bolsillo"
+            column={column}
+            title="Cuota − alquiler neto: lo que pones de tu bolsillo cada mes"
+          />
+        ),
         cell: ({ row }) => {
           const finance = financeForListing(row.original, panel, fixedAssumptions);
           return formatPen(finance?.monthlyContributionPen);
@@ -115,19 +166,15 @@ export function DepartamentosTable({ data, panel, fixedAssumptions }: Departamen
         sortingFn: "basic",
       },
       {
-        id: "cuota",
-        accessorFn: (row) => financeForListing(row, panel, fixedAssumptions)?.loan.paymentPen ?? Infinity,
-        header: ({ column }) => <SortHeader label="Cuota" column={column} />,
-        cell: ({ row }) => {
-          const finance = financeForListing(row.original, panel, fixedAssumptions);
-          return formatPen(finance?.loan.paymentPen);
-        },
-        sortingFn: "basic",
-      },
-      {
         id: "descuento",
         accessorFn: (row) => row.discountPct ?? -Infinity,
-        header: ({ column }) => <SortHeader label="Descuento" column={column} />,
+        header: ({ column }) => (
+          <SortHeader
+            label="% vs precio justo"
+            column={column}
+            title="Diferencia vs el precio que estima el modelo. Positivo = más barato que el modelo"
+          />
+        ),
         cell: ({ row }) => {
           const d = row.original.discountPct;
           if (d == null) return "—";
@@ -137,57 +184,16 @@ export function DepartamentosTable({ data, panel, fixedAssumptions }: Departamen
         sortingFn: "basic",
       },
       {
-        id: "rebaja",
-        accessorFn: (row) => row.priceCutScore,
-        header: ({ column }) => <SortHeader label="Prob. rebaja" column={column} />,
-        cell: ({ row }) => {
-          const r = row.original;
-          const title = [
-            r.listingCount > 1 ? `${r.listingCount} avisos` : null,
-            r.priceCutCount > 0 ? `${r.priceCutCount} bajada(s)` : null,
-            r.totalCutPct > 0 ? `−${(r.totalCutPct * 100).toFixed(0)}% desde el pico` : null,
-            r.inventoryMonths != null ? `${r.inventoryMonths.toFixed(1)} meses de inventario` : null,
-          ]
-            .filter(Boolean)
-            .join(" · ");
-          return <span title={title || "Sin señales todavía"}>{r.priceCutScore}</span>;
-        },
-        sortingFn: "basic",
-      },
-      {
-        accessorKey: "bedrooms",
-        header: "Dorm.",
-        cell: ({ row }) => row.original.bedrooms ?? "—",
-      },
-      {
-        accessorKey: "areaM2",
-        header: "m²",
-        cell: ({ row }) =>
-          row.original.areaM2 != null
-            ? row.original.areaM2.toLocaleString("es-PE", { maximumFractionDigits: 0 })
-            : "—",
-      },
-      {
-        id: "dias",
-        accessorFn: (row) => row.daysPublished ?? -1,
-        header: ({ column }) => <SortHeader label="Días" column={column} />,
-        cell: ({ row }) => {
-          const d = row.original.daysPublished;
-          if (d == null) return "—";
-          return (
-            <span title={row.original.daysPublishedEstimated ? "Estimado desde el id de Urbania" : "Fecha reportada"}>
-              {d}
-              {row.original.daysPublishedEstimated ? "~" : ""}
-            </span>
-          );
-        },
-        sortingFn: "basic",
-      },
-      {
         id: "inicial100",
         accessorFn: (row) =>
           financeForListing(row, panel, fixedAssumptions)?.downPaymentPctForFullCoverage ?? Infinity,
-        header: ({ column }) => <SortHeader label="Inicial p/ 100%" column={column} />,
+        header: ({ column }) => (
+          <SortHeader
+            label="% inicial necesario"
+            column={column}
+            title="Enganche requerido para que el alquiler cubra el 100% de la cuota"
+          />
+        ),
         cell: ({ row }) => {
           const finance = financeForListing(row.original, panel, fixedAssumptions);
           return formatPct(finance?.downPaymentPctForFullCoverage, 0);
@@ -212,16 +218,10 @@ export function DepartamentosTable({ data, panel, fixedAssumptions }: Departamen
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <p className="text-sm text-muted-foreground">
-          {data.length} resultado{data.length !== 1 ? "s" : ""} · orden por cobertura (recalcula con los
-          supuestos)
-        </p>
-        <p className="text-xs text-muted-foreground">
-          El descuento vs precio justo es un generador de shortlist, no un veredicto: lo barato suele
-          estarlo por razones que los datos no ven.
-        </p>
-      </div>
+      <p className="text-sm text-muted-foreground">
+        {data.length} resultado{data.length !== 1 ? "s" : ""} · orden por % cobertura (recalcula con los
+        supuestos)
+      </p>
       <div className="overflow-x-auto rounded-md border">
         <Table>
           <TableHeader>

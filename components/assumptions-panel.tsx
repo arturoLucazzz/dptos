@@ -23,72 +23,57 @@ const FIELDS: FieldSpec[] = [
   { key: "termYears", label: "Plazo", suffix: "años", min: 5, max: 30, step: 1 },
 ];
 
-function AssumptionsPanelInner({ className }: { className?: string }) {
+/** Editable panel fields (Inicial / TEA / TCEA / Plazo). Renders inline next to filters. */
+export function AssumptionsFields({ className }: { className?: string }) {
   const { panel, setField, reset, warnings, ready } = useAssumptionsContext();
 
   return (
-    <div
-      className={cn(
-        "sticky top-14 z-40 -mx-4 mb-2 border-b border-border bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80",
-        className
-      )}
-    >
-      <div className="flex flex-col gap-3 py-3">
-        <div className="flex flex-wrap items-end gap-4">
-          <div className="mr-2 hidden text-sm font-medium text-muted-foreground sm:block">
-            Supuestos
-          </div>
-          {FIELDS.map((field) => (
-            <label key={field.key} className="flex flex-col gap-1">
-              <span className="text-xs text-muted-foreground">
-                {field.label} ({field.suffix})
-              </span>
-              <Input
-                type="number"
-                min={field.min}
-                max={field.max}
-                step={field.step}
-                value={ready ? panel[field.key] : ""}
-                disabled={!ready}
-                onChange={(e) => {
-                  const n = Number(e.target.value);
-                  if (!Number.isFinite(n)) return;
-                  setField(field.key, n as PanelAssumptions[typeof field.key]);
-                }}
-                className="h-9 w-24"
-              />
-            </label>
-          ))}
-          <Button type="button" variant="ghost" size="sm" onClick={reset} className="mb-0.5">
-            Restablecer
-          </Button>
+    <div className={cn("flex flex-col gap-2", className)}>
+      <div className="flex flex-wrap items-end gap-4">
+        <div className="mr-2 hidden text-sm font-medium text-muted-foreground sm:block">
+          Supuestos
         </div>
-        {warnings.length > 0 && (
-          <ul className="space-y-1 text-xs text-amber-700 dark:text-amber-400">
-            {warnings.map((w) => (
-              <li key={w.kind}>{w.message}</li>
-            ))}
-          </ul>
-        )}
+        {FIELDS.map((field) => (
+          <label key={field.key} className="flex flex-col gap-1">
+            <span className="text-xs text-muted-foreground">
+              {field.label} ({field.suffix})
+            </span>
+            <Input
+              type="number"
+              min={field.min}
+              max={field.max}
+              step={field.step}
+              value={ready ? panel[field.key] : ""}
+              disabled={!ready}
+              onChange={(e) => {
+                const n = Number(e.target.value);
+                if (!Number.isFinite(n)) return;
+                setField(field.key, n as PanelAssumptions[typeof field.key]);
+              }}
+              className="h-9 w-24"
+            />
+          </label>
+        ))}
+        <Button type="button" variant="ghost" size="sm" onClick={reset} className="mb-0.5">
+          Restablecer
+        </Button>
       </div>
+      {warnings.length > 0 && (
+        <ul className="space-y-1 text-xs text-amber-700 dark:text-amber-400">
+          {warnings.map((w) => (
+            <li key={w.kind}>{w.message}</li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
 
-/** Panel + shared state for anything on the page that reads the assumptions. */
-export function AssumptionsShell({
-  children,
-  className,
-}: {
-  children: ReactNode;
-  className?: string;
-}) {
+/** Shared assumptions state for the page. Fields render inside the filters card. */
+export function AssumptionsShell({ children }: { children: ReactNode }) {
   return (
     <Suspense fallback={null}>
-      <AssumptionsProvider>
-        <AssumptionsPanelInner className={className} />
-        {children}
-      </AssumptionsProvider>
+      <AssumptionsProvider>{children}</AssumptionsProvider>
     </Suspense>
   );
 }
