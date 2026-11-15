@@ -421,9 +421,9 @@ Interfaces:
     - On a row with more than one copy, a `"no es el mismo"` item per copy that calls `splitPosting`.
     - A `"Fuente"` multi-select filter bound to `fuentes`.
   - `scripts/export-duplicate-decisions.ts`. It writes every `CONFIRMED` and `REJECTED` pair as two `DedupeSide` values plus the status to `lib/__fixtures__/duplicate-decisions.json`.
-  - A test in `lib/dedupe.test.ts`, `owner decisions still hold`. It reads that file when it exists. For a confirmed pair, `classifyPair` is not null. For a rejected pair, it is not HIGH. With no file, the test passes.
+  - A test in `lib/dedupe.test.ts`, `owner decisions still hold`. If that file exists, the test reads it. For a pair with status `CONFIRMED`, `classifyPair` is not null. For a pair with status `REJECTED`, it is not HIGH. With no file, the test passes.
 
-- [ ] Step 1: Write the failing tests for `mergeAnnotations`: `favorite survives`, `visible wins over discarded`, `notes join without blanks`. Add `owner decisions still hold` with a small fixture of one confirmed and one rejected pair.
+- [ ] Step 1: Write the failing tests for `mergeAnnotations`: `favorite survives`, `visible wins over discarded`, `notes join without blanks`. Add `owner decisions still hold` with a small fixture of one `CONFIRMED` pair and one `REJECTED` pair.
 - [ ] Step 2: Run `node --import tsx --test lib/duplicates.test.ts`. Expected: FAIL.
 - [ ] Step 3: Implement `lib/duplicates.ts`, the actions, and the UI.
 - [ ] Step 4: Run `pnpm test && pnpm typecheck && pnpm lint`. Expected: PASS.
