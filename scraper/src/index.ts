@@ -92,16 +92,22 @@ async function runSource(
   const pending = new Map<string, ListingCard[]>();
 
   console.log(`\n=== Scraping ${adapter.id} (${label}) ===`);
-  const result = await adapter.crawl({
-    districts: opts.districts,
-    operation,
-    onBatch: async (batch) => {
-      await sink.append(batch.cards);
-      const existing = pending.get(batch.districtSlug) ?? [];
-      existing.push(...batch.cards);
-      pending.set(batch.districtSlug, existing);
-    },
-  });
+  let result;
+  try {
+    result = await adapter.crawl({
+      districts: opts.districts,
+      operation,
+      onBatch: async (batch) => {
+        await sink.append(batch.cards);
+        const existing = pending.get(batch.districtSlug) ?? [];
+        existing.push(...batch.cards);
+        pending.set(batch.districtSlug, existing);
+      },
+    });
+  } finally {
+    // An open handle left to the garbage collector prints DEP0137 at the next source.
+    await sink.close();
+  }
   console.log(`Observed ${sink.count()} postings (raw copy: ${sink.path})`);
   if (result.skippedOutsideLima > 0) {
     console.log(`Skipped ${result.skippedOutsideLima} postings outside Lima`);

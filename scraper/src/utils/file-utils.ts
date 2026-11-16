@@ -40,6 +40,8 @@ export interface IncrementalSink {
   path: string;
   append(records: unknown[]): Promise<void>;
   count(): number;
+  /** Close the file. Call it once the source is done, also after an error. */
+  close(): Promise<void>;
 }
 
 /**
@@ -65,6 +67,7 @@ export async function createIncrementalSink(
       written += records.length;
     },
     count: () => written,
+    close: () => handle.close(),
   };
 }
 
