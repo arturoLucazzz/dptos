@@ -8,13 +8,7 @@
  */
 
 import { prisma } from '../lib/db';
-
-export function streetFromAddressNorm(addressNorm: string): string {
-  return addressNorm
-    .split(/\s+/)
-    .filter((token) => token !== '' && !/\d/.test(token))
-    .join(' ');
-}
+import { streetNorm } from '../lib/dedupe';
 
 async function main() {
   const rows = await prisma.property.findMany({
@@ -24,11 +18,11 @@ async function main() {
 
   let updated = 0;
   for (const row of rows) {
-    const streetNorm = streetFromAddressNorm(row.addressNorm ?? '');
-    if (streetNorm === '') continue;
+    const street = streetNorm(row.addressNorm);
+    if (street === null) continue;
     // Raw SQL on purpose: prisma.update would bump Property.updatedAt, and this
     // backfill changes nothing the user edited.
-    await prisma.$executeRaw`UPDATE "Property" SET "streetNorm" = ${streetNorm} WHERE id = ${row.id}`;
+    await prisma.$executeRaw`UPDATE "Property" SET "streetNorm" = ${street} WHERE id = ${row.id}`;
     updated += 1;
   }
   console.log(`Updated ${updated} properties.`);

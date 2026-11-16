@@ -1,0 +1,178 @@
+import assert from 'node:assert/strict';
+import { describe, it } from 'node:test';
+import { classifyPair, decideProperty, nameNorm, pairKey, streetNorm, type DedupeSide } from './dedupe';
+import { toPen } from './money';
+import { normalizeAddress } from './fingerprint';
+
+function side(over: Partial<DedupeSide> = {}): DedupeSide {
+  return {
+    id: 'a',
+    sources: ['urbania'],
+    districtSlug: 'lince',
+    addressNorm: null,
+    streetNorm: null,
+    buildingNorm: null,
+    unitNumber: null,
+    developerNorm: null,
+    titleNorm: null,
+    bedrooms: 2,
+    areaM2: 65,
+    latitude: null,
+    longitude: null,
+    pricePen: 399000,
+    ...over,
+  };
+}
+
+describe('classifyPair', () => {
+  it('navent copy is high', () => {
+    const a = side({ sources: ['urbania'], titleNorm: 'depa lince', addressNorm: 'iquitos' });
+    const b = side({ id: 'b', sources: ['adondevivir'], titleNorm: 'depa lince', addressNorm: 'iquitos' });
+    const r = classifyPair(a, b);
+    assert.equal(r.level, 'HIGH');
+    assert.deepEqual(r.signals, ['navent-copy']);
+    assert.equal(r.closeness, 1);
+  });
+
+  it('usd copy matches pen copy', () => {
+    const a = side({ addressNorm: 'iquitos 1234', pricePen: 399000 });
+    const b = side({ id: 'b', sources: ['proper'], addressNorm: 'iquitos 1234', pricePen: toPen(114000, 'USD') });
+    const r = classifyPair(a, b);
+    assert.equal(r.level, 'HIGH');
+    assert.deepEqual(r.signals, ['same-door']);
+  });
+
+  it('same building and unit is high', () => {
+    const a = side({ buildingNorm: 'prolongacion iquitos', unitNumber: '202', pricePen: 399000 });
+    const b = side({ id: 'b', buildingNorm: 'prolongacion iquitos', unitNumber: '202', pricePen: 450000 });
+    const r = classifyPair(a, b);
+    assert.equal(r.level, 'HIGH');
+    assert.deepEqual(r.signals, ['same-unit']);
+  });
+
+  it('same building no unit is medium', () => {
+    const a = side({ buildingNorm: 'prolongacion iquitos', areaM2: 65, pricePen: 399000 });
+    const b = side({ id: 'b', buildingNorm: 'prolongacion iquitos', areaM2: 66, pricePen: 405000 });
+    const r = classifyPair(a, b);
+    assert.equal(r.level, 'MEDIUM');
+    assert.deepEqual(r.signals, ['same-building']);
+    assert.equal(r.closeness, 0);
+  });
+
+  it('street only is low', () => {
+    const a = side({ streetNorm: 'iquitos', areaM2: 65 });
+    const b = side({ id: 'b', streetNorm: 'iquitos', areaM2: 69 });
+    const r = classifyPair(a, b);
+    assert.equal(r.level, 'LOW');
+    assert.deepEqual(r.signals, ['same-street']);
+  });
+
+  it('price gap over 10% is nothing', () => {
+    const a = side({ buildingNorm: 'prolongacion iquitos', pricePen: 399000 });
+    const b = side({ id: 'b', buildingNorm: 'prolongacion iquitos', pricePen: 445000 });
+    assert.equal(classifyPair(a, b).level, null);
+  });
+
+  it('publisher alone is nothing', () => {
+    const a = side({ developerNorm: null, areaM2: 40, bedrooms: 1 });
+    const b = side({ id: 'b', developerNorm: null, areaM2: 90, bedrooms: 3, pricePen: 800000 });
+    assert.equal(classifyPair(a, b).level, null);
+  });
+
+  it('different unit numbers never pair', () => {
+    const a = side({ buildingNorm: 'prolongacion iquitos', unitNumber: '202' });
+    const b = side({ id: 'b', buildingNorm: 'prolongacion iquitos', unitNumber: '305' });
+    assert.equal(classifyPair(a, b).level, null);
+    const c = side({ addressNorm: 'iquitos 1234', unitNumber: '202' });
+    const d = side({ id: 'd', addressNorm: 'iquitos 1234', unitNumber: '305' });
+    assert.equal(classifyPair(c, d).level, null);
+  });
+
+  it('different districts never pair', () => {
+    const a = side({ buildingNorm: 'x', unitNumber: '1' });
+    const b = side({ id: 'b', districtSlug: 'jesus-maria', buildingNorm: 'x', unitNumber: '1' });
+    assert.equal(classifyPair(a, b).level, null);
+  });
+
+  it('new building units never merge', () => {
+    const units = Array.from({ length: 12 }, (_, i) =>
+      side({
+        id: `u${i}`,
+        addressNorm: 'benavides',
+        streetNorm: 'benavides',
+        areaM2: 52 + (i * 7) / 11,
+        pricePen: 494000 + (i * 41000) / 11,
+      })
+    );
+    for (const x of units) {
+      for (const y of units) {
+        if (x.id === y.id) continue;
+        assert.notEqual(classifyPair(x, y).level, 'HIGH');
+      }
+    }
+  });
+
+  it('null address gives no low flag', () => {
+    const a = side({ addressNorm: null, streetNorm: null });
+    const b = side({ id: 'b', addressNorm: null, streetNorm: null });
+    assert.equal(classifyPair(a, b).level, null);
+  });
+
+  it('null price gives no medium', () => {
+    const a = side({ buildingNorm: 'x', pricePen: null });
+    const b = side({ id: 'b', buildingNorm: 'x' });
+    assert.equal(classifyPair(a, b).level, null);
+  });
+
+  it('far coordinates block medium, missing coordinates do not', () => {
+    const far = { latitude: -12.08, longitude: -77.03 };
+    const farther = { latitude: -12.09, longitude: -77.03 };
+    const a = side({ buildingNorm: 'x', ...far });
+    assert.equal(classifyPair(a, side({ id: 'b', buildingNorm: 'x', ...farther })).level, null);
+    assert.equal(classifyPair(a, side({ id: 'b', buildingNorm: 'x' })).level, 'MEDIUM');
+  });
+});
+
+describe('decideProperty', () => {
+  it('decideProperty attaches to the closest high', () => {
+    const subject = side({ id: 's', addressNorm: 'iquitos 1234', pricePen: 400000 });
+    const far = side({ id: 'far', addressNorm: 'iquitos 1234', pricePen: 410000 });
+    const near = side({ id: 'near', addressNorm: 'iquitos 1234', pricePen: 400000 });
+    const medium = side({ id: 'med', buildingNorm: 'x' });
+    const d = decideProperty({ ...subject, buildingNorm: 'x' }, [far, medium, near]);
+    assert.equal(d.attachTo, 'near');
+    assert.deepEqual(d.flags, []);
+  });
+
+  it('decideProperty returns flags when no high', () => {
+    const subject = side({ id: 's', buildingNorm: 'x', streetNorm: 'iquitos' });
+    const med = side({ id: 'm', buildingNorm: 'x' });
+    const low = side({ id: 'l', streetNorm: 'iquitos', areaM2: 69 });
+    const none = side({ id: 'n', districtSlug: 'barranco' });
+    const d = decideProperty(subject, [med, low, none]);
+    assert.equal(d.attachTo, null);
+    assert.deepEqual(d.flags, [
+      { propertyId: 'm', level: 'MEDIUM', signals: ['same-building'] },
+      { propertyId: 'l', level: 'LOW', signals: ['same-street'] },
+    ]);
+  });
+});
+
+describe('helpers', () => {
+  it('pairKey is order free', () => assert.deepEqual(pairKey('b', 'a'), pairKey('a', 'b')));
+
+  it('streetNorm drops digit tokens and agrees on normalized input', () => {
+    assert.equal(streetNorm('Av. Arequipa 1900'), 'arequipa');
+    assert.equal(streetNorm('1900'), null);
+    assert.equal(streetNorm(null), null);
+    for (const raw of ['Av. Arequipa al 1900', 'Jr. Iquitos 1234 Dpto 5', 'Calle Los Pinos']) {
+      const norm = normalizeAddress(raw) as string;
+      assert.equal(streetNorm(norm), streetNorm(raw));
+    }
+  });
+
+  it('nameNorm strips noise words and accents', () => {
+    assert.equal(nameNorm('Edificio Residencial Gálvez, Torre 2'), 'galvez 2');
+    assert.equal(nameNorm('Proyecto'), null);
+  });
+});
