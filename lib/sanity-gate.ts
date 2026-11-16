@@ -45,3 +45,67 @@ export function previousCountFrom(
 export function gateSkips(observed: number, previous: number | null, ratio: number): boolean {
   return previous != null && previous > 0 && observed < previous * ratio;
 }
+
+/** How many collapsed runs in a row, the current one included, make a drop real. */
+export const RUNS_TO_ACCEPT_DROP = 3;
+
+/** One earlier run's view of a source, district and operation. */
+export interface SliceObservation {
+  observed: number;
+  gated: boolean;
+}
+
+/**
+ * The runs that observed one slice, newest first, from what runs store:
+ * `districtCounts` and `skippedDistricts`. Gated runs are not in the source's
+ * `sources`, so this reads the counts instead. Old Urbania runs wrote skipped
+ * slices as `district:OP`.
+ */
+export function sliceHistory(
+  runsNewestFirst: { districtCounts: unknown; skippedDistricts: string[] }[],
+  source: SourceId,
+  district: string,
+  operation: 'SALE' | 'RENT'
+): SliceObservation[] {
+  const keys = [`${source}:${district}:${operation}`];
+  if (source === 'urbania') keys.push(`${district}:${operation}`);
+
+  const history: SliceObservation[] = [];
+  for (const run of runsNewestFirst) {
+    const observed = previousCountFrom(run.districtCounts, source, district, operation);
+    if (observed == null) continue;
+    history.push({ observed, gated: run.skippedDistricts.some((slice) => keys.includes(slice)) });
+  }
+  return history;
+}
+
+export type GateVerdict = 'pass' | 'skip' | 'auto-accepted' | 'manual-accepted';
+
+/**
+ * The gate, with two ways out of a drop that is real (a district relabelled, a
+ * bulk delisting), so the baseline does not stay stuck at the old count forever:
+ *
+ * - automatic, when the slice collapsed in RUNS_TO_ACCEPT_DROP runs in a row,
+ *   this one included, with something observed each time. Zero is never
+ *   accepted on its own: a blocked source must not mark everything sold.
+ * - manual, with `--accept-gate=source:district` for this run.
+ *
+ * `recent` is the slice's earlier history, newest first.
+ */
+export function gateVerdict(input: {
+  observed: number;
+  previousCount: number | null;
+  ratio: number;
+  recent: SliceObservation[];
+  manualAccept: boolean;
+}): GateVerdict {
+  if (!gateSkips(input.observed, input.previousCount, input.ratio)) return 'pass';
+  if (input.manualAccept) return 'manual-accepted';
+
+  const earlier = input.recent.slice(0, RUNS_TO_ACCEPT_DROP - 1);
+  const collapsedEveryTime =
+    input.observed > 0 &&
+    earlier.length === RUNS_TO_ACCEPT_DROP - 1 &&
+    earlier.every((run) => run.gated && run.observed > 0);
+  return collapsedEveryTime ? 'auto-accepted' : 'skip';
+}

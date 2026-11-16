@@ -9,6 +9,7 @@
  */
 
 import type { SourceId } from '@/lib/listing-card';
+import type { SourceCrawlResult } from './types';
 
 export interface SourceOutcome {
   source: SourceId;
@@ -35,4 +36,46 @@ export function sourcesToRecord(outcomes: SourceOutcome[]): {
     else recorded.push(outcome.source);
   }
   return { recorded, leftOut };
+}
+
+/** The slug a scraper builds from a typed district name. */
+function districtSlug(name: string): string {
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9-]/g, '');
+}
+
+/**
+ * Whether a crawl covered everything it was asked for. One that stopped early,
+ * or left a requested district out, is a failed source: its finished districts
+ * still ingest, but the run does not record the source.
+ */
+export function crawlIsComplete(requested: string[], result: SourceCrawlResult): boolean {
+  if (result.incomplete) return false;
+  const returned = new Set(result.districts.map((d) => districtSlug(d.districtSlug)));
+  return requested.every((name) => returned.has(districtSlug(name)));
+}
+
+/**
+ * `--accept-gate=source:district`, repeated or as a comma list: slices whose
+ * collapse the owner has checked and accepts for this run, both operations.
+ */
+export function parseAcceptGate(args: string[]): Set<string> {
+  const prefix = '--accept-gate=';
+  const accepted = new Set<string>();
+  for (const arg of args) {
+    if (!arg.startsWith(prefix)) continue;
+    for (const value of arg.slice(prefix.length).split(',')) {
+      const trimmed = value.trim();
+      if (!trimmed) continue;
+      const [source, district, ...rest] = trimmed.split(':');
+      if (!source || !district || rest.length > 0) {
+        throw new Error(`--accept-gate expects source:district, got "${trimmed}"`);
+      }
+      accepted.add(`${source}:${districtSlug(district)}`);
+    }
+  }
+  return accepted;
 }

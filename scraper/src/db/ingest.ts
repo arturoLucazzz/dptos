@@ -22,7 +22,14 @@ import { Operation, PostingKind, ScrapeMode, ScrapeStatus, Currency } from '@/li
 import { toPen } from '@/lib/money';
 import { flagsForListing, flagsFromSlug } from '@/lib/quality-flags';
 import type { ListingCard, SourceId } from '@/lib/listing-card';
-import { gateSkips, previousCountFrom, type SourceDistrictCounts } from '@/lib/sanity-gate';
+import {
+  gateSkips,
+  gateVerdict,
+  previousCountFrom,
+  sliceHistory,
+  type GateVerdict,
+  type SourceDistrictCounts,
+} from '@/lib/sanity-gate';
 import { resolveProject, resolveUnitProperty } from './resolve';
 
 /**
@@ -107,20 +114,25 @@ export async function finishRun(
   });
 }
 
+/** How far back to look for a slice's recent history. */
+const GATE_HISTORY_RUNS = 50;
+
 /**
  * Whether a source's count for a district collapsed compared to the last run
- * of that source.
+ * of that source, and whether that collapse is accepted anyway.
  *
  * The only protection against a broken parser silently marking a whole
  * district as sold. Runs from before `sources` existed were Urbania runs.
+ * The verdict rules live in `gateVerdict`.
  */
 export async function shouldSkipDistrict(
   source: SourceId,
   districtSlug: string,
   operation: Operation,
   observedCount: number,
-  currentRunId: string
-): Promise<{ skip: boolean; previousCount: number | null }> {
+  currentRunId: string,
+  manualAccept = false
+): Promise<{ skip: boolean; previousCount: number | null; verdict: GateVerdict }> {
   const previous = await prisma.scrapeRun.findFirst({
     where: {
       id: { not: currentRunId },
@@ -132,9 +144,27 @@ export async function shouldSkipDistrict(
     orderBy: { startedAt: 'desc' },
     select: { districtCounts: true },
   });
-
   const previousCount = previousCountFrom(previous?.districtCounts ?? null, source, districtSlug, operation);
-  return { skip: gateSkips(observedCount, previousCount, SANITY_GATE_RATIO), previousCount };
+
+  // Every finished run, whatever its status: a run where this source was gated
+  // can be FAILED when it was the only source, and it still observed the slice.
+  const recentRuns = gateSkips(observedCount, previousCount, SANITY_GATE_RATIO)
+    ? await prisma.scrapeRun.findMany({
+        where: { id: { not: currentRunId }, finishedAt: { not: null } },
+        orderBy: { startedAt: 'desc' },
+        take: GATE_HISTORY_RUNS,
+        select: { districtCounts: true, skippedDistricts: true },
+      })
+    : [];
+
+  const verdict = gateVerdict({
+    observed: observedCount,
+    previousCount,
+    ratio: SANITY_GATE_RATIO,
+    recent: sliceHistory(recentRuns, source, districtSlug, operation),
+    manualAccept,
+  });
+  return { skip: verdict === 'skip', previousCount, verdict };
 }
 
 /**

@@ -30,6 +30,11 @@ export interface SourceCrawlResult {
   districts: SourceDistrictResult[];
   /** Cards dropped because they were not in a Lima district. */
   skippedOutsideLima: number;
+  /**
+   * True when the crawl stopped before covering every requested district. The
+   * finished districts still ingest, but the source counts as failed on the run.
+   */
+  incomplete: boolean;
 }
 
 export interface SourceAdapter {

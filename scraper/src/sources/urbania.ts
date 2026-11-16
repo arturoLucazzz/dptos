@@ -52,8 +52,9 @@ export function createUrbaniaAdapter(): SourceAdapter {
 
       // The base scraper catches a failure that ends the crawl early (a browser
       // that would not start, a crash mid-district). The districts finished before
-      // it are still good; the error rides on the last of them so the run is
-      // marked partial. With none finished, the source failed as a whole.
+      // it are still good, so they are returned, and the crawl is flagged
+      // incomplete so the loop treats the source as failed. With none finished,
+      // the source failed as a whole.
       const fatal = result.metadata?.errors ?? [];
       if (fatal.length > 0) {
         const last = districtResults[districtResults.length - 1];
@@ -61,7 +62,7 @@ export function createUrbaniaAdapter(): SourceAdapter {
         last.errors.push(...fatal.map((message) => `crawl stopped early: ${message}`));
       }
 
-      return { districts: districtResults, skippedOutsideLima: 0 };
+      return { districts: districtResults, skippedOutsideLima: 0, incomplete: fatal.length > 0 };
     },
   };
 }

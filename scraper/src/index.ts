@@ -6,12 +6,12 @@ import { createIncrementalSink } from './utils/file-utils';
 import { DataProcessor } from './processor';
 import { finishRun, ingestCards, refreshManualPostings, shouldSkipDistrict, startRun } from './db/ingest';
 import { ADAPTERS } from './sources/registry';
-import { sourcesToRecord, type SourceOutcome } from './sources/run-sources';
+import { crawlIsComplete, parseAcceptGate, sourcesToRecord, type SourceOutcome } from './sources/run-sources';
 import type { SourceAdapter } from './sources/types';
 import { Operation, ScrapeMode, ScrapeStatus } from '@/lib/generated/prisma/enums';
 import { prisma } from '@/lib/db';
 import { invalidateMarketCache } from '@/lib/market';
-import type { ListingCard } from '@/lib/listing-card';
+import type { ListingCard, SourceId } from '@/lib/listing-card';
 import type { SourceDistrictCounts } from '@/lib/sanity-gate';
 
 /**
@@ -61,6 +61,10 @@ interface RunState {
   errors: unknown[];
   pagesFetched: number;
   blocked: boolean;
+  /** Slices the sanity gate skipped, per source. */
+  gatedSlices: Partial<Record<SourceId, number>>;
+  /** `--accept-gate` slices, as `source:district`. */
+  acceptGate: Set<string>;
 }
 
 function operationLabel(operation: Operation): 'sale' | 'rent' {
@@ -69,12 +73,13 @@ function operationLabel(operation: Operation): 'sale' | 'rent' {
 
 /**
  * Crawl one source for one operation, then gate and ingest it district by district.
+ * Returns whether the crawl covered every requested district.
  */
 async function runSource(
   adapter: SourceAdapter,
   run: RunState,
   opts: { districts: string[]; operation: Operation }
-): Promise<void> {
+): Promise<boolean> {
   const { operation } = opts;
   const label = operationLabel(operation);
 
@@ -113,14 +118,27 @@ async function runSource(
     counts[district.districtSlug] ??= {};
     counts[district.districtSlug][operation] = cards.length;
 
-    const { skip, previousCount } = await shouldSkipDistrict(
+    const { skip, previousCount, verdict } = await shouldSkipDistrict(
       adapter.id,
       district.districtSlug,
       operation,
       cards.length,
-      run.id
+      run.id,
+      run.acceptGate.has(`${adapter.id}:${district.districtSlug}`)
     );
+    if (verdict === 'auto-accepted') {
+      console.log(
+        `  ${district.districtSlug}: ${cards.length} postings against ${previousCount} last run, ` +
+          `aceptado tras 3 corridas: the drop held for 3 runs in a row, so it is taken as real.`
+      );
+    } else if (verdict === 'manual-accepted') {
+      console.log(
+        `  ${district.districtSlug}: ${cards.length} postings against ${previousCount} last run, ` +
+          `accepted by --accept-gate.`
+      );
+    }
     if (skip) {
+      run.gatedSlices[adapter.id] = (run.gatedSlices[adapter.id] ?? 0) + 1;
       run.skippedDistricts.push(`${adapter.id}:${district.districtSlug}:${operation}`);
       console.log(
         `  ${district.districtSlug}: ${cards.length} postings against ${previousCount} last run. ` +
@@ -148,6 +166,16 @@ async function runSource(
         (district.blocked ? '  BLOCKED' : '')
     );
   }
+
+  const complete = crawlIsComplete(opts.districts, result);
+  if (!complete) {
+    const returned = new Set(result.districts.map((d) => d.districtSlug));
+    const missing = opts.districts.filter((d) => !returned.has(d));
+    run.errors.push(
+      `${adapter.id} (${label}) incomplete` + (missing.length ? `: no result for ${missing.join(', ')}` : '')
+    );
+  }
+  return complete;
 }
 
 /** The adapters to run: `--sources=a,b`, or every registered one. */
@@ -179,6 +207,7 @@ async function runScrapers(args: string[]) {
     .map((op) => (op === 'rent' ? Operation.RENT : Operation.SALE));
   const mode = (argValue(args, 'mode') as ScrapeMode) ?? ScrapeMode.TARGET_DAILY;
   const dryRun = args.includes('--dry-run');
+  const acceptGate = parseAcceptGate(args);
   const adapters = selectAdapters(argValue(args, 'sources'));
   const sources = adapters.map((adapter) => adapter.id);
 
@@ -193,11 +222,14 @@ async function runScrapers(args: string[]) {
     errors: [],
     pagesFetched: 0,
     blocked: false,
+    gatedSlices: {},
+    acceptGate,
   };
   console.log(`Run ${run.id} (${mode})${dryRun ? ' DRY RUN, nothing written to the database' : ''}`);
   console.log(`  sources: ${sources.join(', ')}`);
   console.log(`  districts: ${districts.join(', ')}`);
   console.log(`  operations: ${operations.join(', ')}`);
+  if (acceptGate.size > 0) console.log(`  accept gate: ${[...acceptGate].join(', ')}`);
 
   // What each source did, to decide which ones the run records (see run-sources.ts).
   const outcomes: SourceOutcome[] = [];
@@ -208,7 +240,11 @@ async function runScrapers(args: string[]) {
       let failed = false;
       for (const operation of adapterOperations) {
         try {
-          await runSource(adapter, run, { districts, operation });
+          const complete = await runSource(adapter, run, { districts, operation });
+          if (!complete) {
+            failed = true;
+            console.error(`Source ${adapter.id} (${operationLabel(operation)}) stopped before every district`);
+          }
         } catch (error) {
           failed = true;
           const message = error instanceof Error ? error.message : String(error);
@@ -220,7 +256,7 @@ async function runScrapers(args: string[]) {
         source: adapter.id,
         crawled: adapterOperations.length > 0,
         failed,
-        gatedSlices: run.skippedDistricts.filter((slice) => slice.startsWith(`${adapter.id}:`)).length,
+        gatedSlices: run.gatedSlices[adapter.id] ?? 0,
       });
     }
 
@@ -239,6 +275,10 @@ async function runScrapers(args: string[]) {
           ? ScrapeStatus.PARTIAL
           : ScrapeStatus.SUCCESS;
 
+    // Said on the run too, so /runs can explain a FAILED or PARTIAL badge.
+    for (const { source, reason } of leftOut) run.errors.push(`${source} not recorded on the run: ${reason}`);
+    if (recorded.length === 0) run.errors.push('no source recorded');
+
     if (!dryRun) {
       if (status !== ScrapeStatus.FAILED) {
         const refreshed = await refreshManualPostings(new Date());
@@ -249,7 +289,7 @@ async function runScrapers(args: string[]) {
         districtCounts: run.districtCounts,
         pagesFetched: run.pagesFetched,
         skippedDistricts: run.skippedDistricts,
-        errors: run.errors.length ? run.errors : recorded.length === 0 ? ['no source recorded'] : undefined,
+        errors: run.errors.length ? run.errors : undefined,
         sources: recorded,
       });
       invalidateMarketCache();
@@ -301,6 +341,7 @@ Usage:
   pnpm scrape --operations=sale                 - Only one operation
   pnpm scrape --mode=FULL_WEEKLY                - Label the run (TARGET_DAILY | FULL_WEEKLY | MANUAL)
   pnpm scrape --dry-run                         - Crawl and log, write nothing to the database
+  pnpm scrape --accept-gate=urbania:lince       - Accept a sanity-gate drop for this run (repeat or comma list)
   pnpm scrape:probe --district=lince --pages=2  - Parse-quality report, writes nothing
   pnpm process [file]                           - Process legacy JSON result files
 
