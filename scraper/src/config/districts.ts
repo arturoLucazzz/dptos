@@ -31,3 +31,21 @@ export const LIMA_DISTRICT_NAMES: Record<string, string> = {
   'santiago-de-surco': 'Santiago de Surco',
   'san-miguel': 'San Miguel',
 };
+
+const DISTRICT_ALIASES: Record<string, string> = {
+  'surco': 'santiago-de-surco',
+  'magdalena del mar': 'magdalena',
+};
+
+/** Maps a district name as a source spells it to one of LIMA_DISTRICT_SLUGS, or null. */
+export function districtSlugFromName(name: string | null | undefined): string | null {
+  if (!name) return null;
+  const plain = name
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, ' ');
+  const slug = DISTRICT_ALIASES[plain] ?? plain.replace(/ /g, '-');
+  return (LIMA_DISTRICT_SLUGS as readonly string[]).includes(slug) ? slug : null;
+}
