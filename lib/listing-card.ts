@@ -3,6 +3,16 @@ import type { UrbaniaCardRaw } from '../scraper/src/scrapers/urbania/types';
 export const SOURCE_IDS = ['urbania', 'adondevivir', 'proper', 'nexo', 'remax', 'manual'] as const;
 export type SourceId = (typeof SOURCE_IDS)[number];
 
+/** How each source is named in the UI. */
+export const SOURCE_LABELS: Record<SourceId, string> = {
+  urbania: 'Urbania',
+  adondevivir: 'Adondevivir',
+  proper: 'Proper',
+  nexo: 'Nexo',
+  remax: 'Remax',
+  manual: 'Manual',
+};
+
 /** The shape every source adapter outputs: the Urbania card plus cross-source fields. */
 export interface ListingCard extends UrbaniaCardRaw {
   source: SourceId;

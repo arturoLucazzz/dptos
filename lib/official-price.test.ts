@@ -17,9 +17,9 @@ describe('collapseCopies', () => {
     const group = groups.get('r1')!;
     assert.equal(group.priceMaxPen, 420_000);
     assert.deepEqual(group.copies, [
-      { source: 'remax', url: 'https://remax.pe/y', pricePen: 399_000 },
-      { source: 'proper', url: null, pricePen: 410_000 },
-      { source: 'urbania', url: 'https://urbania.pe/x', pricePen: 420_000 },
+      { postingId: 'r1', source: 'remax', url: 'https://remax.pe/y', pricePen: 399_000 },
+      { postingId: 'p1', source: 'proper', url: null, pricePen: 410_000 },
+      { postingId: 'u1', source: 'urbania', url: 'https://urbania.pe/x', pricePen: 420_000 },
     ]);
   });
 

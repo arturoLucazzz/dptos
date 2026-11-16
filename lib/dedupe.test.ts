@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
+import { existsSync, readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
 import { addressIsBlock, classifyPair, decideProperty, nameNorm, pairKey, streetNorm, type DedupeSide } from './dedupe';
 import { toPen } from './money';
 import { normalizeAddress } from './fingerprint';
+import type { DuplicateDecision } from './duplicates';
 
 function side(over: Partial<DedupeSide> = {}): DedupeSide {
   return {
@@ -260,5 +262,34 @@ describe('helpers', () => {
     assert.equal(addressIsBlock('Av. Arequipa 1900'), false);
     assert.equal(addressIsBlock('Calle Alcanfores 300'), false);
     assert.equal(addressIsBlock(null), false);
+  });
+});
+
+describe('owner decisions', () => {
+  // A confirmed pair must still be noticed; a rejected pair must never merge on its own.
+  function assertDecisionsHold(decisions: DuplicateDecision[]) {
+    for (const { status, a, b } of decisions) {
+      const level = classifyPair(a, b).level;
+      if (status === 'CONFIRMED') assert.notEqual(level, null, `confirmed ${a.id} / ${b.id} is no longer flagged`);
+      else assert.notEqual(level, 'HIGH', `rejected ${a.id} / ${b.id} would merge automatically`);
+    }
+  }
+
+  it('owner decisions still hold', () => {
+    assertDecisionsHold([
+      {
+        status: 'CONFIRMED',
+        a: side({ id: 'a', sources: ['urbania'], titleNorm: 'depa lince', addressNorm: 'iquitos' }),
+        b: side({ id: 'b', sources: ['adondevivir'], titleNorm: 'depa lince', addressNorm: 'iquitos' }),
+      },
+      {
+        status: 'REJECTED',
+        a: side({ id: 'c', streetNorm: 'iquitos', addressNorm: 'iquitos', addressIsBlock: true }),
+        b: side({ id: 'd', sources: ['proper'], streetNorm: 'iquitos', addressNorm: 'iquitos', areaM2: 68 }),
+      },
+    ]);
+
+    const file = new URL('./__fixtures__/duplicate-decisions.json', import.meta.url);
+    if (existsSync(file)) assertDecisionsHold(JSON.parse(readFileSync(file, 'utf8')) as DuplicateDecision[]);
   });
 });

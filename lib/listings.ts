@@ -381,7 +381,7 @@ const loadSaleListingsCached = unstable_cache(
   async (_scrapeKey: string) => loadSaleListings(),
   // The version part changes when the row shape does, so an entry cached by an
   // older build is not served with fields missing.
-  ['sale-listings', 'rows-v2-one-per-property'],
+  ['sale-listings', 'rows-v3-copy-posting-ids'],
   { revalidate: 3600, tags: ['sale-listings'] }
 );
 

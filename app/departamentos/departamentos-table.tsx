@@ -6,13 +6,16 @@ import {
   getCoreRowModel,
   useReactTable,
 } from "@tanstack/react-table";
-import { useMemo } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useFavorites } from "@/app/providers";
+import { confirmDuplicate, rejectDuplicate, splitPosting, type ReviewResult } from "@/app/actions";
 import type { DepartamentosRow, DepartamentosSortId } from "@/lib/departamentos-query";
 import { formatPen, formatPct } from "@/lib/listing-finance";
+import { SOURCE_LABELS } from "@/lib/listing-card";
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, Star } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -26,6 +29,8 @@ interface DepartamentosTableProps {
   isValidating?: boolean;
   onSortChange: (sort: DepartamentosSortId) => void;
   onPageChange: (page: number) => void;
+  /** Called after a duplicate decision, so the rows can be fetched again. */
+  onReviewed: () => void;
 }
 
 function SortHeader({
@@ -68,6 +73,121 @@ function SortHeader({
   );
 }
 
+/** "S/ 399k": short enough for the copies line. */
+function formatPenK(value: number): string {
+  return `S/ ${Math.round(value / 1000).toLocaleString("es-PE")}k`;
+}
+
+/**
+ * Runs one review action and keeps its pending state and refusal message.
+ * Clicks inside a row must not open the ad, so every control stops propagation.
+ */
+function useReview(onReviewed: () => void) {
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const run = (action: () => Promise<ReviewResult>) => {
+    setError(null);
+    startTransition(async () => {
+      try {
+        const result = await action();
+        if (!result.ok) setError(result.error);
+      } catch {
+        setError("No se pudo guardar. Intenta de nuevo.");
+      }
+      // A refusal means the data moved on (someone already decided), so refetch either way.
+      onReviewed();
+    });
+  };
+  return { pending, error, run };
+}
+
+function ReviewButton({
+  label,
+  disabled,
+  onClick,
+}: {
+  label: string;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      className="cursor-pointer rounded border px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground disabled:cursor-wait disabled:opacity-50"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
+/** The ads of one property, a split per copy when there are several, and its duplicate flags. */
+function SourcesCell({ row, onReviewed }: { row: DepartamentosRow; onReviewed: () => void }) {
+  const { pending, error, run } = useReview(onReviewed);
+  const { copies, duplicateFlags } = row;
+  const several = copies.length > 1;
+
+  return (
+    <div className="space-y-1 text-xs leading-tight">
+      {several && (
+        <div className="text-muted-foreground">
+          {copies.length} fuentes · {formatPenK(row.pricePen)} a {formatPenK(row.priceMaxPen)}
+        </div>
+      )}
+      {copies.map((copy) => {
+        const label = copy.source ? SOURCE_LABELS[copy.source] : "Otra fuente";
+        return (
+          <div key={copy.postingId} className="flex items-center gap-1.5">
+            {copy.url ? (
+              <a
+                href={copy.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary underline-offset-2 hover:underline"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {label}
+              </a>
+            ) : (
+              <span>{label}</span>
+            )}
+            {several && <span className="text-muted-foreground">{formatPenK(copy.pricePen)}</span>}
+            {several && (
+              <ReviewButton
+                label="no es el mismo"
+                disabled={pending}
+                onClick={() => run(() => splitPosting(copy.postingId))}
+              />
+            )}
+          </div>
+        );
+      })}
+      {duplicateFlags.map((flag) => (
+        <div key={flag.candidateId} className="flex items-center gap-1.5">
+          <Badge variant="outline" className="border-amber-400 text-amber-800">
+            {flag.level === "MEDIUM" ? "posible duplicado (media)" : "posible duplicado (baja)"}
+          </Badge>
+          <ReviewButton
+            label="es el mismo"
+            disabled={pending}
+            onClick={() => run(() => confirmDuplicate(flag.candidateId))}
+          />
+          <ReviewButton
+            label="no es el mismo"
+            disabled={pending}
+            onClick={() => run(() => rejectDuplicate(flag.candidateId))}
+          />
+        </div>
+      ))}
+      {error && <div className="text-red-700">{error}</div>}
+    </div>
+  );
+}
+
 export function DepartamentosTable({
   data,
   total,
@@ -78,6 +198,7 @@ export function DepartamentosTable({
   isValidating,
   onSortChange,
   onPageChange,
+  onReviewed,
 }: DepartamentosTableProps) {
   const { isFavorite, toggleFavorite } = useFavorites();
   const pageCount = Math.max(1, Math.ceil(total / pageSize) || 1);
@@ -125,6 +246,11 @@ export function DepartamentosTable({
           />
         ),
         cell: ({ row }) => formatPen(row.original.pricePen),
+      },
+      {
+        id: "fuentes",
+        header: "Fuente",
+        cell: ({ row }) => <SourcesCell row={row.original} onReviewed={onReviewed} />,
       },
       {
         accessorKey: "areaM2",
@@ -233,7 +359,7 @@ export function DepartamentosTable({
         cell: ({ row }) => formatPct(row.original.downPaymentPctForFullCoverage, 0),
       },
     ],
-    [isFavorite, toggleFavorite, sort, order, onSortChange]
+    [isFavorite, toggleFavorite, sort, order, onSortChange, onReviewed]
   );
 
   // eslint-disable-next-line react-hooks/incompatible-library -- expected with useReactTable
@@ -308,8 +434,8 @@ export function DepartamentosTable({
                     key={row.id}
                     className="cursor-pointer"
                     onClick={() => {
-                      const path = row.original.sourcePath;
-                      if (path) window.open(`https://urbania.pe${path}`, "_blank", "noopener,noreferrer");
+                      const url = row.original.url;
+                      if (url) window.open(url, "_blank", "noopener,noreferrer");
                     }}
                   >
                     {row.getVisibleCells().map((cell) => (

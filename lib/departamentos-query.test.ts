@@ -40,7 +40,7 @@ function row(partial: Partial<ListingRow> & Pick<ListingRow, 'postingId' | 'pric
     favorite: false,
     discarded: false,
     source: 'urbania',
-    copies: [{ source: 'urbania', url: null, pricePen: partial.pricePen }],
+    copies: [{ postingId: partial.postingId, source: 'urbania', url: null, pricePen: partial.pricePen }],
     priceMaxPen: partial.pricePen,
     url: null,
     duplicateFlags: [],
@@ -104,16 +104,16 @@ describe('queryDepartamentos', () => {
         pricePen: 399_000,
         source: 'remax',
         copies: [
-          { source: 'remax', url: null, pricePen: 399_000 },
-          { source: 'urbania', url: null, pricePen: 420_000 },
+          { postingId: 'b', source: 'remax', url: null, pricePen: 399_000 },
+          { postingId: 'b2', source: 'urbania', url: null, pricePen: 420_000 },
         ],
       }),
       row({
         postingId: 'c',
         pricePen: 410_000,
         copies: [
-          { source: 'urbania', url: null, pricePen: 410_000 },
-          { source: 'remax', url: null, pricePen: 415_000 },
+          { postingId: 'c', source: 'urbania', url: null, pricePen: 410_000 },
+          { postingId: 'c2', source: 'remax', url: null, pricePen: 415_000 },
         ],
       }),
     ];

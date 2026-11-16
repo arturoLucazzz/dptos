@@ -19,6 +19,8 @@ export interface CopyInput {
 }
 
 export interface ListingCopy {
+  /** So the owner can split this copy off the property. */
+  postingId: string;
   source: SourceId | null;
   url: string | null;
   pricePen: number;
@@ -51,7 +53,7 @@ export function collapseCopies(
   for (const group of groups.values()) {
     const sorted = [...group].sort(byPriceThenId);
     result.set(sorted[0].postingId, {
-      copies: sorted.map(({ source, url, pricePen }) => ({ source, url, pricePen })),
+      copies: sorted.map(({ postingId, source, url, pricePen }) => ({ postingId, source, url, pricePen })),
       priceMaxPen: sorted[sorted.length - 1].pricePen,
     });
   }
