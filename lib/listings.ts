@@ -19,7 +19,7 @@ import { livePostingWhere, notLivePostingWhere } from './possibly-sold';
 import { daysOnMarket, fitIdToDate, publishedAtFor, type IdDateAnchor } from './posting-age';
 import { estimateGrossRent } from './rent';
 import { isUsableComparable, pricePerM2OutlierMask } from './quality-flags';
-import { inventoryMonths, priceCutScore, totalCutFromPeak } from './price-cut';
+import { distinctPublisherCount, inventoryMonths, priceCutScore, totalCutFromPeak } from './price-cut';
 import type { FixedAssumptions } from './assumption-defaults';
 
 function titleCaseDistrict(slug: string): string {
@@ -105,6 +105,8 @@ export async function loadSaleListings(): Promise<ListingsPage> {
           imageUrl: true,
           sourceUrl: true,
           firstDateOnline: true,
+          publisherId: true,
+          publisherName: true,
         },
       },
       // Chronological prices for cut count and peak. Cheap because snapshots are
@@ -217,6 +219,7 @@ export async function loadSaleListings(): Promise<ListingsPage> {
   }
   const duplicateFlags = await loadDuplicateFlags([...propertyIds]);
 
+  const snapshotByPosting = new Map(candidates.map(({ posting, snapshot }) => [posting.id, snapshot]));
   const listings: ListingRow[] = [];
 
   for (const { posting, snapshot, pricePen, areaM2 } of candidates) {
@@ -270,14 +273,27 @@ export async function loadSaleListings(): Promise<ListingsPage> {
     }
     const peakPen = prices.length ? Math.max(...prices) : pricePen;
     const cutPct = totalCutFromPeak(peakPen, pricePen);
+    // Shown as the number of ads; the cut score counts publishers instead, so
+    // one broker's ad on both Navent portals is not "multi-listed".
     const listingCount = group.copies.length;
+    const publisherCount = distinctPublisherCount(
+      group.copies.map((copy) => {
+        const copySnapshot = snapshotByPosting.get(copy.postingId);
+        return {
+          postingId: copy.postingId,
+          source: copy.source,
+          publisherId: copySnapshot?.publisherId ?? null,
+          publisherName: copySnapshot?.publisherName ?? null,
+        };
+      })
+    );
     const invMonths = inventoryByDistrict.get(posting.districtSlug) ?? null;
     const days = daysOnMarket(publishedAt, asOf);
     const cut = priceCutScore({
       daysPublished: days,
       priceCutCount,
       totalCutPct: cutPct,
-      listingCount,
+      publisherCount,
       inventoryMonths: invMonths,
     });
 

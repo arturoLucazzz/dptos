@@ -9,6 +9,8 @@
  * 2. Number of prior cuts — someone who already cut once is in the game.
  * 3. Depth of prior cuts — a 2% trim is not the same as a 12% surrender.
  * 4. Multi-listed — three brokers on one apartment is itself a signal of urgency.
+ *    Counted in publishers, not copies: one broker's ad copied to two portals is
+ *    one broker.
  * 5. District inventory months — available from day one, before days-on-market is.
  *
  * Inventory months and multi-listing are the ones that work cold; days and cut
@@ -22,8 +24,8 @@ export interface CutSignals {
   priceCutCount: number;
   /** Total relative drop from the first asking price to the current one, 0–1. */
   totalCutPct: number;
-  /** Distinct live listings pointing at the same property. */
-  listingCount: number;
+  /** Distinct publishers among the live copies of the property. */
+  publisherCount: number;
   /**
    * Live listings divided by monthly sales rate in the district.
    * Null when there is not yet a sales rate to divide by.
@@ -65,7 +67,7 @@ export function priceCutScore(signals: CutSignals): CutScore {
       : 0;
   const cuts = Math.min(1, Math.max(0, signals.priceCutCount) / CUTS_FULL);
   const depth = Math.min(1, Math.max(0, signals.totalCutPct) / DEPTH_FULL);
-  const multiListed = Math.min(1, Math.max(0, signals.listingCount - 1) / (MULTI_FULL - 1));
+  const multiListed = Math.min(1, Math.max(0, signals.publisherCount - 1) / (MULTI_FULL - 1));
   const inventory =
     signals.inventoryMonths != null && signals.inventoryMonths > 0
       ? Math.min(1, signals.inventoryMonths / INVENTORY_FULL)
@@ -86,6 +88,36 @@ export function priceCutScore(signals: CutSignals): CutScore {
   );
 
   return { score, components };
+}
+
+/** What tells two copies' publishers apart. */
+export interface CopyPublisher {
+  postingId: string;
+  source: string | null;
+  publisherId: string | null;
+  publisherName: string | null;
+}
+
+function publisherNameKey(name: string | null): string | null {
+  if (!name) return null;
+  const key = name.toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '').replace(/\s+/g, ' ').trim();
+  return key || null;
+}
+
+/**
+ * How many publishers the copies of one property have. The name decides,
+ * because the two Navent portals give one publisher two different ids. Without
+ * a name, the id within its source; without either, each copy is its own.
+ */
+export function distinctPublisherCount(copies: CopyPublisher[]): number {
+  const keys = new Set<string>();
+  for (const copy of copies) {
+    const name = publisherNameKey(copy.publisherName);
+    if (name) keys.add(`name:${name}`);
+    else if (copy.publisherId) keys.add(`id:${copy.source ?? '?'}:${copy.publisherId}`);
+    else keys.add(`posting:${copy.postingId}`);
+  }
+  return keys.size;
 }
 
 /**

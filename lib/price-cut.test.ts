@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
+  distinctPublisherCount,
   inventoryMonths,
   priceCutScore,
   totalCutFromPeak,
@@ -13,7 +14,7 @@ describe("priceCutScore", () => {
         daysPublished: null,
         priceCutCount: 0,
         totalCutPct: 0,
-        listingCount: 1,
+        publisherCount: 1,
         inventoryMonths: null,
       }).score,
       0
@@ -25,14 +26,14 @@ describe("priceCutScore", () => {
       daysPublished: 10,
       priceCutCount: 0,
       totalCutPct: 0,
-      listingCount: 1,
+      publisherCount: 1,
       inventoryMonths: null,
     });
     const old = priceCutScore({
       daysPublished: 120,
       priceCutCount: 0,
       totalCutPct: 0,
-      listingCount: 1,
+      publisherCount: 1,
       inventoryMonths: null,
     });
     assert.ok(old.score > young.score);
@@ -44,14 +45,14 @@ describe("priceCutScore", () => {
       daysPublished: null,
       priceCutCount: 0,
       totalCutPct: 0,
-      listingCount: 1,
+      publisherCount: 1,
       inventoryMonths: null,
     });
     const triple = priceCutScore({
       daysPublished: null,
       priceCutCount: 0,
       totalCutPct: 0,
-      listingCount: 3,
+      publisherCount: 3,
       inventoryMonths: null,
     });
     assert.equal(alone.score, 0);
@@ -63,7 +64,7 @@ describe("priceCutScore", () => {
       daysPublished: 1000,
       priceCutCount: 20,
       totalCutPct: 0.9,
-      listingCount: 10,
+      publisherCount: 10,
       inventoryMonths: 50,
     });
     assert.equal(score.score, 100);
@@ -74,7 +75,7 @@ describe("priceCutScore", () => {
       daysPublished: null,
       priceCutCount: 0,
       totalCutPct: 0,
-      listingCount: 1,
+      publisherCount: 1,
       inventoryMonths: 8,
     });
     assert.equal(score.score, 25);
@@ -105,5 +106,49 @@ describe("totalCutFromPeak", () => {
     assert.equal(totalCutFromPeak(400_000, 420_000), 0);
     assert.equal(totalCutFromPeak(400_000, 400_000), 0);
     assert.equal(totalCutFromPeak(null, 400_000), 0);
+  });
+});
+
+describe("distinctPublisherCount", () => {
+  const copy = (postingId: string, source: string, publisherId: string | null, publisherName: string | null) => ({
+    postingId,
+    source,
+    publisherId,
+    publisherName,
+  });
+
+  it("a Navent copy pair of one publisher counts once, despite different ids", () => {
+    assert.equal(
+      distinctPublisherCount([
+        copy("u1", "urbania", "1460002", "REMAX PRO"),
+        copy("a1", "adondevivir", "84177", "Remax  Pro"),
+      ]),
+      1
+    );
+  });
+
+  it("different publishers count separately", () => {
+    assert.equal(
+      distinctPublisherCount([
+        copy("u1", "urbania", "1", "REMAX PRO"),
+        copy("a1", "adondevivir", "2", "CENTURY 21"),
+        copy("p1", "proper", null, null),
+      ]),
+      3
+    );
+  });
+
+  it("falls back to the id within its source, then to the copy", () => {
+    assert.equal(distinctPublisherCount([copy("u1", "urbania", "7", null), copy("u2", "urbania", "7", null)]), 1);
+    assert.equal(distinctPublisherCount([copy("m1", "manual", null, null), copy("m2", "manual", null, null)]), 2);
+  });
+
+  it("one publisher on two portals is not multi-listed", () => {
+    const publisherCount = distinctPublisherCount([
+      copy("u1", "urbania", "1", "REMAX PRO"),
+      copy("a1", "adondevivir", "2", "REMAX PRO"),
+    ]);
+    const score = priceCutScore({ daysPublished: null, priceCutCount: 0, totalCutPct: 0, publisherCount, inventoryMonths: null });
+    assert.equal(score.components.multiListed, 0);
   });
 });
