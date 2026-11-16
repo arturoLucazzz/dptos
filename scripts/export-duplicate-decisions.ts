@@ -18,6 +18,17 @@ import type { DuplicateDecision } from '../lib/duplicates';
 
 const OUTPUT = join(process.cwd(), 'lib', '__fixtures__', 'duplicate-decisions.json');
 
+/** Sides stored before the unit and project lists had one `unitNumber`. */
+function currentSide(stored: unknown): DedupeSide {
+  const side = stored as DedupeSide & { unitNumber?: string | null };
+  const { unitNumber, ...rest } = side;
+  return {
+    ...rest,
+    unitNumbers: Array.isArray(side.unitNumbers) ? side.unitNumbers : unitNumber ? [unitNumber] : [],
+    projectIds: Array.isArray(side.projectIds) ? side.projectIds : [],
+  };
+}
+
 async function main() {
   const rows = await prisma.duplicateDecision.findMany({
     where: { status: { in: [DuplicateStatus.CONFIRMED, DuplicateStatus.REJECTED] } },
@@ -27,8 +38,8 @@ async function main() {
 
   const decisions: DuplicateDecision[] = rows.map((row) => ({
     status: row.status === DuplicateStatus.CONFIRMED ? 'CONFIRMED' : 'REJECTED',
-    a: row.sideA as unknown as DedupeSide,
-    b: row.sideB as unknown as DedupeSide,
+    a: currentSide(row.sideA),
+    b: currentSide(row.sideB),
   }));
 
   mkdirSync(dirname(OUTPUT), { recursive: true });

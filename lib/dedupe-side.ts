@@ -33,8 +33,17 @@ function numberOrNull(value: Prisma.Decimal | number | null | undefined): number
   return value == null ? null : Number(value);
 }
 
-/** The side of a card that has no property yet. Its id is empty. */
-export function dedupeSideFromCard(card: ListingCard, districtSlug: string, pricePen: number | null): DedupeSide {
+/**
+ * The side of a card that has no property yet. Its id is empty. `projectId` is
+ * the project the card is a unit of, when ingest knows it.
+ */
+export function dedupeSideFromCard(
+  card: ListingCard,
+  districtSlug: string,
+  pricePen: number | null,
+  projectId: string | null = null
+): DedupeSide {
+  const unit = unitNorm(card.unitNumber);
   return {
     id: '',
     sources: [card.source],
@@ -43,7 +52,8 @@ export function dedupeSideFromCard(card: ListingCard, districtSlug: string, pric
     addressIsBlock: addressIsBlock(card.address),
     streetNorm: streetNorm(card.address),
     buildingNorm: nameNorm(card.buildingName),
-    unitNumber: unitNorm(card.unitNumber),
+    unitNumbers: unit ? [unit] : [],
+    projectIds: projectId ? [projectId] : [],
     developerNorm: nameNorm(card.developerName),
     titleNorm: titleNorm(card.title),
     bedrooms: card.bedrooms,
@@ -62,6 +72,7 @@ export const dedupePropertySelect = {
   streetNorm: true,
   buildingNorm: true,
   unitNumber: true,
+  projectId: true,
   bedrooms: true,
   latitude: true,
   longitude: true,
@@ -83,6 +94,7 @@ export const dedupePropertySelect = {
           latitude: true,
           longitude: true,
           developerName: true,
+          unitNumber: true,
         },
       },
     },
@@ -114,7 +126,16 @@ export function dedupeSideFromProperty(property: DedupePropertyRow): DedupeSide 
     addressIsBlock: addressIsBlock(snapshot?.address),
     streetNorm: property.streetNorm ?? streetNorm(property.addressNorm),
     buildingNorm: property.buildingNorm,
-    unitNumber: property.unitNumber,
+    // Every copy's unit, not only the key: a property created without a unit
+    // and later joined by a copy that names one must not accept a second unit.
+    unitNumbers: [
+      ...new Set(
+        [property.unitNumber, ...property.postings.map((posting) => posting.currentSnapshot?.unitNumber)]
+          .map(unitNorm)
+          .filter((unit): unit is string => unit != null)
+      ),
+    ],
+    projectIds: property.projectId ? [property.projectId] : [],
     developerNorm: nameNorm(snapshot?.developerName),
     titleNorm: titleNorm(snapshot?.title),
     bedrooms: snapshot?.bedrooms ?? property.bedrooms,
@@ -123,4 +144,24 @@ export function dedupeSideFromProperty(property: DedupePropertyRow): DedupeSide 
     longitude: numberOrNull(snapshot?.longitude ?? property.longitude),
     pricePen: numberOrNull(snapshot?.pricePen),
   };
+}
+
+/** The keys a property is found and matched by, beyond its district and fingerprint. */
+export interface PropertyKeys {
+  unitNumber: string | null;
+  buildingNorm: string | null;
+  streetNorm: string | null;
+  projectId: string | null;
+}
+
+/**
+ * The keys `existing` lacks and `incoming` has. A key already set is never
+ * overwritten: the first value came from a copy that was matched on it.
+ */
+export function keysToFill(existing: PropertyKeys, incoming: PropertyKeys): Partial<PropertyKeys> {
+  const fill: Partial<PropertyKeys> = {};
+  for (const key of ['unitNumber', 'buildingNorm', 'streetNorm', 'projectId'] as const) {
+    if (existing[key] == null && incoming[key] != null) fill[key] = incoming[key];
+  }
+  return fill;
 }

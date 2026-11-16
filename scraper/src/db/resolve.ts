@@ -10,7 +10,7 @@ import { prisma } from '@/lib/db';
 import type { Prisma } from '@/lib/generated/prisma/client';
 import { DuplicateStatus } from '@/lib/generated/prisma/enums';
 import { decideProperty, nameNorm, pairKey, type PropertyDecision } from '@/lib/dedupe';
-import { dedupePropertySelect, dedupeSideFromCard, dedupeSideFromProperty } from '@/lib/dedupe-side';
+import { dedupePropertySelect, dedupeSideFromCard, dedupeSideFromProperty, keysToFill } from '@/lib/dedupe-side';
 import { areaBucket, normalizeAddress, propertyFingerprint } from '@/lib/fingerprint';
 import type { ListingCard, SourceId } from '@/lib/listing-card';
 import { sameProject } from '@/lib/project-match';
@@ -132,16 +132,22 @@ export async function writeDuplicateFlags(propertyId: string, flags: PropertyDec
  * Find or create the physical apartment a new UNIT posting belongs to.
  *
  * The fingerprint, address, coordinates, street and building only narrow the
- * search; `decideProperty` makes the decision.
+ * search; `decideProperty` makes the decision. Exact fingerprint and address
+ * matches are loaded first, so a busy street or building cannot push them past
+ * the candidate limit.
  */
 export async function resolveUnitProperty(
   card: ListingCard,
   districtSlug: string,
   pricePen: number | null
 ): Promise<string> {
-  const subject = dedupeSideFromCard(card, districtSlug, pricePen);
+  const project = await projectOfUnit(card);
+  const subject = dedupeSideFromCard(card, districtSlug, pricePen, project?.id ?? null);
   const area = subject.areaM2;
   const fingerprint = propertyFingerprint({ districtSlug, address: card.address, bedrooms: card.bedrooms, area });
+
+  const exactClauses: Prisma.PropertyWhereInput[] = [{ fingerprint }];
+  if (subject.addressNorm) exactClauses.push({ addressNorm: subject.addressNorm });
 
   const near =
     card.latitude != null && card.longitude != null
@@ -150,28 +156,46 @@ export async function resolveUnitProperty(
           longitude: { gte: card.longitude - 0.002, lte: card.longitude + 0.002 },
         }
       : null;
-  const clauses: Prisma.PropertyWhereInput[] = [{ fingerprint }];
-  if (subject.addressNorm) clauses.push({ addressNorm: subject.addressNorm });
-  if (near) clauses.push(near);
-  if (subject.streetNorm) clauses.push({ streetNorm: subject.streetNorm });
-  if (subject.buildingNorm) clauses.push({ buildingNorm: subject.buildingNorm });
+  const looseClauses: Prisma.PropertyWhereInput[] = [];
+  if (near) looseClauses.push(near);
+  if (subject.streetNorm) looseClauses.push({ streetNorm: subject.streetNorm });
+  if (subject.buildingNorm) looseClauses.push({ buildingNorm: subject.buildingNorm });
 
-  const rows = await prisma.property.findMany({
-    where: { districtSlug, OR: clauses },
+  const exact = await prisma.property.findMany({
+    where: { districtSlug, OR: exactClauses },
     select: dedupePropertySelect,
+    orderBy: { createdAt: 'asc' },
     take: CANDIDATE_LIMIT,
   });
+  const loose =
+    looseClauses.length > 0 && exact.length < CANDIDATE_LIMIT
+      ? await prisma.property.findMany({
+          where: { districtSlug, OR: looseClauses, id: { notIn: exact.map((row) => row.id) } },
+          select: dedupePropertySelect,
+          orderBy: { createdAt: 'asc' },
+          take: CANDIDATE_LIMIT - exact.length,
+        })
+      : [];
 
-  const decision = decideProperty(subject, rows.map(dedupeSideFromProperty));
-  const project = await projectOfUnit(card);
+  const decision = decideProperty(subject, [...exact, ...loose].map(dedupeSideFromProperty));
+
+  const keys = {
+    unitNumber: subject.unitNumbers[0] ?? null,
+    buildingNorm: subject.buildingNorm,
+    streetNorm: subject.streetNorm,
+    projectId: project?.id ?? null,
+  };
 
   if (decision.attachTo) {
-    // Only fills a missing link: a project the property already has is kept.
-    if (project) {
-      await prisma.property.updateMany({
-        where: { id: decision.attachTo, projectId: null },
-        data: { projectId: project.id },
-      });
+    // The property learns what this copy adds (its unit, building, project), so
+    // the next copy is checked against it. A key it already has is kept.
+    const current = await prisma.property.findUnique({
+      where: { id: decision.attachTo },
+      select: { unitNumber: true, buildingNorm: true, streetNorm: true, projectId: true },
+    });
+    const fill = current ? keysToFill(current, keys) : {};
+    if (Object.keys(fill).length > 0) {
+      await prisma.property.update({ where: { id: decision.attachTo }, data: fill });
     }
     return decision.attachTo;
   }
@@ -181,14 +205,11 @@ export async function resolveUnitProperty(
       districtSlug,
       fingerprint,
       addressNorm: subject.addressNorm,
-      streetNorm: subject.streetNorm,
-      buildingNorm: subject.buildingNorm,
-      unitNumber: subject.unitNumber,
       bedrooms: card.bedrooms,
       areaBucket: areaBucket(area),
       latitude: card.latitude,
       longitude: card.longitude,
-      projectId: project?.id ?? null,
+      ...keys,
     },
     select: { id: true },
   });

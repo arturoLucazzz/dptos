@@ -10,7 +10,7 @@
 import type { Prisma } from './generated/prisma/client';
 import { DuplicateLevel, DuplicateStatus } from './generated/prisma/enums';
 import { nameNorm, pairKey, streetNorm, type DedupeSide } from './dedupe';
-import { dedupePropertySelect, dedupeSideFromProperty, unitNorm } from './dedupe-side';
+import { dedupePropertySelect, dedupeSideFromProperty, keysToFill, unitNorm } from './dedupe-side';
 import { areaBucket, normalizeAddress, propertyFingerprint } from './fingerprint';
 
 export type Annotations = {
@@ -166,13 +166,18 @@ const annotationSelect = {
   discarded: true,
   discardReason: true,
   notes: true,
+  unitNumber: true,
+  buildingNorm: true,
+  streetNorm: true,
+  projectId: true,
 } satisfies Prisma.PropertySelect;
 
 /**
  * The owner says the two properties of an open candidate are one apartment.
  *
- * The older property is kept and receives every posting and the merged
- * annotations; the other property is deleted after its candidates are moved.
+ * The older property is kept and receives every posting, the merged
+ * annotations and the keys it lacked; the other property is deleted after its
+ * candidates are moved.
  */
 export async function confirmDuplicate(candidateId: string): Promise<void> {
   await inReviewTransaction(async (tx) => {
@@ -217,7 +222,12 @@ export async function confirmDuplicate(candidateId: string): Promise<void> {
     const [kept, removed] = firstIsOlder ? [first, second] : [second, first];
 
     await tx.posting.updateMany({ where: { propertyId: removed.id }, data: { propertyId: kept.id } });
-    await tx.property.update({ where: { id: kept.id }, data: mergeAnnotations(kept, removed) });
+    // The kept property also takes the keys only the removed one had, so the
+    // next copy is checked against its unit, building and project.
+    await tx.property.update({
+      where: { id: kept.id },
+      data: { ...mergeAnnotations(kept, removed), ...keysToFill(kept, removed) },
+    });
 
     const others = await tx.duplicateCandidate.findMany({
       where: {

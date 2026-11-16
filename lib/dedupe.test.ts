@@ -15,7 +15,8 @@ function side(over: Partial<DedupeSide> = {}): DedupeSide {
     addressIsBlock: false,
     streetNorm: null,
     buildingNorm: null,
-    unitNumber: null,
+    unitNumbers: [],
+    projectIds: [],
     developerNorm: null,
     titleNorm: null,
     bedrooms: 2,
@@ -46,8 +47,8 @@ describe('classifyPair', () => {
   });
 
   it('same building and unit is high', () => {
-    const a = side({ buildingNorm: 'prolongacion iquitos', unitNumber: '202', pricePen: 399000 });
-    const b = side({ id: 'b', buildingNorm: 'prolongacion iquitos', unitNumber: '202', pricePen: 410000 });
+    const a = side({ buildingNorm: 'prolongacion iquitos', unitNumbers: ['202'], pricePen: 399000 });
+    const b = side({ id: 'b', buildingNorm: 'prolongacion iquitos', unitNumbers: ['202'], pricePen: 410000 });
     const r = classifyPair(a, b);
     assert.equal(r.level, 'HIGH');
     assert.deepEqual(r.signals, ['same-unit']);
@@ -83,17 +84,17 @@ describe('classifyPair', () => {
   });
 
   it('different unit numbers never pair', () => {
-    const a = side({ buildingNorm: 'prolongacion iquitos', unitNumber: '202' });
-    const b = side({ id: 'b', buildingNorm: 'prolongacion iquitos', unitNumber: '305' });
+    const a = side({ buildingNorm: 'prolongacion iquitos', unitNumbers: ['202'] });
+    const b = side({ id: 'b', buildingNorm: 'prolongacion iquitos', unitNumbers: ['305'] });
     assert.equal(classifyPair(a, b).level, null);
-    const c = side({ addressNorm: 'iquitos 1234', unitNumber: '202' });
-    const d = side({ id: 'd', addressNorm: 'iquitos 1234', unitNumber: '305' });
+    const c = side({ addressNorm: 'iquitos 1234', unitNumbers: ['202'] });
+    const d = side({ id: 'd', addressNorm: 'iquitos 1234', unitNumbers: ['305'] });
     assert.equal(classifyPair(c, d).level, null);
   });
 
   it('different districts never pair', () => {
-    const a = side({ buildingNorm: 'x', unitNumber: '1' });
-    const b = side({ id: 'b', districtSlug: 'jesus-maria', buildingNorm: 'x', unitNumber: '1' });
+    const a = side({ buildingNorm: 'x', unitNumbers: ['1'] });
+    const b = side({ id: 'b', districtSlug: 'jesus-maria', buildingNorm: 'x', unitNumbers: ['1'] });
     assert.equal(classifyPair(a, b).level, null);
   });
 
@@ -166,14 +167,14 @@ describe('classifyPair', () => {
   });
 
   it('same building and unit with different size and price is not high', () => {
-    const a = side({ buildingNorm: 'a', unitNumber: '202', bedrooms: 1, areaM2: 40, pricePen: 200000 });
-    const b = side({ id: 'b', buildingNorm: 'a', unitNumber: '202', bedrooms: 3, areaM2: 120, pricePen: 900000 });
+    const a = side({ buildingNorm: 'a', unitNumbers: ['202'], bedrooms: 1, areaM2: 40, pricePen: 200000 });
+    const b = side({ id: 'b', buildingNorm: 'a', unitNumbers: ['202'], bedrooms: 3, areaM2: 120, pricePen: 900000 });
     assert.notEqual(classifyPair(a, b).level, 'HIGH');
   });
 
   it('closeness stays within 0 and 1', () => {
-    const a = side({ buildingNorm: 'a', unitNumber: '202', pricePen: 399000 });
-    const b = side({ id: 'b', buildingNorm: 'a', unitNumber: '202', pricePen: 420000 });
+    const a = side({ buildingNorm: 'a', unitNumbers: ['202'], pricePen: 399000 });
+    const b = side({ id: 'b', buildingNorm: 'a', unitNumbers: ['202'], pricePen: 420000 });
     const r = classifyPair(a, b);
     assert.equal(r.level, 'HIGH');
     assert.ok(r.closeness >= 0 && r.closeness <= 1);
@@ -321,5 +322,37 @@ describe('owner decisions', () => {
     const mismatches = decisions.map(mismatch).filter((m): m is string => m !== null);
     for (const message of mismatches) t.diagnostic(`owner decision disagrees: ${message}`);
     t.diagnostic(`${decisions.length} owner decisions, ${mismatches.length} disagree with the rules`);
+  });
+});
+
+describe('units and projects', () => {
+  it('units of one project are never high, at most a flag', () => {
+    const a = side({ addressNorm: 'iquitos 1234', buildingNorm: 'sol', projectIds: ['p1'] });
+    const b = side({ id: 'b', addressNorm: 'iquitos 1234', buildingNorm: 'sol', projectIds: ['p1'] });
+    const r = classifyPair(a, b);
+    assert.equal(r.level, 'MEDIUM');
+    assert.deepEqual(r.signals, ['same-building']);
+    // Same unit number inside one project: still only a flag.
+    const c = side({ buildingNorm: 'sol', unitNumbers: ['301'], projectIds: ['p1'] });
+    const d = side({ id: 'd', buildingNorm: 'sol', unitNumbers: ['301'], projectIds: ['p1'] });
+    assert.notEqual(classifyPair(c, d).level, 'HIGH');
+    // Different projects do not block the match.
+    assert.equal(classifyPair(a, { ...b, projectIds: ['p2'] }).level, 'HIGH');
+  });
+
+  it('a unit missing from a property list is a different apartment', () => {
+    const card = side({ addressNorm: 'iquitos 1234', unitNumbers: ['1302'] });
+    const property = side({ id: 'b', addressNorm: 'iquitos 1234', unitNumbers: ['1202'] });
+    assert.equal(classifyPair(card, property).level, null);
+    assert.equal(classifyPair(card, { ...property, unitNumbers: ['1202', '1302'] }).level, 'HIGH');
+    assert.equal(classifyPair(card, { ...property, unitNumbers: [] }).level, 'HIGH');
+  });
+
+  it('old stored sides without the lists still classify', () => {
+    const legacy = { ...side({ addressNorm: 'iquitos 1234' }) } as Partial<DedupeSide>;
+    delete legacy.unitNumbers;
+    delete legacy.projectIds;
+    const r = classifyPair(legacy as DedupeSide, side({ id: 'b', addressNorm: 'iquitos 1234' }));
+    assert.equal(r.level, 'HIGH');
   });
 });

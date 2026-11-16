@@ -20,7 +20,13 @@ export interface DedupeSide {
   addressIsBlock: boolean;
   streetNorm: string | null;
   buildingNorm: string | null;
-  unitNumber: string | null;
+  /**
+   * Every unit number the side was published with: the card's own, or for a
+   * stored property its key plus the unit of every posting it holds.
+   */
+  unitNumbers: string[];
+  /** Projects the side is a unit of. Two units of one project are two apartments. */
+  projectIds: string[];
   developerNorm: string | null;
   titleNorm: string | null;
   bedrooms: number | null;
@@ -100,6 +106,27 @@ function sameNumberTokens(a: string | null, b: string | null): boolean {
   return setA.size === setB.size && [...setA].every((token) => setB.has(token));
 }
 
+/** Old stored sides (duplicate decisions) predate the list fields. */
+function listOf(value: string[] | undefined): string[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function overlaps(a: string[], b: string[]): boolean {
+  return a.some((value) => b.includes(value));
+}
+
+/**
+ * Both sides name units and neither list holds the other: different apartments.
+ * A card has one unit, so it conflicts when its unit is missing from a
+ * property's non-empty list.
+ */
+function unitsConflict(a: string[], b: string[]): boolean {
+  if (a.length === 0 || b.length === 0) return false;
+  const aInB = a.every((unit) => b.includes(unit));
+  const bInA = b.every((unit) => a.includes(unit));
+  return !aInB && !bInA;
+}
+
 function equalNonNull<T>(a: T | null, b: T | null): boolean {
   return a != null && b != null && a === b;
 }
@@ -116,18 +143,22 @@ export function classifyPair(subject: DedupeSide, candidate: DedupeSide): PairRe
   const none: PairResult = { level: null, signals: [], closeness: 0 };
 
   if (subject.districtSlug !== candidate.districtSlug) return none;
+  const subjectUnits = listOf(subject.unitNumbers);
+  const candidateUnits = listOf(candidate.unitNumbers);
   // Two different unit numbers are two different apartments, whatever else matches.
-  if (subject.unitNumber != null && candidate.unitNumber != null && subject.unitNumber !== candidate.unitNumber) {
-    return none;
-  }
+  if (unitsConflict(subjectUnits, candidateUnits)) return none;
 
   const gap = priceGap(subject.pricePen, candidate.pricePen);
+  // Units of one project share building, address and often layout and price
+  // without being one apartment, so they are never merged on their own.
+  const siblings = overlaps(listOf(subject.projectIds), listOf(candidate.projectIds));
 
   // HIGH: the same posting copied between the two Navent portals.
   const crossNavent =
     (subject.sources.includes('urbania') && candidate.sources.includes('adondevivir')) ||
     (subject.sources.includes('adondevivir') && candidate.sources.includes('urbania'));
   if (
+    !siblings &&
     crossNavent &&
     equalNonNull(subject.titleNorm, candidate.titleNorm) &&
     subject.pricePen != null &&
@@ -164,6 +195,7 @@ export function classifyPair(subject: DedupeSide, candidate: DedupeSide): PairRe
   // require both areas and prices, and the same door and unit numbers.
   // A block number ("al 500") is shared by a whole block of buildings.
   if (
+    !siblings &&
     door.same &&
     !subject.addressIsBlock &&
     !candidate.addressIsBlock &&
@@ -178,8 +210,9 @@ export function classifyPair(subject: DedupeSide, candidate: DedupeSide): PairRe
 
   // HIGH: same building and same unit number.
   if (
+    !siblings &&
     equalNonNull(subject.buildingNorm, candidate.buildingNorm) &&
-    equalNonNull(subject.unitNumber, candidate.unitNumber) &&
+    overlaps(subjectUnits, candidateUnits) &&
     (subject.bedrooms == null || candidate.bedrooms == null || subject.bedrooms === candidate.bedrooms) &&
     (subject.areaM2 == null || candidate.areaM2 == null || areaWithin(subject.areaM2, candidate.areaM2, MEDIUM_AREA_M2)) &&
     (gap == null || gap <= MAX_PRICE_GAP)
