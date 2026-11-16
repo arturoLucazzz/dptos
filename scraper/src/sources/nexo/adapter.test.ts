@@ -42,7 +42,8 @@ describe('nexoAdapter', () => {
     assert.equal(handed + result.skippedOutsideLima, 48);
     assert.ok(batches.every((b) => b.cards.every((c) => c.districtSlug === b.districtSlug)));
     assert.ok(result.skippedOutsideLima > 0);
-    assert.equal(result.districts.find((d) => d.districtSlug === 'lince')?.claimedTotal, 3);
+    // The site makes no claim per district.
+    assert.equal(result.districts.find((d) => d.districtSlug === 'lince')?.claimedTotal, null);
   });
 
   it('reports a requested district without projects as covered', async () => {
@@ -59,6 +60,18 @@ describe('nexoAdapter', () => {
   it('is incomplete when a page before the end has no cards', async () => {
     const empty = PAGES['https://nexoinmobiliario.pe/departamentos?page=2'].replace(/const projects = \[.*?\];/s, 'const projects = [];');
     const { result } = await crawl(adapter({ ...PAGES, 'https://nexoinmobiliario.pe/departamentos?page=2': empty }));
+    assert.equal(result.incomplete, true);
+  });
+
+  it('stops as incomplete when the site ignores the page number', async () => {
+    const same = PAGES['https://nexoinmobiliario.pe/departamentos'];
+    const { result } = await crawl(adapter({ ...PAGES, 'https://nexoinmobiliario.pe/departamentos?page=2': same }));
+    assert.equal(result.incomplete, true);
+  });
+
+  it('is incomplete when the paging markers vanish', async () => {
+    const bare = PAGES['https://nexoinmobiliario.pe/departamentos'].replace('const totalProyectos', 'const total');
+    const { result } = await crawl(adapter({ 'https://nexoinmobiliario.pe/departamentos': bare }));
     assert.equal(result.incomplete, true);
   });
 });

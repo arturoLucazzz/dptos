@@ -88,13 +88,29 @@ export function nexoAdapter(overrides: Partial<NexoAdapterDeps> = {}): SourceAda
       let skippedOutsideLima = 0;
       let incomplete = false;
       let pagesFetched = 0;
+      const visited = new Set<string>();
+      let maxPages = Infinity;
+      let dropped = 0;
       let url: string | null = NEXO_LIST_URL;
 
       while (url) {
+        // A site that ignores ?page=N would answer the same page for ever.
+        if (visited.has(url) || visited.size >= maxPages) {
+          log(`nexo: stopped at ${url}, the paging does not advance`);
+          incomplete = true;
+          break;
+        }
+        visited.add(url);
         let cards: ListingCard[];
         let nextPageUrl: string | null;
         try {
-          ({ cards, nextPageUrl } = parseNexoListPage(await get(url)));
+          const page = parseNexoListPage(await get(url));
+          ({ cards, nextPageUrl } = page);
+          dropped += page.droppedWithoutSlug;
+          if (visited.size === 1) {
+            maxPages = page.totalPages + 2;
+            log(`nexo: the site lists ${page.totalProjects} projects in ${page.totalPages} pages`);
+          }
         } catch (error) {
           log(`nexo ${url}: ${error instanceof Error ? error.message : String(error)}`);
           incomplete = true;
@@ -121,13 +137,13 @@ export function nexoAdapter(overrides: Partial<NexoAdapterDeps> = {}): SourceAda
           byDistrict.set(card.districtSlug, [...(byDistrict.get(card.districtSlug) ?? []), card]);
         }
         for (const [districtSlug, districtCards] of byDistrict) {
-          const result = resultFor(districtSlug);
-          result.claimedTotal = (result.claimedTotal ?? 0) + districtCards.length;
+          resultFor(districtSlug);
           await onBatch({ districtSlug, cards: districtCards });
         }
         url = nextPageUrl;
       }
 
+      if (dropped > 0) log(`nexo: ${dropped} projects without a slug were dropped`);
       const list = [...results.values()];
       if (list.length > 0) list[0].pagesFetched += pagesFetched;
       return { districts: list, skippedOutsideLima, incomplete };

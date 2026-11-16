@@ -81,16 +81,36 @@ function cardOf(project: Json): ListingCard | null {
   });
 }
 
+export interface NexoListPage {
+  cards: ListingCard[];
+  nextPageUrl: string | null;
+  /** What the site says it lists in all. */
+  totalProjects: number;
+  /** Pages the site says it has. */
+  totalPages: number;
+  /** Projects on the page that carried no slug and so became no card. */
+  droppedWithoutSlug: number;
+}
+
 /**
  * Cards of one list page, and the URL of the next page (null on the last one).
- * Throws when the page has no embedded project array.
+ * Throws when the page has no embedded project array or no paging markers, so a
+ * changed page is never read as a single, complete page.
  */
-export function parseNexoListPage(html: string): { cards: ListingCard[]; nextPageUrl: string | null } {
-  const cards = embeddedProjects(html).flatMap((project) => cardOf(project) ?? []);
+export function parseNexoListPage(html: string): NexoListPage {
+  const projects = embeddedProjects(html);
+  const cards = projects.flatMap((project) => cardOf(project) ?? []);
 
   const total = Number(html.match(/const totalProyectos = (\d+);/)?.[1]);
   const perPage = Number(html.match(/const itemsPerPage = (\d+);/)?.[1]);
   const current = Number(html.match(/let currentPage = (\d+);/)?.[1]);
-  const hasMore = [total, perPage, current].every(Number.isFinite) && perPage > 0 && current < Math.ceil(total / perPage);
-  return { cards, nextPageUrl: hasMore ? `${NEXO_LIST_URL}?page=${current + 1}` : null };
+  if (![total, perPage, current].every(Number.isFinite) || perPage <= 0) throw new Error('Nexo: no paging markers');
+  const totalPages = Math.ceil(total / perPage);
+  return {
+    cards,
+    nextPageUrl: current < totalPages ? `${NEXO_LIST_URL}?page=${current + 1}` : null,
+    totalProjects: total,
+    totalPages,
+    droppedWithoutSlug: projects.length - cards.length,
+  };
 }

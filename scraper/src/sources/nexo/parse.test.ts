@@ -61,4 +61,9 @@ describe('parseNexoListPage', () => {
   it('throws on a page without the project array', () => {
     assert.throws(() => parseNexoListPage('<html></html>'), /no embedded projects/);
   });
+
+  it('throws when the paging markers are missing', () => {
+    const html = fixture('p1.html').replace('const itemsPerPage', 'const perPage');
+    assert.throws(() => parseNexoListPage(html), /no paging markers/);
+  });
 });
