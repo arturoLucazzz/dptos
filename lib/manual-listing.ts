@@ -15,6 +15,15 @@ export const POSITIVE = 'Debe ser un número mayor que 0';
 export const BAD_DISTRICT = 'Distrito no válido';
 export const NO_UNITS = 'Agrega al menos una unidad';
 export const WHOLE = 'Debe ser un número entero, 0 o más';
+export const NOT_A_NUMBER = 'Escribe solo números, ej. 280000';
+export const NOT_A_DECIMAL = 'Escribe solo números, ej. 65.5';
+export const TOO_BIG = 'Valor demasiado grande';
+
+const MAX_PRICE = 1e10;
+const MAX_AREA = 1e5;
+const MAX_COUNT = 100;
+const MAX_UNITS = 200;
+const MAX_TEXT = 2000;
 export const BAD_LINK = 'Debe ser un enlace http o https';
 export const BAD_CHOICE = 'Opción no válida';
 
@@ -33,27 +42,60 @@ function text(value: unknown): string {
   return typeof value === 'string' ? value.trim() : typeof value === 'number' ? String(value) : '';
 }
 
+/** Only the known fields, as text, capped: the raw payload is what the owner typed, not whatever was posted. */
+function pick(bag: Bag, keys: string[]): Bag {
+  const out: Bag = {};
+  for (const key of keys) {
+    const value = text(bag[key]);
+    if (value) out[key] = value.slice(0, MAX_TEXT);
+  }
+  return out;
+}
+
+const UNIT_KEYS = ['price', 'currency', 'bedrooms', 'area', 'bathrooms', 'parkingSpots', 'unitNumber'];
+const SINGLE_KEYS = [...UNIT_KEYS, 'operation', 'district', 'link', 'address', 'buildingName', 'publisher', 'photoUrls', 'notes'];
+const PROJECT_KEYS = ['name', 'district', 'developer', 'address', 'deliveryDate', 'stage', 'link', 'notes'];
+
 function optionalText(value: unknown): string | null {
   return text(value) || null;
 }
 
-/** A plain non-negative decimal, or null when the text is anything else. */
-function parseNumber(value: unknown): number | null {
+type NumberStyle = 'price' | 'decimal';
+
+/**
+ * A number typed by hand. Thousands in the Peruvian or English style ("280.000",
+ * "280,000", "1 280 000") are a whole number, but only for prices: for an area,
+ * "65.123" is ambiguous and is refused. A comma is a decimal separator when it is
+ * not a thousands separator ("65,5"). Returns null when the text is not a number.
+ */
+function parseNumber(value: unknown, style: NumberStyle): number | null {
   const s = text(value);
-  if (!/^\d+(\.\d+)?$/.test(s)) return null;
-  const n = Number(s);
-  return Number.isFinite(n) ? n : null;
+  if (style === 'price' && /^\d{1,3}([.,' ]\d{3})+$/.test(s)) return Number(s.replace(/[.,' ]/g, ''));
+  if (!/^\d+([.,]\d{1,2})?$/.test(s)) return null;
+  return Number(s.replace(',', '.'));
 }
 
-function positive(bag: Bag, key: string, errors: Errors, prefix: string): number | null {
+function isNegative(s: string): boolean {
+  return /^-\s*\d/.test(s);
+}
+
+function positive(bag: Bag, key: string, errors: Errors, prefix: string, style: NumberStyle, max: number): number | null {
   const s = text(bag[key]);
   if (!s) {
     errors[prefix + key] = REQUIRED;
     return null;
   }
-  const n = parseNumber(s);
-  if (n == null || n <= 0) {
+  const n = parseNumber(s, style);
+  if (n == null) {
+    errors[prefix + key] = isNegative(s) ? POSITIVE : style === 'price' ? NOT_A_NUMBER : NOT_A_DECIMAL;
+    return null;
+  }
+  if (n <= 0) {
     errors[prefix + key] = POSITIVE;
+    return null;
+  }
+  if (n >= max) {
+    errors[prefix + key] = TOO_BIG;
     return null;
   }
   return n;
@@ -65,17 +107,22 @@ function whole(bag: Bag, key: string, errors: Errors, prefix: string, required: 
     if (required) errors[prefix + key] = REQUIRED;
     return null;
   }
-  const n = parseNumber(s);
-  if (n == null || !Number.isInteger(n)) {
+  if (!/^\d+$/.test(s)) {
     errors[prefix + key] = WHOLE;
+    return null;
+  }
+  const n = Number(s);
+  if (n >= MAX_COUNT) {
+    errors[prefix + key] = TOO_BIG;
     return null;
   }
   return n;
 }
 
 function optionalLink(bag: Bag, key: string, errors: Errors, prefix: string): string {
-  const s = text(bag[key]);
+  let s = text(bag[key]);
   if (!s) return '';
+  if (/^www\./i.test(s)) s = `https://${s}`;
   try {
     const url = new URL(s);
     if (url.protocol === 'http:' || url.protocol === 'https:') return url.toString();
@@ -144,10 +191,10 @@ interface Pricing {
 /** The fields a unit has in both modes. Returns null when any of them is invalid. */
 function readUnitFields(bag: Bag, errors: Errors, prefix: string): Pricing | null {
   const before = Object.keys(errors).length;
-  const price = positive(bag, 'price', errors, prefix);
+  const price = positive(bag, 'price', errors, prefix, 'price', MAX_PRICE);
   const currency = currencyOf(bag, errors, prefix);
   const bedrooms = whole(bag, 'bedrooms', errors, prefix, true);
-  const area = positive(bag, 'area', errors, prefix);
+  const area = positive(bag, 'area', errors, prefix, 'decimal', MAX_AREA);
   const bathrooms = whole(bag, 'bathrooms', errors, prefix, false);
   const parkingSpots = whole(bag, 'parkingSpots', errors, prefix, false);
   if (Object.keys(errors).length > before) return null;
@@ -192,7 +239,7 @@ function validateUnit(bag: Bag, newId: () => string): Result {
     description: optionalText(bag.notes),
     imageUrls: photoUrls,
     imageUrl: photoUrls[0] ?? null,
-    raw: bag,
+    raw: pick(bag, SINGLE_KEYS),
   });
   return { ok: true, districtSlug, operation, cards: [card] };
 }
@@ -205,12 +252,15 @@ function validateProject(bag: Bag, newId: () => string): Result {
   const districtSlug = district(project.district, 'project.district', errors);
   const url = optionalLink(project, 'link', errors, 'project.');
 
-  const rawUnits = Array.isArray(bag.units) ? bag.units.map(asBag) : [];
-  const units: { fields: Pricing; unitNumber: string | null }[] = [];
-  if (rawUnits.length === 0) errors.units = NO_UNITS;
+  // Rows with every field blank are skipped, but keep their index so error keys match the form.
+  const rawUnits = Array.isArray(bag.units) ? Array.from(bag.units.slice(0, MAX_UNITS), asBag) : [];
+  const filled = rawUnits.map((unit) => Object.values(unit).some((v) => text(v) !== ''));
+  const units: { fields: Pricing; unitNumber: string | null; raw: Bag }[] = [];
+  if (!filled.some(Boolean)) errors.units = NO_UNITS;
   rawUnits.forEach((unit, i) => {
+    if (!filled[i]) return;
     const fields = readUnitFields(unit, errors, `units.${i}.`);
-    if (fields) units.push({ fields, unitNumber: optionalText(unit.unitNumber) });
+    if (fields) units.push({ fields, unitNumber: optionalText(unit.unitNumber), raw: unit });
   });
   if (Object.keys(errors).length > 0 || !districtSlug) return { ok: false, errors };
 
@@ -233,9 +283,9 @@ function validateProject(bag: Bag, newId: () => string): Result {
     developmentStage: optionalText(project.stage),
     deliveryDate: optionalText(project.deliveryDate),
     unitsCount: units.length,
-    raw: project,
+    raw: pick(project, PROJECT_KEYS),
   });
-  const unitCards = units.map(({ fields, unitNumber }, i) =>
+  const unitCards = units.map(({ fields, unitNumber, raw }) =>
     unitCard(fields, {
       ...common,
       sourcePostingId: `m-${newId()}`,
@@ -246,7 +296,7 @@ function validateProject(bag: Bag, newId: () => string): Result {
       unitNumber,
       developmentStage: projectCard.developmentStage,
       deliveryDate: projectCard.deliveryDate,
-      raw: rawUnits[i],
+      raw: pick(raw, UNIT_KEYS),
     })
   );
   return { ok: true, districtSlug, operation: 'SALE', cards: [projectCard, ...unitCards] };
@@ -271,6 +321,7 @@ export function rawFromFormEntries(entries: Iterable<[string, unknown]>): Bag {
     const unitMatch = /^units\.(\d+)\.(\w+)$/.exec(key);
     if (unitMatch) {
       const index = Number(unitMatch[1]);
+      if (index >= MAX_UNITS) continue;
       units[index] = { ...units[index], [unitMatch[2]]: value };
     } else if (key.startsWith('project.')) {
       project[key.slice('project.'.length)] = value;
@@ -280,7 +331,7 @@ export function rawFromFormEntries(entries: Iterable<[string, unknown]>): Bag {
   }
   if (raw.mode === 'project') {
     raw.project = project;
-    raw.units = units.filter(Boolean);
+    raw.units = Array.from(units, (unit) => unit ?? {});
   }
   return raw;
 }

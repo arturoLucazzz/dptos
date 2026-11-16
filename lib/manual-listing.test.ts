@@ -54,10 +54,51 @@ describe('validateManualListing', () => {
     assert.equal(r.errors.price, 'Debe ser un número mayor que 0');
   });
 
-  it('thousands separators are rejected, not guessed', () => {
-    const r = validateManualListing({ ...unit, price: '280,000' }, ids());
+  it('prices in any thousands style are the same whole number', () => {
+    for (const price of ['280000', '280,000', '280.000', '1 280 000', "1'280'000"]) {
+      const r = validateManualListing({ ...unit, price }, ids());
+      assert.ok(r.ok, price);
+      assert.equal(r.cards[0].priceAmount, Number(price.replace(/[.,' ]/g, '')));
+    }
+  });
+
+  it('a comma is a decimal separator for the area', () => {
+    const r = validateManualListing({ ...unit, area: '65,5' }, ids());
+    assert.ok(r.ok);
+    assert.equal(r.cards[0].areaTotal, 65.5);
+  });
+
+  it('an ambiguous or non-numeric value gets a clear message', () => {
+    const area = validateManualListing({ ...unit, area: '65.123' }, ids());
+    assert.ok(!area.ok);
+    assert.equal(area.errors.area, 'Escribe solo números, ej. 65.5');
+    const price = validateManualListing({ ...unit, price: 'dos mil' }, ids());
+    assert.ok(!price.ok);
+    assert.equal(price.errors.price, 'Escribe solo números, ej. 280000');
+    const zero = validateManualListing({ ...unit, price: '0' }, ids());
+    assert.ok(!zero.ok);
+    assert.equal(zero.errors.price, 'Debe ser un número mayor que 0');
+  });
+
+  it('values past the upper bounds are refused', () => {
+    const r = validateManualListing({ ...unit, price: '10000000000', area: '100000', bedrooms: '100', bathrooms: '100', parkingSpots: '100' }, ids());
     assert.ok(!r.ok);
-    assert.equal(r.errors.price, 'Debe ser un número mayor que 0');
+    for (const key of ['price', 'area', 'bedrooms', 'bathrooms', 'parkingSpots']) assert.equal(r.errors[key], 'Valor demasiado grande');
+    assert.ok(validateManualListing({ ...unit, price: '9999999999', area: '99999', bedrooms: '99' }, ids()).ok);
+  });
+
+  it('a www link gets https', () => {
+    const r = validateManualListing({ ...unit, link: 'www.x.pe/a' }, ids());
+    assert.ok(r.ok);
+    assert.equal(r.cards[0].url, 'https://www.x.pe/a');
+  });
+
+  it('raw keeps only known fields, capped', () => {
+    const r = validateManualListing({ ...unit, evil: 'x', notes: 'a'.repeat(5000) }, ids());
+    assert.ok(r.ok);
+    const raw = r.cards[0].raw as Record<string, string>;
+    assert.equal(raw.evil, undefined);
+    assert.equal(raw.notes.length, 2000);
   });
 
   it('a studio has 0 bedrooms but a fraction does not', () => {
@@ -110,6 +151,22 @@ describe('validateManualListing', () => {
     assert.equal(r.errors.units, 'Agrega al menos una unidad');
   });
 
+  it('blank unit rows are skipped and keep their index in errors', () => {
+    const blank = { price: '', currency: '', bedrooms: '', area: '' };
+    const ok = validateManualListing({ project: project.project, units: [project.units[0], blank, blank] }, ids());
+    assert.ok(ok.ok);
+    assert.equal(ok.cards.length, 2);
+    const bad = validateManualListing({ project: project.project, units: [blank, { ...project.units[0], area: '' }] }, ids());
+    assert.ok(!bad.ok);
+    assert.equal(bad.errors['units.1.area'], 'Requerido');
+  });
+
+  it('only blank unit rows is no units', () => {
+    const r = validateManualListing({ project: project.project, units: [{ price: '' }, {}] }, ids());
+    assert.ok(!r.ok);
+    assert.equal(r.errors.units, 'Agrega al menos una unidad');
+  });
+
   it('project errors are keyed by field and unit', () => {
     const r = validateManualListing({ project: { name: '', district: 'Foo' }, units: [{ ...project.units[0], area: '' }] }, ids());
     assert.ok(!r.ok);
@@ -126,6 +183,11 @@ describe('parsePhotoUrls', () => {
 });
 
 describe('rawFromFormEntries', () => {
+  it('ignores unit indexes past the cap', () => {
+    const raw = rawFromFormEntries([['mode', 'project'], ['units.0.price', '1'], ['units.5000.price', '2']]);
+    assert.equal((raw.units as unknown[]).length, 1);
+  });
+
   it('nests project and unit fields in project mode', () => {
     const raw = rawFromFormEntries([
       ['mode', 'project'],

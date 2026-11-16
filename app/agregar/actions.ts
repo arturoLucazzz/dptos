@@ -29,14 +29,15 @@ export async function createManualListing(raw: unknown): Promise<ManualResult> {
       observedAt: run.startedAt,
     });
   } catch (error) {
+    console.error('manual listing ingest failed', error);
     await finishRun(run.id, {
       status: ScrapeStatus.FAILED,
       districtCounts: {},
       pagesFetched: 0,
       skippedDistricts: [],
       errors: { message: error instanceof Error ? error.message : String(error) },
-    });
-    throw error;
+    }).catch((finishError) => console.error('could not mark the manual run as failed', finishError));
+    return { ok: false, errors: { form: 'No se pudo guardar. Intenta de nuevo.' } };
   }
   const count = result.cards.filter((card) => card.kind === 'UNIT').length;
   await finishRun(run.id, {

@@ -124,6 +124,12 @@ export function AgregarForm() {
         ))}
       </div>
 
+      {errors.form && (
+        <p role="alert" className="rounded-md border border-red-600 bg-red-50 p-3 text-sm text-red-900">
+          {errors.form}
+        </p>
+      )}
+
       {state.result?.ok && (
         <p role="status" className="rounded-md border border-green-600 bg-green-50 p-3 text-sm text-green-900">
           Aviso agregado.{' '}
@@ -133,7 +139,7 @@ export function AgregarForm() {
         </p>
       )}
 
-      {mode === 'unit' ? (
+      <div hidden={mode !== 'unit'}>
         <div className="space-y-3">
           <UnitFields state={state} prefix="" projectMode={false} />
           <div className="grid grid-cols-2 gap-3">
@@ -153,7 +159,7 @@ export function AgregarForm() {
             <Field name="unitNumber" label="Número de unidad" state={state} />
             <Field name="publisher" label="Quién publica" state={state} />
           </div>
-          <Field name="link" label="Enlace del aviso" state={state} type="url" placeholder="https://" />
+          <Field name="link" label="Enlace del aviso" state={state} type="text" placeholder="https://" />
           <label className="block space-y-1 text-sm">
             <span className="font-medium">Fotos (una URL por línea)</span>
             <textarea name="photoUrls" rows={3} className={SELECT_CLASS + ' h-auto'} defaultValue={state.values.photoUrls ?? ''} />
@@ -163,7 +169,8 @@ export function AgregarForm() {
             <textarea name="notes" rows={3} className={SELECT_CLASS + ' h-auto'} defaultValue={state.values.notes ?? ''} />
           </label>
         </div>
-      ) : (
+      </div>
+      <div hidden={mode !== 'project'}>
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <Field name="project.name" label="Nombre del proyecto" state={state} required />
@@ -173,7 +180,7 @@ export function AgregarForm() {
             <Field name="project.deliveryDate" label="Fecha de entrega" state={state} placeholder="2027-06" />
             <Field name="project.stage" label="Etapa" state={state} placeholder="En construcción" />
           </div>
-          <Field name="project.link" label="Enlace del proyecto" state={state} type="url" placeholder="https://" />
+          <Field name="project.link" label="Enlace del proyecto" state={state} type="text" placeholder="https://" />
           <label className="block space-y-1 text-sm">
             <span className="font-medium">Notas</span>
             <textarea name="project.notes" rows={3} className={SELECT_CLASS + ' h-auto'} defaultValue={state.values['project.notes'] ?? ''} />
@@ -197,7 +204,7 @@ export function AgregarForm() {
             )}
           </div>
         </div>
-      )}
+      </div>
 
       <Button type="submit" disabled={pending}>
         {pending ? 'Guardando…' : 'Guardar aviso'}
