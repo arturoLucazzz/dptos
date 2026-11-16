@@ -154,7 +154,7 @@ export function queryDepartamentos(
   }
   if (input.sources.length > 0) {
     const set = new Set<SourceId>(input.sources);
-    list = list.filter((r) => r.copies.some((c) => set.has(c.source)));
+    list = list.filter((r) => r.copies.some((c) => c.source != null && set.has(c.source)));
   }
   if (input.priceMin != null) list = list.filter((r) => r.pricePen >= input.priceMin!);
   if (input.priceMax != null) list = list.filter((r) => r.pricePen <= input.priceMax!);

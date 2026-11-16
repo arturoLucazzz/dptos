@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { collapseCopies, postingUrl, type CopyInput } from './official-price';
+import { collapseCopies, postingSource, postingUrl, type CopyInput } from './official-price';
 
 function copy(over: Partial<CopyInput> & Pick<CopyInput, 'postingId' | 'pricePen'>): CopyInput {
   return { propertyId: 'P', source: 'urbania', url: null, ...over };
@@ -54,5 +54,18 @@ describe('postingUrl', () => {
 
   it('other sources without a url have none', () => {
     assert.equal(postingUrl('proper', '/x', null), null);
+  });
+});
+
+describe('postingSource', () => {
+  it('an unknown source is not urbania and gives no guessed url', () => {
+    const source = postingSource('mystery');
+    assert.equal(source, null);
+    assert.equal(postingUrl(source, '/inmueble/1', null), null);
+    assert.equal(postingUrl(source, '/inmueble/1', 'https://x.pe/1'), 'https://x.pe/1');
+  });
+
+  it('a known source passes through', () => {
+    assert.equal(postingSource('proper'), 'proper');
   });
 });

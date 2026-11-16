@@ -27,7 +27,7 @@ export interface ListingRow {
   propertyId: string | null;
   sourcePostingId: string;
   /** Source of the official posting. */
-  source: SourceId;
+  source: SourceId | null;
   /** Relative path on Urbania, for linking out. */
   sourcePath: string | null;
   /** The official posting's own page, when known. */

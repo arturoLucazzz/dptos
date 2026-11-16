@@ -11,14 +11,15 @@ import { SOURCE_IDS, type SourceId } from './listing-card';
 export interface CopyInput {
   postingId: string;
   propertyId: string | null;
-  source: SourceId;
+  /** Null for a source string no adapter writes; the row stays, its URL is not guessed. */
+  source: SourceId | null;
   url: string | null;
   /** Current price, already converted to soles. */
   pricePen: number;
 }
 
 export interface ListingCopy {
-  source: SourceId;
+  source: SourceId | null;
   url: string | null;
   pricePen: number;
 }
@@ -59,7 +60,7 @@ export function collapseCopies(
 
 /** The ad's own page: the stored URL first, else Urbania's path on its domain. */
 export function postingUrl(
-  source: SourceId,
+  source: SourceId | null,
   sourcePath: string | null,
   sourceUrl: string | null
 ): string | null {
@@ -72,11 +73,18 @@ export function isSourceId(value: string): value is SourceId {
   return (SOURCE_IDS as readonly string[]).includes(value);
 }
 
+const warnedSources = new Set<string>();
+
 /**
- * `Posting.source` is a plain string column. Every writer stores a SourceId and the
- * column defaults to 'urbania', so anything else would be a bug upstream; it is
- * read as Urbania rather than dropping the listing.
+ * `Posting.source` is a plain string column. Every writer stores a SourceId, so
+ * anything else is a bug upstream. It is not read as Urbania (that would invent an
+ * Urbania link): it is null, the row stays, and the value is logged once.
  */
-export function postingSource(source: string): SourceId {
-  return isSourceId(source) ? source : 'urbania';
+export function postingSource(source: string): SourceId | null {
+  if (isSourceId(source)) return source;
+  if (!warnedSources.has(source)) {
+    warnedSources.add(source);
+    console.warn(`Unknown posting source "${source}"; its URL is not guessed.`);
+  }
+  return null;
 }

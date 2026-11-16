@@ -13,6 +13,7 @@ import { DuplicateLevel, DuplicateStatus, Operation, PostingKind, ScrapeStatus }
 import type { DuplicateFlag, ListingRow } from './listing-row';
 import { collapseCopies, postingSource, postingUrl } from './official-price';
 import { getFairPriceModel, getRentIndex, possiblySoldCutoffs } from './market';
+import { countGoneProperties, countProperties } from './property-stats';
 import { livePostingWhere, notLivePostingWhere } from './possibly-sold';
 import { daysOnMarket, fitIdToDate, publishedAtFor, type IdDateAnchor } from './posting-age';
 import { estimateGrossRent } from './rent';
@@ -110,8 +111,9 @@ export async function loadSaleListings(): Promise<ListingsPage> {
     },
   });
 
-  // Possibly sold (or removed) in the last 90 days, for inventory months. Counted per district
-  // so a quiet district does not inherit Miraflores' turnover.
+  // Properties gone in the last 90 days, for inventory months. Counted per district
+  // so a quiet district does not inherit Miraflores' turnover. A property is gone
+  // only when every copy is: one still live on another source is on the market.
   const soldSince = new Date(asOfTime(latestRun) - 90 * 86_400_000);
   const recentlyGone = await prisma.posting.findMany({
     where: {
@@ -120,12 +122,24 @@ export async function loadSaleListings(): Promise<ListingsPage> {
       lastSeenAt: { gte: soldSince },
       AND: [notLivePostingWhere(cutoffs)],
     },
-    select: { districtSlug: true },
+    select: { id: true, propertyId: true, districtSlug: true },
   });
-  const soldByDistrict = new Map<string, number>();
-  for (const row of recentlyGone) {
-    soldByDistrict.set(row.districtSlug, (soldByDistrict.get(row.districtSlug) ?? 0) + 1);
-  }
+  const goneIds = [...new Set(recentlyGone.flatMap((r) => (r.propertyId ? [r.propertyId] : [])))];
+  const stillLive = goneIds.length
+    ? await prisma.posting.findMany({
+        where: {
+          kind: PostingKind.UNIT,
+          operation: Operation.SALE,
+          propertyId: { in: goneIds },
+          AND: [livePostingWhere(cutoffs)],
+        },
+        select: { propertyId: true },
+      })
+    : [];
+  const soldByDistrict = countGoneProperties(
+    recentlyGone.map((r) => ({ postingId: r.id, propertyId: r.propertyId, districtSlug: r.districtSlug })),
+    new Set(stillLive.flatMap((r) => (r.propertyId ? [r.propertyId] : [])))
+  );
 
   // Age model from the listings that report a date. One district alone rarely has
   // enough anchors; pooling every live listing is what makes day-one ages usable.
@@ -139,12 +153,11 @@ export async function loadSaleListings(): Promise<ListingsPage> {
   const ageModel = fitIdToDate(anchors);
   const asOf = asOfTime(latestRun) ? new Date(asOfTime(latestRun)) : new Date();
 
-  // Live listing count per district, for inventory months. Counted in postings,
-  // like the "gone" side above, so the ratio compares like with like.
-  const liveByDistrict = new Map<string, number>();
-  for (const posting of postings) {
-    liveByDistrict.set(posting.districtSlug, (liveByDistrict.get(posting.districtSlug) ?? 0) + 1);
-  }
+  // Live property count per district, like the "gone" side above, so the ratio
+  // compares like with like.
+  const liveByDistrict = countProperties(
+    postings.map((p) => ({ postingId: p.id, propertyId: p.propertyId, districtSlug: p.districtSlug }))
+  );
 
   const inventoryByDistrict = new Map<string, number | null>();
   for (const [slug, liveCount] of liveByDistrict) {
