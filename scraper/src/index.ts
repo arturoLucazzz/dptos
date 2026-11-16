@@ -6,11 +6,12 @@ import { createIncrementalSink } from './utils/file-utils';
 import { DataProcessor } from './processor';
 import { finishRun, ingestCards, refreshManualPostings, shouldSkipDistrict, startRun } from './db/ingest';
 import { ADAPTERS } from './sources/registry';
+import { sourcesToRecord, type SourceOutcome } from './sources/run-sources';
 import type { SourceAdapter } from './sources/types';
 import { Operation, ScrapeMode, ScrapeStatus } from '@/lib/generated/prisma/enums';
 import { prisma } from '@/lib/db';
 import { invalidateMarketCache } from '@/lib/market';
-import type { ListingCard, SourceId } from '@/lib/listing-card';
+import type { ListingCard } from '@/lib/listing-card';
 import type { SourceDistrictCounts } from '@/lib/sanity-gate';
 
 /**
@@ -198,10 +199,8 @@ async function runScrapers(args: string[]) {
   console.log(`  districts: ${districts.join(', ')}`);
   console.log(`  operations: ${operations.join(', ')}`);
 
-  // Only sources that crawled without failing stay on the run. A run counts
-  // toward marking a source's listings as possibly sold, so a source that broke
-  // must not be on it.
-  const crawled: SourceId[] = [];
+  // What each source did, to decide which ones the run records (see run-sources.ts).
+  const outcomes: SourceOutcome[] = [];
 
   try {
     for (const adapter of adapters) {
@@ -217,13 +216,24 @@ async function runScrapers(args: string[]) {
           run.errors.push(`${adapter.id} (${operationLabel(operation)}) failed: ${message}`);
         }
       }
-      if (adapterOperations.length > 0 && !failed) crawled.push(adapter.id);
+      outcomes.push({
+        source: adapter.id,
+        crawled: adapterOperations.length > 0,
+        failed,
+        gatedSlices: run.skippedDistricts.filter((slice) => slice.startsWith(`${adapter.id}:`)).length,
+      });
     }
 
-    // A run with no sources would read as an old Urbania run, so a run where
-    // nothing crawled is a failure, not a partial success.
+    const { recorded, leftOut } = sourcesToRecord(outcomes);
+    console.log(`\nSources recorded on the run: ${recorded.join(', ') || 'none'}`);
+    for (const { source, reason } of leftOut) {
+      console.log(`  ${source} left out (${reason}): this run does not age its listings or set its gate baseline`);
+    }
+
+    // A run with no sources would read as an old Urbania run, so a run that
+    // records none is a failure, not a partial success.
     const status =
-      crawled.length === 0
+      recorded.length === 0
         ? ScrapeStatus.FAILED
         : run.blocked || run.errors.length > 0 || run.skippedDistricts.length > 0
           ? ScrapeStatus.PARTIAL
@@ -239,8 +249,8 @@ async function runScrapers(args: string[]) {
         districtCounts: run.districtCounts,
         pagesFetched: run.pagesFetched,
         skippedDistricts: run.skippedDistricts,
-        errors: run.errors.length ? run.errors : crawled.length === 0 ? ['no source crawled'] : undefined,
-        sources: crawled,
+        errors: run.errors.length ? run.errors : recorded.length === 0 ? ['no source recorded'] : undefined,
+        sources: recorded,
       });
       invalidateMarketCache();
     }
@@ -255,7 +265,7 @@ async function runScrapers(args: string[]) {
         pagesFetched: run.pagesFetched,
         skippedDistricts: run.skippedDistricts,
         errors: [...run.errors, error instanceof Error ? error.message : String(error)],
-        sources: crawled,
+        sources: sourcesToRecord(outcomes).recorded,
       });
     }
     process.exitCode = 1;

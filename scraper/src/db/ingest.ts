@@ -86,9 +86,9 @@ export async function finishRun(
     skippedDistricts: string[];
     errors?: unknown;
     /**
-     * The sources that actually crawled, when that differs from what the run
-     * started with. A source that failed outright must leave the run, or the run
-     * would count toward marking that source's listings as possibly sold.
+     * The sources this run observed reliably, when that differs from what it
+     * started with. A source that failed or was gated must leave the run, or the
+     * run would count toward its possibly-sold cutoff and its next gate baseline.
      */
     sources?: SourceId[];
   }
