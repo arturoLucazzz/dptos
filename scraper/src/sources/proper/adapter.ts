@@ -128,6 +128,8 @@ export function properAdapter(overrides: Partial<ProperAdapterDeps> = {}): Sourc
           const url = `${PROPER_BASE_URL}/_next/data/${buildId}/${route}/${slug}.json?slug=${slug}`;
           const json: unknown = JSON.parse(await get(url));
           cards = immediate ? parseProperImmediate(json, slug) : parseProperProject(json, slug);
+          // Read below for the district; an empty answer is a failed fetch, not a crash.
+          if (cards.length === 0) throw new Error('no cards in the answer');
         } catch (error) {
           const message = `proper ${slug}: ${error instanceof Error ? error.message : String(error)}`;
           log(message);

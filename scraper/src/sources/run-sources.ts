@@ -49,13 +49,17 @@ function districtSlug(name: string): string {
 
 /**
  * Whether a crawl covered everything it was asked for. One that stopped early,
- * or left a requested district out, is a failed source: its finished districts
- * still ingest, but the run does not record the source.
+ * left a requested district out, or came back blocked or with errors for a
+ * requested district, is a failed source: its cards still ingest, but the run
+ * does not record the source, so it ages none of its listings.
  */
 export function crawlIsComplete(requested: string[], result: SourceCrawlResult): boolean {
   if (result.incomplete) return false;
-  const returned = new Set(result.districts.map((d) => districtSlug(d.districtSlug)));
-  return requested.every((name) => returned.has(districtSlug(name)));
+  const returned = new Map(result.districts.map((d) => [districtSlug(d.districtSlug), d]));
+  return requested.every((name) => {
+    const district = returned.get(districtSlug(name));
+    return district != null && !district.blocked && district.errors.length === 0;
+  });
 }
 
 /**

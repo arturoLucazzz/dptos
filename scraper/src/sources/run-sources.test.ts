@@ -54,6 +54,18 @@ describe('crawlIsComplete', () => {
     assert.equal(crawlIsComplete(['lince', 'surquillo'], result), true);
   });
 
+  it('not complete when a requested district came back blocked or with errors', () => {
+    const blocked = { districts: [district('lince'), { ...district('surquillo'), blocked: true }], skippedOutsideLima: 0, incomplete: false };
+    assert.equal(crawlIsComplete(['lince', 'surquillo'], blocked), false);
+    const errored = { districts: [district('lince'), { ...district('surquillo'), errors: ['page 3: HTTP 500'] }], skippedOutsideLima: 0, incomplete: false };
+    assert.equal(crawlIsComplete(['lince', 'surquillo'], errored), false);
+  });
+
+  it('errors in a district that was not asked for do not fail the crawl', () => {
+    const result = { districts: [district('lince'), { ...district('barranco'), errors: ['x'] }], skippedOutsideLima: 0, incomplete: false };
+    assert.equal(crawlIsComplete(['lince'], result), true);
+  });
+
   it('not complete when the adapter stopped early', () => {
     const result = { districts: [district('lince')], skippedOutsideLima: 0, incomplete: true };
     assert.equal(crawlIsComplete(['lince'], result), false);
