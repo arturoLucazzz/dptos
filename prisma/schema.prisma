@@ -55,6 +55,24 @@ enum Currency {
   USD
 }
 
+enum DuplicateLevel {
+  /// Same street, building, unit and features. Safe to treat as one apartment.
+  HIGH
+  /// Most signals agree but one is missing or conflicting. Needs a look.
+  MEDIUM
+  /// Some signals agree. Only worth surfacing, never merged automatically.
+  LOW
+}
+
+enum DuplicateStatus {
+  /// Found by the matcher, not reviewed yet.
+  OPEN
+  /// You confirmed they are the same apartment.
+  CONFIRMED
+  /// You confirmed they are different apartments, so it is not proposed again.
+  REJECTED
+}
+
 /// One row per execution. The operations log, and the source of the /runs page.
 model ScrapeRun {
   id         String       @id @default(cuid())
@@ -71,6 +89,9 @@ model ScrapeRun {
   pagesFetched   Int   @default(0)
   /// Districts whose lastSeenAt was left untouched because the count collapsed.
   skippedDistricts String[]
+  /// Sources this run covered, such as "urbania" or "proper". Empty on runs from
+  /// before there was more than one source.
+  sources        String[]
   errors         Json?
   notes          String?
 
@@ -105,6 +126,13 @@ model Posting {
   propertyId String?
   property   Property? @relation(fields: [propertyId], references: [id], onDelete: SetNull)
 
+  /// The development this posting belongs to, when it is a project listing.
+  projectId String?
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  /// When the source stopped listing it. The posting row is kept, never deleted.
+  removedAt DateTime?
+
   /// Cannot be recomputed later, so it is stored even though it looks derived.
   firstSeenAt DateTime @default(now())
   lastSeenAt  DateTime @default(now())
@@ -121,6 +149,7 @@ model Posting {
   @@index([districtSlug, operation])
   @@index([lastSeenAt])
   @@index([propertyId])
+  @@index([projectId])
 }
 
 /// One row the first time a listing is seen, and one more every time something
@@ -187,6 +216,15 @@ model PostingSnapshot {
   /// Urbania's own duplicate flag.
   hasDuplicate    Boolean?
   imageUrl        String?
+  /// Every image the source published, where imageUrl is only the first.
+  imageUrls       String[]
+  /// The listing's own page on the source, for sources that do not build it from the path.
+  sourceUrl       String?
+
+  // ---- Building, as published ----
+  buildingName  String?
+  unitNumber    String?
+  developerName String?
 
   /// Implausible values are marked, never deleted. Deleting a garbage listing
   /// makes the next run believe it disappeared and count it as a sale.
@@ -214,6 +252,12 @@ model Property {
   fingerprint  String
 
   addressNorm String?
+  /// The street alone: addressNorm with the digit tokens removed, so the same
+  /// street matches across sources that write the number differently.
+  streetNorm   String?
+  /// Normalized building name, when the source publishes one.
+  buildingNorm String?
+  unitNumber   String?
   bedrooms    Int?
   /// Area rounded into a bucket, so a 64 m² and a 65 m² listing can still match.
   areaBucket  Int?
@@ -231,12 +275,70 @@ model Property {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  projectId String?
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
   postings Posting[]
+
+  duplicatesAsA DuplicateCandidate[] @relation("DuplicateA")
+  duplicatesAsB DuplicateCandidate[] @relation("DuplicateB")
 
   @@index([districtSlug])
   @@index([fingerprint])
   @@index([addressNorm])
+  @@index([streetNorm])
+  @@index([buildingNorm])
+  @@index([projectId])
   @@index([favorite])
+}
+
+/// A development that sells many units. Several sources list the same project
+/// under different names, so this is the place they are grouped. Only what the
+/// sources published is stored.
+model Project {
+  id            String  @id @default(cuid())
+  districtSlug  String
+  name          String?
+  /// Normalized name, used to match the same project across sources.
+  nameNorm      String?
+  developerName String?
+  addressNorm   String?
+  latitude      Decimal? @db.Decimal(10, 7)
+  longitude     Decimal? @db.Decimal(10, 7)
+  deliveryDate  String?
+  stage         String?
+  /// Source keys that point at this project, such as "proper:prolongacion-iquitos".
+  sourceKeys    String[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  postings   Posting[]
+  properties Property[]
+
+  @@index([districtSlug])
+  @@index([nameNorm])
+}
+
+/// A pair of properties the matcher thinks may be the same apartment. Nothing is
+/// merged automatically from this table: it is the review queue. The smaller id
+/// is always stored as A, so a pair has exactly one row.
+model DuplicateCandidate {
+  id          String   @id @default(cuid())
+  propertyAId String
+  propertyA   Property @relation("DuplicateA", fields: [propertyAId], references: [id], onDelete: Cascade)
+  propertyBId String
+  propertyB   Property @relation("DuplicateB", fields: [propertyBId], references: [id], onDelete: Cascade)
+
+  level   DuplicateLevel
+  /// The signals that agreed or conflicted, kept so the review can show why.
+  signals Json
+  status  DuplicateStatus @default(OPEN)
+
+  createdAt DateTime  @default(now())
+  decidedAt DateTime?
+
+  @@unique([propertyAId, propertyBId])
 }
 
 /// Assumptions and constants. Has no relation to anything: it is configuration.
