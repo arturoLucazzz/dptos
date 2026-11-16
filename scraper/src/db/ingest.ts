@@ -26,7 +26,9 @@ import {
   gateSkips,
   gateVerdict,
   previousCountForSource,
+  previousTotalForSource,
   sliceHistory,
+  totalHistory,
   type GateVerdict,
   type SourceDistrictCounts,
 } from '@/lib/sanity-gate';
@@ -158,6 +160,46 @@ export async function shouldSkipDistrict(
     previousCount,
     ratio: SANITY_GATE_RATIO,
     recent: sliceHistory(recentRuns, source, districtSlug, operation),
+    manualAccept,
+  });
+  return { skip: verdict === 'skip', previousCount, verdict };
+}
+
+/**
+ * The gate for a whole-site source (Proper, Nexo): its total count for the
+ * operation against the total of the newest run that recorded it. Same ratio,
+ * same acceptance after RUNS_TO_ACCEPT_DROP collapsed runs, zero never accepted
+ * on its own. Skipped totals are stored as `source:all:OP`.
+ */
+export async function shouldSkipWholeSite(
+  source: SourceId,
+  operation: Operation,
+  observedTotal: number,
+  currentRunId: string,
+  manualAccept = false
+): Promise<{ skip: boolean; previousCount: number | null; verdict: GateVerdict }> {
+  const finished = await prisma.scrapeRun.findMany({
+    where: { id: { not: currentRunId }, status: { in: [ScrapeStatus.SUCCESS, ScrapeStatus.PARTIAL] } },
+    orderBy: { startedAt: 'desc' },
+    take: GATE_HISTORY_RUNS,
+    select: { districtCounts: true, sources: true },
+  });
+  const previousCount = previousTotalForSource(finished, source, operation);
+
+  const recentRuns = gateSkips(observedTotal, previousCount, SANITY_GATE_RATIO)
+    ? await prisma.scrapeRun.findMany({
+        where: { id: { not: currentRunId }, finishedAt: { not: null } },
+        orderBy: { startedAt: 'desc' },
+        take: GATE_HISTORY_RUNS,
+        select: { districtCounts: true, skippedDistricts: true },
+      })
+    : [];
+
+  const verdict = gateVerdict({
+    observed: observedTotal,
+    previousCount,
+    ratio: SANITY_GATE_RATIO,
+    recent: totalHistory(recentRuns, source, operation),
     manualAccept,
   });
   return { skip: verdict === 'skip', previousCount, verdict };

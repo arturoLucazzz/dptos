@@ -58,6 +58,7 @@ Entre fuentes rige lo mismo (ver [Duplicados entre fuentes](#duplicados-entre-fu
 Es por fuente, distrito y operación. Si una porción trae &lt;20% de lo que trajo la corrida anterior de esa fuente (`SANITY_GATE_RATIO`), **no** se toca `lastSeenAt`: evita que un parser roto marque Lima entera como vendida.
 
 - Si la misma porción cae 3 corridas seguidas con algo observado (&gt; 0), la caída se acepta como real. Cero nunca se acepta solo: una fuente bloqueada no debe marcar todo como vendido.
+- Proper y Nexo traen todo el sitio en cada corrida, así que su compuerta compara el **total** de la fuente contra su total anterior, con la misma regla (20%, 3 corridas, cero nunca). Que un distrito suyo quede en cero es un proyecto vendido, no un parser roto, y no frena nada. Para aceptar a mano: `--accept-gate=proper:all`.
 - `--accept-gate=fuente:distrito` acepta la caída en esa corrida (se repite o va separado por comas).
 - Una fuente se anota en la corrida (`ScrapeRun.sources`) solo si terminó de recorrer completo y no quedó frenada por la compuerta. Eso alimenta "posiblemente vendido" por fuente: una corrida que no recorrió una fuente no dice nada de sus avisos.
 

@@ -95,6 +95,7 @@ export function properAdapter(overrides: Partial<ProperAdapterDeps> = {}): Sourc
   return {
     id: 'proper',
     operations: [Operation.SALE],
+    wholeSite: true,
     async crawl({ districts, operation, onBatch }): Promise<SourceCrawlResult> {
       if (operation !== Operation.SALE) return { districts: [], skippedOutsideLima: 0, incomplete: false };
 

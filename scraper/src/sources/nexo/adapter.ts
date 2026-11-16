@@ -70,6 +70,7 @@ export function nexoAdapter(overrides: Partial<NexoAdapterDeps> = {}): SourceAda
   return {
     id: 'nexo',
     operations: [Operation.SALE],
+    wholeSite: true,
     async crawl({ districts, operation, onBatch }): Promise<SourceCrawlResult> {
       if (operation !== Operation.SALE) return { districts: [], skippedOutsideLima: 0, incomplete: false };
 

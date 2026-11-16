@@ -41,6 +41,12 @@ export interface SourceAdapter {
   id: SourceId;
   operations: Operation[];
   /**
+   * The source lists every district in one crawl whatever was asked (Proper,
+   * Nexo). Its sanity gate compares the total, not each district: one of its
+   * districts going to zero is a project selling out, not a broken parser.
+   */
+  wholeSite?: boolean;
+  /**
    * Crawl these districts for one operation. Every card of a district must reach
    * `onBatch` before that district appears in the result. Throwing means the
    * source failed as a whole; the loop records it and moves to the next source.

@@ -6,8 +6,12 @@ import {
   gateVerdict,
   previousCountForSource,
   previousCountFrom,
+  previousTotalForSource,
   recordedSources,
+  RUNS_TO_ACCEPT_DROP,
   sliceHistory,
+  totalCountFrom,
+  totalHistory,
 } from './sanity-gate';
 
 describe('previousCountFrom', () => {
@@ -130,5 +134,59 @@ describe('previousCountForSource', () => {
 
   it('old flat runs are urbania baselines', () => {
     assert.equal(previousCountForSource([{ sources: [], districtCounts: { lince: { SALE: 281 } } }], 'urbania', 'lince', 'SALE'), 281);
+  });
+});
+
+describe('whole-site gate', () => {
+  const counts = (byDistrict: Record<string, number>) => ({
+    proper: Object.fromEntries(Object.entries(byDistrict).map(([d, n]) => [d, { SALE: n }])),
+  });
+
+  it('totals a source across every district it counted', () => {
+    assert.equal(totalCountFrom(counts({ lince: 10, barranco: 0, miraflores: 30 }), 'proper', 'SALE'), 40);
+    assert.equal(totalCountFrom(counts({ lince: 10 }), 'proper', 'RENT'), null);
+    assert.equal(totalCountFrom(counts({ lince: 10 }), 'nexo', 'SALE'), null);
+  });
+
+  it('a district going to zero does not gate when the total holds', () => {
+    const previous = previousTotalForSource(
+      [{ sources: ['proper'], districtCounts: counts({ lince: 5, miraflores: 45 }) }],
+      'proper',
+      'SALE'
+    );
+    assert.equal(previous, 50);
+    const observed = totalCountFrom(counts({ lince: 0, miraflores: 46 }), 'proper', 'SALE')!;
+    assert.equal(gateVerdict({ observed, previousCount: previous, ratio: 0.2, recent: [], manualAccept: false }), 'pass');
+  });
+
+  it('a collapsed total skips, and the baseline skips runs that did not record the source', () => {
+    const runs = [
+      { sources: ['urbania'], districtCounts: counts({ lince: 1 }) },
+      { sources: ['proper'], districtCounts: counts({ lince: 20, miraflores: 30 }) },
+    ];
+    const previous = previousTotalForSource(runs, 'proper', 'SALE');
+    assert.equal(previous, 50);
+    assert.equal(gateVerdict({ observed: 3, previousCount: previous, ratio: 0.2, recent: [], manualAccept: false }), 'skip');
+  });
+
+  it('a total collapsed in three runs in a row is accepted, zero never', () => {
+    const gatedRuns = Array.from({ length: RUNS_TO_ACCEPT_DROP - 1 }, () => ({
+      districtCounts: counts({ lince: 2, miraflores: 1 }),
+      skippedDistricts: ['proper:all:SALE'],
+    }));
+    const recent = totalHistory(gatedRuns, 'proper', 'SALE');
+    assert.deepEqual(recent, [
+      { observed: 3, gated: true },
+      { observed: 3, gated: true },
+    ]);
+    assert.equal(gateVerdict({ observed: 3, previousCount: 50, ratio: 0.2, recent, manualAccept: false }), 'auto-accepted');
+    assert.equal(gateVerdict({ observed: 0, previousCount: 50, ratio: 0.2, recent, manualAccept: false }), 'skip');
+    // A per-district skip key is not a whole-site skip.
+    const perDistrict = totalHistory(
+      [{ districtCounts: counts({ lince: 3 }), skippedDistricts: ['proper:lince:SALE'] }],
+      'proper',
+      'SALE'
+    );
+    assert.deepEqual(perDistrict, [{ observed: 3, gated: false }]);
   });
 });

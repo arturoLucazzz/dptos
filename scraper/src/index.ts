@@ -4,7 +4,14 @@ import { execSync } from 'child_process';
 import { LIMA_DISTRICT_SLUGS, unknownDistrictSlugs } from './config/districts';
 import { createIncrementalSink } from './utils/file-utils';
 import { DataProcessor } from './processor';
-import { finishRun, ingestCards, refreshManualPostings, shouldSkipDistrict, startRun } from './db/ingest';
+import {
+  finishRun,
+  ingestCards,
+  refreshManualPostings,
+  shouldSkipDistrict,
+  shouldSkipWholeSite,
+  startRun,
+} from './db/ingest';
 import { ADAPTERS } from './sources/registry';
 import { crawlIsComplete, parseAcceptGate, sourcesToRecord, type SourceOutcome } from './sources/run-sources';
 import type { SourceAdapter } from './sources/types';
@@ -12,7 +19,7 @@ import { Operation, ScrapeMode, ScrapeStatus } from '@/lib/generated/prisma/enum
 import { prisma } from '@/lib/db';
 import { invalidateMarketCache } from '@/lib/market';
 import type { ListingCard, SourceId } from '@/lib/listing-card';
-import type { SourceDistrictCounts } from '@/lib/sanity-gate';
+import { WHOLE_SITE_SLICE, type GateVerdict, type SourceDistrictCounts } from '@/lib/sanity-gate';
 
 /**
  * Main entry point
@@ -71,6 +78,18 @@ function operationLabel(operation: Operation): 'sale' | 'rent' {
   return operation === Operation.RENT ? 'rent' : 'sale';
 }
 
+/** Says why a collapsed count was let through anyway. */
+function logGateVerdict(label: string, observed: number, previousCount: number | null, verdict: GateVerdict) {
+  if (verdict === 'auto-accepted') {
+    console.log(
+      `  ${label}: ${observed} postings against ${previousCount} last run, ` +
+        `aceptado tras 3 corridas: the drop held for 3 runs in a row, so it is taken as real.`
+    );
+  } else if (verdict === 'manual-accepted') {
+    console.log(`  ${label}: ${observed} postings against ${previousCount} last run, accepted by --accept-gate.`);
+  }
+}
+
 /**
  * Crawl one source for one operation, then gate and ingest it district by district.
  * Returns whether the crawl covered every requested district.
@@ -116,40 +135,61 @@ async function runSource(
   console.log('\nPer-district health');
   const counts = (run.districtCounts[adapter.id] ??= {});
   for (const district of result.districts) {
+    counts[district.districtSlug] ??= {};
+    counts[district.districtSlug][operation] = (pending.get(district.districtSlug) ?? []).length;
+  }
+
+  // A whole-site source lists every district in one crawl, so its total is what
+  // a broken parser collapses; one of its districts at zero is a sold-out
+  // project. It is gated once, on the total, and the verdict covers every district.
+  let wholeSiteSkip = false;
+  if (adapter.wholeSite) {
+    const total = result.districts.reduce((sum, d) => sum + (pending.get(d.districtSlug)?.length ?? 0), 0);
+    const { skip, previousCount, verdict } = await shouldSkipWholeSite(
+      adapter.id,
+      operation,
+      total,
+      run.id,
+      run.acceptGate.has(`${adapter.id}:${WHOLE_SITE_SLICE}`)
+    );
+    logGateVerdict(`${adapter.id} total`, total, previousCount, verdict);
+    if (skip) {
+      run.gatedSlices[adapter.id] = (run.gatedSlices[adapter.id] ?? 0) + 1;
+      run.skippedDistricts.push(`${adapter.id}:${WHOLE_SITE_SLICE}:${operation}`);
+      console.log(
+        `  ${adapter.id} total: ${total} postings against ${previousCount} last run. ` +
+          `Treating this as a broken parser, not an empty site: no lastSeenAt touched in any district.`
+      );
+    }
+    wholeSiteSkip = skip;
+  }
+
+  for (const district of result.districts) {
     run.pagesFetched += district.pagesFetched;
     if (district.blocked) run.blocked = true;
     if (district.errors.length) run.errors.push(...district.errors.map((e) => `${adapter.id}: ${e}`));
 
     const cards = pending.get(district.districtSlug) ?? [];
-    counts[district.districtSlug] ??= {};
-    counts[district.districtSlug][operation] = cards.length;
-
-    const { skip, previousCount, verdict } = await shouldSkipDistrict(
-      adapter.id,
-      district.districtSlug,
-      operation,
-      cards.length,
-      run.id,
-      run.acceptGate.has(`${adapter.id}:${district.districtSlug}`)
-    );
-    if (verdict === 'auto-accepted') {
-      console.log(
-        `  ${district.districtSlug}: ${cards.length} postings against ${previousCount} last run, ` +
-          `aceptado tras 3 corridas: the drop held for 3 runs in a row, so it is taken as real.`
+    let skip = wholeSiteSkip;
+    if (!adapter.wholeSite) {
+      const gate = await shouldSkipDistrict(
+        adapter.id,
+        district.districtSlug,
+        operation,
+        cards.length,
+        run.id,
+        run.acceptGate.has(`${adapter.id}:${district.districtSlug}`)
       );
-    } else if (verdict === 'manual-accepted') {
-      console.log(
-        `  ${district.districtSlug}: ${cards.length} postings against ${previousCount} last run, ` +
-          `accepted by --accept-gate.`
-      );
-    }
-    if (skip) {
-      run.gatedSlices[adapter.id] = (run.gatedSlices[adapter.id] ?? 0) + 1;
-      run.skippedDistricts.push(`${adapter.id}:${district.districtSlug}:${operation}`);
-      console.log(
-        `  ${district.districtSlug}: ${cards.length} postings against ${previousCount} last run. ` +
-          `Treating this as a broken parser, not an empty district: no lastSeenAt touched.`
-      );
+      logGateVerdict(district.districtSlug, cards.length, gate.previousCount, gate.verdict);
+      skip = gate.skip;
+      if (skip) {
+        run.gatedSlices[adapter.id] = (run.gatedSlices[adapter.id] ?? 0) + 1;
+        run.skippedDistricts.push(`${adapter.id}:${district.districtSlug}:${operation}`);
+        console.log(
+          `  ${district.districtSlug}: ${cards.length} postings against ${gate.previousCount} last run. ` +
+            `Treating this as a broken parser, not an empty district: no lastSeenAt touched.`
+        );
+      }
     }
 
     let ingestNote = '';
@@ -359,6 +399,7 @@ Usage:
   pnpm scrape --mode=FULL_WEEKLY                - Label the run (TARGET_DAILY | FULL_WEEKLY | MANUAL)
   pnpm scrape --dry-run                         - Crawl and log, write nothing to the database
   pnpm scrape --accept-gate=urbania:lince       - Accept a sanity-gate drop for this run (repeat or comma list)
+  pnpm scrape --accept-gate=proper:all          - Same for a whole-site source (proper, nexo), gated on its total
   pnpm scrape:probe --district=lince --pages=2  - Parse-quality report, writes nothing
   pnpm process [file]                           - Process legacy JSON result files
 

@@ -91,6 +91,49 @@ export function previousCountForSource(
   return previous ? previousCountFrom(previous.districtCounts, source, district, operation) : null;
 }
 
+/**
+ * The slice name a whole-site source is gated under. Proper and Nexo list every
+ * district in one crawl, so their total is what can collapse; a district of
+ * theirs going to zero is a project selling out, not a broken parser.
+ */
+export const WHOLE_SITE_SLICE = 'all';
+
+/** A source's total count for one operation across every district a run counted. */
+export function totalCountFrom(counts: unknown, source: SourceId, operation: 'SALE' | 'RENT'): number | null {
+  let total: number | null = null;
+  for (const district of countedDistricts(counts, source)) {
+    const value = previousCountFrom(counts, source, district, operation);
+    if (value != null) total = (total ?? 0) + value;
+  }
+  return total;
+}
+
+/** The whole-site baseline: the total of the newest run that recorded the source. */
+export function previousTotalForSource(
+  runsNewestFirst: StoredRun[],
+  source: SourceId,
+  operation: 'SALE' | 'RENT'
+): number | null {
+  const previous = runsNewestFirst.find((run) => recordedSources(run.districtCounts, run.sources).includes(source));
+  return previous ? totalCountFrom(previous.districtCounts, source, operation) : null;
+}
+
+/** Like `sliceHistory`, for a whole-site source's total. */
+export function totalHistory(
+  runsNewestFirst: { districtCounts: unknown; skippedDistricts: string[] }[],
+  source: SourceId,
+  operation: 'SALE' | 'RENT'
+): SliceObservation[] {
+  const key = `${source}:${WHOLE_SITE_SLICE}:${operation}`;
+  const history: SliceObservation[] = [];
+  for (const run of runsNewestFirst) {
+    const observed = totalCountFrom(run.districtCounts, source, operation);
+    if (observed == null) continue;
+    history.push({ observed, gated: run.skippedDistricts.includes(key) });
+  }
+  return history;
+}
+
 /** Whether the observed count collapsed below `ratio` of the previous one. */
 export function gateSkips(observed: number, previous: number | null, ratio: number): boolean {
   return previous != null && previous > 0 && observed < previous * ratio;
