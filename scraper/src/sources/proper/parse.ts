@@ -15,6 +15,10 @@ export function properProjectUrl(slug: string): string {
   return `${PROPER_BASE_URL}/proyecto/${slug}`;
 }
 
+export function properImmediateUrl(slug: string): string {
+  return `${PROPER_BASE_URL}/entrega-inmediata/${slug}`;
+}
+
 /** The Next.js build id, which names the `/_next/data/<id>/...` JSON files. */
 export function parseProperBuildId(html: string): string | null {
   const script = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
@@ -109,4 +113,45 @@ export function parseProperProject(json: unknown, slug: string): ListingCard[] {
   });
 
   return [project, ...unitCards];
+}
+
+/**
+ * A single apartment for immediate delivery (`/entrega-inmediata/<slug>`), most
+ * of them sold with a tenant. It has no project, so it is one UNIT card on its
+ * own, keyed by its slug.
+ */
+export function parseProperImmediate(json: unknown, slug: string): ListingCard[] {
+  const found = isRecord(json) && isRecord(json.pageProps) ? json.pageProps.props : null;
+  const props = isRecord(found) ? found : null;
+  const unit = props && isRecord(props.departamento) ? props.departamento : null;
+  if (!props || !unit) throw new Error(`Proper unit ${slug}: no departamento in the answer`);
+
+  const districtName = str(unit.distrito);
+  const unitPrice = price(unit.moneda ?? (num(unit.precio_dolar) ? 'usd' : 'pen'), unit.precio, unit.precio_dolar);
+  const images = isRecord(props.imagenes) ? Object.values(props.imagenes).flat().filter((v): v is string => typeof v === 'string') : [];
+  const facade = str(unit.url_fachada);
+
+  return [
+    emptyCard('proper', {
+      kind: 'UNIT',
+      sourcePostingId: slug,
+      operation: 'SALE',
+      url: properImmediateUrl(slug),
+      buildingName: str(unit.edificio),
+      title: str(unit.nombre),
+      districtName,
+      districtSlug: districtSlugFromName(districtName),
+      priceAmount: unitPrice.amount,
+      priceCurrency: unitPrice.currency,
+      areaTotal: num(unit.unit_area),
+      bedrooms: num(unit.nro_dormitorios),
+      bathrooms: num(unit.nro_banos),
+      developmentStage: str(unit.etapa),
+      latitude: num(unit.coordenada_A),
+      longitude: num(unit.coordenada_B),
+      imageUrls: facade ? [facade, ...images] : images,
+      imageUrl: facade ?? images[0] ?? null,
+      raw: unit,
+    }),
+  ];
 }

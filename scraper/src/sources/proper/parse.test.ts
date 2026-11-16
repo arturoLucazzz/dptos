@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
-import { parseProperBuildId, parseProperProject } from './parse';
+import { parseProperBuildId, parseProperImmediate, parseProperProject } from './parse';
 
 const fixture = (name: string) => readFileSync(new URL(`./__fixtures__/${name}`, import.meta.url), 'utf8');
 const santaBeatriz = JSON.parse(fixture('santa-beatriz.json'));
@@ -91,5 +91,23 @@ describe('parseProperProject', () => {
 
   it('throws on a payload without a project', () => {
     assert.throws(() => parseProperProject({ pageProps: {} }, 'x'));
+  });
+});
+
+describe('parseProperImmediate', () => {
+  it('parses a single apartment as one unit without a project', () => {
+    const cards = parseProperImmediate(JSON.parse(fixture('el-sol-1202.json')), 'el-sol-1202');
+    assert.equal(cards.length, 1);
+    const [unit] = cards;
+    assert.equal(unit.kind, 'UNIT');
+    assert.equal(unit.sourcePostingId, 'el-sol-1202');
+    assert.equal(unit.projectSourceId, null);
+    assert.equal(unit.buildingName, 'zoe urban');
+    assert.equal(unit.priceAmount, 360500);
+    assert.equal(unit.priceCurrency, 'PEN');
+    assert.equal(unit.areaTotal, 40.18);
+    assert.equal(unit.districtSlug, null);
+    assert.equal(unit.latitude, -12.13879);
+    assert.equal(unit.url, 'https://inversiones.proper.com.pe/entrega-inmediata/el-sol-1202');
   });
 });

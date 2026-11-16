@@ -11,12 +11,19 @@ const LIST = JSON.stringify([
   { slug: 'santa-beatriz', distrito: 'cercado de lima' },
   { slug: 'jazmines', distrito: 'lince' },
   { slug: 'broken', distrito: 'lince' },
+  { slug: 'el-sol-1202', distrito: 'lince', tipo: 'departamento alquiler' },
 ]);
 
 function detail(distrito: string): string {
   const json = JSON.parse(fixture('santa-beatriz.json'));
   json.pageProps.props.proyecto.distrito = distrito;
   return JSON.stringify(json);
+}
+
+function unitInLince() {
+  const json = JSON.parse(fixture('el-sol-1202.json'));
+  json.pageProps.props.departamento.distrito = 'lince';
+  return json;
 }
 
 function adapter(failing: string[] = []) {
@@ -28,6 +35,7 @@ function adapter(failing: string[] = []) {
       if (url === PROPER_LIST_URL) return LIST;
       if (url.endsWith('/propiedades')) return fixture('propiedades.html');
       if (failing.some((slug) => url.includes(`/${slug}.json`))) throw new Error('HTTP 500');
+      if (url.includes('/entrega-inmediata/el-sol-1202.json')) return JSON.stringify(unitInLince());
       if (url.includes('/santa-beatriz.json')) return detail('cercado de lima');
       return detail('lince');
     },
@@ -44,9 +52,11 @@ describe('properAdapter', () => {
   it('hands each project over under its district, project card first', async () => {
     const { batches, result } = await crawl(adapter(['broken']));
     const lince = batches.filter((b) => b.districtSlug === 'lince');
-    assert.equal(lince.length, 1);
+    assert.equal(lince.length, 2);
     assert.equal(lince[0].cards[0].kind, 'PROJECT');
     assert.equal(lince[0].cards.length, 10);
+    assert.equal(lince[1].cards.length, 1);
+    assert.equal(lince[1].cards[0].sourcePostingId, 'el-sol-1202');
     assert.equal(result.skippedOutsideLima, 10);
   });
 
