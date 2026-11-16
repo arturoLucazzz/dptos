@@ -1,5 +1,17 @@
 # dptos
 
+## Nuestro mantra
+
+Esta plataforma está hecha para inversionistas. Quien entra quiere saber qué departamento le da el mayor valor posible por su dinero: el mejor ROI.
+
+Para responder eso, la plataforma hace los números de cada departamento: la cuota mensual de la hipoteca, los intereses, la cuota inicial, el alquiler esperado, los costos y el ROI en %. Proper ya muestra un ROI por departamento, y nosotros lo calculamos para todos.
+
+Cada pantalla, filtro y dato tiene que ayudar a un inversionista a decidir. Mostrar datos no basta. Antes de agregar algo, pregunta: ¿esto ayuda a encontrar el mejor ROI?
+
+Más adelante, un chat con IA podrá responder preguntas sobre todos estos datos.
+
+## Qué hace
+
 Herramienta para analizar departamentos en venta en Lima: lee varias fuentes (Urbania, Adondevivir, Proper, Nexo y avisos agregados a mano), une las copias de un mismo departamento, guarda solo lo observado en Postgres, y calcula en el cliente cobertura de cuota, precio justo y probabilidad de rebaja.
 
 ## Arquitectura
