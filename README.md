@@ -146,6 +146,33 @@ pnpm db:seed                  # fila de Assumptions
 pnpm db:generate
 ```
 
+## Actualizar una base existente
+
+Para una base que ya tiene datos de antes de las varias fuentes. Correr en este orden:
+
+```bash
+# 1. Respaldo. Nada de lo que sigue borra avisos, pero un respaldo es barato.
+pg_dump --format=custom --file=dptos-$(date +%Y%m%d).dump "$DATABASE_URL"
+
+# 2. Migraciones. `migrate deploy` solo aplica las que faltan; no uses `pnpm db:migrate`
+#    (es `migrate dev`, que puede pedir resetear la base).
+pnpm prisma migrate deploy
+pnpm db:generate
+
+# 3. Claves nuevas de Property (calle sin número) para los avisos viejos.
+pnpm backfill:property-keys
+
+# 4. Proyectos para los avisos de proyecto que no tienen uno. Primero sin --apply para ver cuántos.
+pnpm backfill:projects
+pnpm backfill:projects --apply
+
+# 5. Avisos viejos guardados como magdalena-del-mar pasan a magdalena. Primero sin --apply.
+pnpm relabel:districts
+pnpm relabel:districts --apply
+```
+
+**Nunca** corras `pnpm replay --reset` sobre la base real: borra todas las propiedades, y con ellas los favoritos, descartes y notas.
+
 ## Comandos
 
 | Comando | Qué hace |
@@ -156,7 +183,9 @@ pnpm db:generate
 | `pnpm scrape --sources=urbania,proper` | Solo esas fuentes (por defecto, todas las registradas) |
 | `pnpm scrape --accept-gate=urbania:lince` | Acepta una caída de la compuerta en esa corrida |
 | `pnpm scrape:probe` | Reporte de calidad de parseo (no escribe) |
-| `pnpm replay --reset data/runs/*.ndjson` | Re-ingesta sin red |
+| `pnpm replay --reset data/runs/*.ndjson` | Re-ingesta sin red. `--reset` borra propiedades, favoritos y notas: solo en una base de prueba |
+| `pnpm backfill:projects [--apply]` | Liga avisos de proyecto sin proyecto (sin `--apply` solo muestra cuántos) |
+| `pnpm relabel:districts [--apply]` | Pasa filas de `magdalena-del-mar` a `magdalena` (sin `--apply` solo muestra cuántas) |
 | `pnpm db:seed:market -- --weeks=8 --reset` | Mercado sintético (~10k ventas + 5k alquileres, 10 distritos) |
 | `pnpm test` | Tests del dominio y del scraper |
 | `pnpm typecheck` | `tsc` de la app y del scraper |

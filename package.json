@@ -12,6 +12,7 @@
     "replay": "tsx --env-file-if-exists=.env scraper/src/replay.ts",
     "relabel:districts": "tsx --env-file-if-exists=.env scripts/relabel-districts.ts",
     "backfill:projects": "tsx --env-file-if-exists=.env scripts/backfill-projects.ts",
+    "backfill:property-keys": "tsx --env-file-if-exists=.env scripts/backfill-property-keys.ts",
     "db:migrate": "prisma migrate dev",
     "db:generate": "prisma generate",
     "db:studio": "prisma studio",
