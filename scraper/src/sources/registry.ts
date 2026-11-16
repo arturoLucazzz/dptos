@@ -5,6 +5,7 @@
 
 import type { SourceId } from '@/lib/listing-card';
 import { naventAdapter } from './navent/adapter';
+import { nexoAdapter } from './nexo/adapter';
 import { properAdapter } from './proper/adapter';
 import type { SourceAdapter } from './types';
 
@@ -12,4 +13,5 @@ export const ADAPTERS: Partial<Record<Exclude<SourceId, 'manual'>, () => SourceA
   urbania: () => naventAdapter('urbania'),
   adondevivir: () => naventAdapter('adondevivir'),
   proper: () => properAdapter(),
+  nexo: () => nexoAdapter(),
 };
