@@ -37,12 +37,20 @@ const num = (value: unknown): number | null => (typeof value === 'number' && Num
 const str = (value: unknown): string | null => (typeof value === 'string' && value.trim() ? value : null);
 const isRecord = (value: unknown): value is Json => typeof value === 'object' && value !== null && !Array.isArray(value);
 
+/** Every image URL in the `imagenes` object, whatever group it sits in. */
+function imageUrlsOf(imagenes: unknown): string[] {
+  if (!isRecord(imagenes)) return [];
+  return Object.values(imagenes).flat().filter((v): v is string => typeof v === 'string');
+}
+
 /** A price in the currency Proper quotes the unit in. Zero means absent. */
 function price(moneda: unknown, pen: unknown, usd: unknown): { amount: number | null; currency: 'PEN' | 'USD' | null } {
-  const isUsd = typeof moneda === 'string' && moneda.toLowerCase() === 'usd';
-  const amount = num(isUsd ? usd : pen);
+  const code = typeof moneda === 'string' ? moneda.toLowerCase() : null;
+  // Any currency other than pen or usd is unknown: no price, rather than a guess.
+  if (code !== 'pen' && code !== 'usd') return { amount: null, currency: null };
+  const amount = num(code === 'usd' ? usd : pen);
   if (amount == null || amount <= 0) return { amount: null, currency: null };
-  return { amount, currency: isUsd ? 'USD' : 'PEN' };
+  return { amount, currency: code === 'usd' ? 'USD' : 'PEN' };
 }
 
 /**
@@ -62,7 +70,7 @@ export function parseProperProject(json: unknown, slug: string): ListingCard[] {
   const units = Array.isArray(props.departamentos) ? props.departamentos.filter(isRecord) : [];
   const unitMoneda = units[0]?.tipo_moneda;
   const from = price(unitMoneda ?? proyecto.tipo_moneda, proyecto.precio_desde, proyecto.precio_desde_dolar);
-  const images = isRecord(props.imagenes) ? Object.values(props.imagenes).flat().filter((v): v is string => typeof v === 'string') : [];
+  const images = imageUrlsOf(props.imagenes);
 
   const shared = { buildingName: name, districtName, districtSlug, url };
 
@@ -127,8 +135,8 @@ export function parseProperImmediate(json: unknown, slug: string): ListingCard[]
   if (!props || !unit) throw new Error(`Proper unit ${slug}: no departamento in the answer`);
 
   const districtName = str(unit.distrito);
-  const unitPrice = price(unit.moneda ?? (num(unit.precio_dolar) ? 'usd' : 'pen'), unit.precio, unit.precio_dolar);
-  const images = isRecord(props.imagenes) ? Object.values(props.imagenes).flat().filter((v): v is string => typeof v === 'string') : [];
+  const unitPrice = price(unit.tipo_moneda ?? (num(unit.precio_dolar) ? 'usd' : 'pen'), unit.precio, unit.precio_dolar);
+  const images = imageUrlsOf(props.imagenes);
   const facade = str(unit.url_fachada);
 
   return [

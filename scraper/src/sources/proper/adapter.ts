@@ -129,7 +129,7 @@ export function properAdapter(overrides: Partial<ProperAdapterDeps> = {}): Sourc
           cards = immediate ? parseProperImmediate(json, slug) : parseProperProject(json, slug);
         } catch (error) {
           const message = `proper ${slug}: ${error instanceof Error ? error.message : String(error)}`;
-          log(`${message}`);
+          log(message);
           incomplete = true;
           if (listedSlug) {
             resultFor(listedSlug).errors.push(message);

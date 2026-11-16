@@ -89,6 +89,14 @@ describe('parseProperProject', () => {
     assert.equal(parsed.priceCurrency, 'USD');
   });
 
+  it('gives no price for an unknown currency', () => {
+    const eur = structuredClone(santaBeatriz);
+    eur.pageProps.props.departamentos[0].tipo_moneda = 'eur';
+    const [, parsed] = parseProperProject(eur, 'santa-beatriz');
+    assert.equal(parsed.priceAmount, null);
+    assert.equal(parsed.priceCurrency, null);
+  });
+
   it('throws on a payload without a project', () => {
     assert.throws(() => parseProperProject({ pageProps: {} }, 'x'));
   });
