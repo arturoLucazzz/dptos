@@ -72,7 +72,7 @@ Es por fuente, distrito y operación. Si una porción trae &lt;20% de lo que tra
 | Manual | `/agregar` | Modo unidad y modo proyecto. Un aviso manual solo sale al marcarlo "vendido o retirado" |
 | Remax | **pendiente** | Ver abajo |
 
-El proyecto no intenta pasar controles anti-bot. Solo se leen distritos de la app: los 10 de `LIMA_DISTRICT_SLUGS` (Lince, Jesús María, San Isidro, Pueblo Libre, Magdalena, Surquillo, Miraflores, San Borja, Santiago de Surco, San Miguel). Los avisos de otros distritos (Barranco, Chorrillos, ...) cuentan como fuera y no se guardan.
+El proyecto no intenta pasar controles anti-bot. Solo se leen distritos de la app: los 11 de `LIMA_DISTRICT_SLUGS` (Lince, Jesús María, San Isidro, Pueblo Libre, Magdalena, Surquillo, Miraflores, San Borja, Santiago de Surco, San Miguel, Barranco). Los avisos de otros distritos (Chorrillos, ...) cuentan como fuera y no se guardan. `pnpm scrape --districts=...` rechaza cualquier slug que no esté en esa lista (por ejemplo `magdalena-del-mar`; el slug es `magdalena`).
 
 ### Remax (pendiente)
 

@@ -14,6 +14,7 @@ export const LIMA_DISTRICT_SLUGS = [
   'san-borja',
   'santiago-de-surco',
   'san-miguel',
+  'barranco',
 ] as const;
 
 export type LimaDistrictSlug = (typeof LIMA_DISTRICT_SLUGS)[number];
@@ -30,6 +31,7 @@ export const LIMA_DISTRICT_NAMES: Record<string, string> = {
   'san-borja': 'San Borja',
   'santiago-de-surco': 'Santiago de Surco',
   'san-miguel': 'San Miguel',
+  'barranco': 'Barranco',
 };
 
 const DISTRICT_ALIASES: Record<string, string> = {
@@ -48,4 +50,13 @@ export function districtSlugFromName(name: string | null | undefined): string | 
     .replace(/\s+/g, ' ');
   const slug = DISTRICT_ALIASES[plain] ?? plain.replace(/ /g, '-');
   return (LIMA_DISTRICT_SLUGS as readonly string[]).includes(slug) ? slug : null;
+}
+
+/**
+ * Requested district slugs that are not in LIMA_DISTRICT_SLUGS. A run asked
+ * for one of these would crawl nothing for it, or file listings under a slug
+ * the app never shows.
+ */
+export function unknownDistrictSlugs(slugs: string[]): string[] {
+  return slugs.filter((slug) => !(LIMA_DISTRICT_SLUGS as readonly string[]).includes(slug));
 }

@@ -48,7 +48,7 @@ describe('nexoAdapter', () => {
 
   it('reports a requested district without projects as covered', async () => {
     const { result } = await crawl(adapter(PAGES), ['lince', 'san-borja', 'miraflores']);
-    assert.deepEqual(result.districts.map((d) => d.districtSlug).sort(), ['jesus-maria', 'lince', 'magdalena', 'miraflores', 'pueblo-libre', 'san-borja', 'san-isidro', 'san-miguel', 'santiago-de-surco', 'surquillo']);
+    assert.deepEqual(result.districts.map((d) => d.districtSlug).sort(), ['barranco', 'jesus-maria', 'lince', 'magdalena', 'miraflores', 'pueblo-libre', 'san-borja', 'san-isidro', 'san-miguel', 'santiago-de-surco', 'surquillo']);
   });
 
   it('is incomplete when a page cannot be fetched', async () => {

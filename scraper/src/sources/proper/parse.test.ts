@@ -114,7 +114,8 @@ describe('parseProperImmediate', () => {
     assert.equal(unit.priceAmount, 360500);
     assert.equal(unit.priceCurrency, 'PEN');
     assert.equal(unit.areaTotal, 40.18);
-    assert.equal(unit.districtSlug, null);
+    // El Sol is in Barranco, one of the tracked districts.
+    assert.equal(unit.districtSlug, 'barranco');
     assert.equal(unit.latitude, -12.13879);
     assert.equal(unit.url, 'https://inversiones.proper.com.pe/entrega-inmediata/el-sol-1202');
   });

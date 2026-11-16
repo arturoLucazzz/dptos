@@ -82,8 +82,9 @@ needs_run() {
 
 case "$MODE" in
   daily)
-    # Ten target districts, sale and rent. About an hour.
-    DISTRICTS="${SCRAPER_DAILY_DISTRICTS:-lince,jesus-maria,san-miguel,surquillo,magdalena-del-mar,pueblo-libre,san-isidro,miraflores,barranco,santiago-de-surco}"
+    # Ten target districts, sale and rent. About an hour. Slugs must be the ones in
+    # scraper/src/config/districts.ts; the scraper refuses any other.
+    DISTRICTS="${SCRAPER_DAILY_DISTRICTS:-lince,jesus-maria,san-miguel,surquillo,magdalena,pueblo-libre,san-isidro,miraflores,barranco,santiago-de-surco}"
     ARGS=(--mode=TARGET_DAILY --districts="$DISTRICTS" --operations=sale,rent)
     if ! needs_run; then
       echo "Last successful run is fresh; daily catch-up not needed."

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { execSync } from 'child_process';
-import { LIMA_DISTRICT_SLUGS } from './config/districts';
+import { LIMA_DISTRICT_SLUGS, unknownDistrictSlugs } from './config/districts';
 import { createIncrementalSink } from './utils/file-utils';
 import { DataProcessor } from './processor';
 import { finishRun, ingestCards, refreshManualPostings, shouldSkipDistrict, startRun } from './db/ingest';
@@ -207,7 +207,18 @@ async function runScrapers(args: string[]) {
   }
 
   const districtsArg = argValue(args, 'districts');
-  const districts = districtsArg ? districtsArg.split(',') : Array.from(LIMA_DISTRICT_SLUGS);
+  const districts = districtsArg
+    ? districtsArg.split(',').map((slug) => slug.trim()).filter(Boolean)
+    : Array.from(LIMA_DISTRICT_SLUGS);
+  const unknown = unknownDistrictSlugs(districts);
+  if (unknown.length > 0) {
+    // Before the run starts: a typo must not become a run that records a source.
+    console.error(
+      `Unknown district slug(s): ${unknown.join(', ')}. Use the slugs of LIMA_DISTRICT_SLUGS: ${LIMA_DISTRICT_SLUGS.join(', ')}`
+    );
+    process.exitCode = 1;
+    return;
+  }
   const operations = (argValue(args, 'operations') ?? 'sale,rent')
     .split(',')
     .map((op) => (op === 'rent' ? Operation.RENT : Operation.SALE));

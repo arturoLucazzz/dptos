@@ -26,7 +26,9 @@ describe('parseNexoListPage', () => {
     assert.equal(luna.unitsCount, 58);
     assert.equal(luna.developmentStage, 'En construcción');
     assert.ok(cards.every((c) => c.kind === 'PROJECT' && c.priceIsFrom && c.sourcePostingId));
-    assert.equal(cards.filter((c) => c.districtSlug).length, 19);
+    // 19 in the tracked districts before Barranco joined them, plus one in Barranco.
+    assert.equal(cards.filter((c) => c.districtSlug).length, 20);
+    assert.equal(cards.filter((c) => c.districtSlug === 'barranco').length, 1);
   });
 
   it('reads developer and address', () => {

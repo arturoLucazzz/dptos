@@ -58,6 +58,11 @@ describe('zoneFromSearchPage', () => {
     assert.equal(zoneFromSearchPage(html, 'lince'), '119493');
   });
 
+  it('resolves Barranco', () => {
+    const html = searchPage([{ type: 'location', options: [{ label: 'Barranco', type: 'zone', min: '50001' }] }]);
+    assert.equal(zoneFromSearchPage(html, 'barranco'), '50001');
+  });
+
   it('refuses a page that searched another district', () => {
     const html = searchPage([{ type: 'location', options: [{ label: 'San Isidro', type: 'zone', min: '1' }] }]);
     assert.equal(zoneFromSearchPage(html, 'lince'), null);
