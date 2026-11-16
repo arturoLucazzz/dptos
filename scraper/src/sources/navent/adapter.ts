@@ -7,8 +7,14 @@
  *
  * When the JSON path fails for an Urbania district, the existing HTML crawler
  * crawls that district instead. Cards the JSON path already handed over are not
- * handed over twice. Adondevivir has no HTML crawler, so its failures are
- * recorded on the district, as the HTML crawler does for a page that fails.
+ * handed over twice. Adondevivir has no HTML crawler, so a failed district keeps
+ * the cards it got and the crawl is flagged incomplete.
+ *
+ * A district is not taken as complete on the page count alone: an empty page
+ * before the last one is a failure, and a crawl that lands clearly below the
+ * claimed total is flagged incomplete. Otherwise a cap on deep paging would drop
+ * the same expensive tail every run, and those listings would age toward
+ * "possibly sold" without the sanity gate noticing.
  */
 
 import retry from 'async-retry';
@@ -72,6 +78,21 @@ interface DistrictCrawl {
   emitted: Set<string>;
   /** Set when the JSON path did not cover the district. */
   failure: JsonPathError | null;
+  /** Every page came back, but with clearly fewer postings than the site claims. */
+  shortfall: boolean;
+}
+
+/**
+ * How far below the claimed total a crawl may land before it counts as
+ * truncated. Some slack is normal: listings come and go while paging.
+ */
+const SHORTFALL_RATIO = 0.02;
+const SHORTFALL_MIN = 30;
+
+export function isShortfall(collected: number, claimed: number | null): boolean {
+  if (claimed == null) return false;
+  const missing = claimed - collected;
+  return missing > claimed * SHORTFALL_RATIO && missing > SHORTFALL_MIN;
 }
 
 async function crawlDistrictJson(opts: {
@@ -93,7 +114,7 @@ async function crawlDistrictJson(opts: {
     log(`${site} ${districtSlug}: FAILED ${failure.message}`);
     result.errors.push(failure.message);
     if (failure.blocked) result.blocked = true;
-    return { result, emitted, failure };
+    return { result, emitted, failure, shortfall: false };
   };
 
   const searchUrl = naventSearchUrl(site, districtSlug, operation);
@@ -125,7 +146,8 @@ async function crawlDistrictJson(opts: {
         try {
           json = await fetchPostingsPage(session, site, zone!, operation, page);
         } catch (error) {
-          if (isBrowserGone(error)) bail(error as Error);
+          // bail() stops the retries; it returns nothing, which never reaches the caller.
+          if (isBrowserGone(error)) return bail(error as Error) as never;
           throw error;
         }
         result.pagesFetched++;
@@ -152,10 +174,20 @@ async function crawlDistrictJson(opts: {
 
     if (page === 1) {
       result.claimedTotal = parsed.totalResults;
-      totalPages = parsed.totalPages ?? 1;
+      if (parsed.totalResults === 0 && parsed.cards.length === 0) break;
+      // Without a page count there is no telling where the district ends, and
+      // guessing one page would pass a truncated district off as complete.
+      if (parsed.totalPages == null) {
+        return fail(new JsonPathError(`${districtSlug} page 1: no page count in the answer`, false));
+      }
+      totalPages = parsed.totalPages;
       log(`${site} ${districtSlug}: ${parsed.totalResults ?? '?'} results over ${totalPages} page(s) via JSON`);
     }
-    if (parsed.cards.length === 0) break;
+    // An empty page before the last one means the site stopped serving the
+    // district (a cap on deep paging, for example), not that it ran out.
+    if (parsed.cards.length === 0) {
+      return fail(new JsonPathError(`${districtSlug} page ${page} of ${totalPages} came back empty`, false));
+    }
 
     const fresh = parsed.cards.filter((card) => {
       const id = card.sourcePostingId;
@@ -167,7 +199,13 @@ async function crawlDistrictJson(opts: {
   }
 
   log(`${site} ${districtSlug}: ${emitted.size} postings, ${result.pagesFetched} requests`);
-  return { result, emitted, failure: null };
+  const shortfall = isShortfall(emitted.size, result.claimedTotal);
+  if (shortfall) {
+    const message = `${districtSlug}: ${emitted.size} postings collected, ${result.claimedTotal} claimed`;
+    log(`${site} ${districtSlug}: SHORT ${message}`);
+    result.errors.push(message);
+  }
+  return { result, emitted, failure: null, shortfall };
 }
 
 /** Crawl one Urbania district with the HTML crawler, skipping cards already handed over. */
@@ -234,7 +272,16 @@ export function naventAdapter(site: NaventSite, overrides: Partial<NaventAdapter
             break;
           }
 
-          if (!crawl.failure || site !== 'urbania') {
+          if (!crawl.failure) {
+            // A short district still ingests what it saw, but the source is not
+            // recorded on the run, so nothing it missed ages toward "possibly sold".
+            if (crawl.shortfall) incomplete = true;
+            results.push(crawl.result);
+            continue;
+          }
+          if (site !== 'urbania') {
+            // No HTML crawler to fall back on. Same rule as a short district.
+            incomplete = true;
             results.push(crawl.result);
             continue;
           }

@@ -4,7 +4,7 @@ import { Operation } from '@/lib/generated/prisma/enums';
 import { emptyCard } from '@/lib/listing-card';
 import type { BrowserSession } from '../../utils/browser-fetch';
 import type { SourceAdapter, SourceBatch } from '../types';
-import { naventAdapter, type NaventAdapterDeps } from './adapter';
+import { isShortfall, naventAdapter, type NaventAdapterDeps } from './adapter';
 
 const ZONE: Record<string, { label: string; min: string }> = {
   lince: { label: 'Lince', min: '119493' },
@@ -81,6 +81,16 @@ async function crawl(adapter: SourceAdapter, districts: string[]) {
   return { result, batches, ids };
 }
 
+describe('isShortfall', () => {
+  it('needs both more than 2% and more than 30 postings missing', () => {
+    assert.equal(isShortfall(2459, 2509), false); // 50 missing, under 2%
+    assert.equal(isShortfall(2450, 2509), true); // 59 missing, over 2%
+    assert.equal(isShortfall(275, 302), false); // 27 missing, under 30
+    assert.equal(isShortfall(270, 302), true); // 32 missing
+    assert.equal(isShortfall(0, null), false);
+  });
+});
+
 describe('naventAdapter', () => {
   it('pages until the page count the API reports', async () => {
     const calls: string[] = [];
@@ -106,7 +116,7 @@ describe('naventAdapter', () => {
     });
   });
 
-  it('records a failed adondevivir district without a fallback', async () => {
+  it('keeps the cards of a failed adondevivir district and flags the crawl incomplete', async () => {
     const session = fakeSession((_zone, page) => {
       if (page === 2) throw new Error('POST answered 500');
       return postingsPage(['1'], 2, 2);
@@ -115,9 +125,77 @@ describe('naventAdapter', () => {
     const { result, ids } = await crawl(adapter, ['lince']);
 
     assert.deepEqual(ids, ['1']);
-    assert.equal(result.incomplete, false);
+    assert.equal(result.incomplete, true);
     assert.equal(result.districts.length, 1);
     assert.match(result.districts[0].errors[0], /lince page 2: POST answered 500/);
+  });
+
+  it('fails a district whose page comes back empty before the last page', async () => {
+    const session = fakeSession((_zone, page) => postingsPage(page === 1 ? ['1'] : [], 2, 2));
+    const adapter = naventAdapter('adondevivir', deps({ createSession: async () => session }));
+    const { result, ids } = await crawl(adapter, ['lince']);
+
+    assert.deepEqual(ids, ['1']);
+    assert.equal(result.incomplete, true);
+    assert.match(result.districts[0].errors[0], /lince page 2 of 2 came back empty/);
+  });
+
+  it('falls back to HTML when an urbania page comes back empty before the last page', async () => {
+    const session = fakeSession((_zone, page) => postingsPage(page === 1 ? ['1'] : [], 2, 2));
+    let htmlRan = false;
+    const htmlCrawl: SourceAdapter['crawl'] = async () => {
+      htmlRan = true;
+      return {
+        districts: [{ districtSlug: 'lince', pagesFetched: 2, blocked: false, errors: [], claimedTotal: 2 }],
+        skippedOutsideLima: 0,
+        incomplete: false,
+      };
+    };
+    const adapter = naventAdapter('urbania', deps({ createSession: async () => session, htmlCrawl }));
+    const { result } = await crawl(adapter, ['lince']);
+    assert.equal(htmlRan, true);
+    assert.equal(result.incomplete, false);
+  });
+
+  it('fails a district whose first page has no page count', async () => {
+    const adapter = naventAdapter(
+      'adondevivir',
+      deps({
+        createSession: async () =>
+          fakeSession(() => {
+            const page = postingsPage(['1'], 50, 2) as { paging: Record<string, unknown> };
+            delete page.paging.totalPages;
+            return page;
+          }),
+      })
+    );
+    const { result } = await crawl(adapter, ['lince']);
+    assert.equal(result.incomplete, true);
+    assert.match(result.districts[0].errors[0], /no page count/);
+  });
+
+  it('accepts a district the site says is empty', async () => {
+    const adapter = naventAdapter(
+      'adondevivir',
+      deps({ createSession: async () => fakeSession(() => postingsPage([], 0, 0)) })
+    );
+    const { result, ids } = await crawl(adapter, ['lince']);
+    assert.deepEqual(ids, []);
+    assert.equal(result.incomplete, false);
+    assert.deepEqual(result.districts[0].errors, []);
+  });
+
+  it('flags the crawl incomplete when every page came back but far fewer postings than claimed', async () => {
+    const ids50 = Array.from({ length: 50 }, (_, i) => String(i + 1));
+    const adapter = naventAdapter(
+      'adondevivir',
+      deps({ createSession: async () => fakeSession(() => postingsPage(ids50, 100, 1)) })
+    );
+    const { result, ids } = await crawl(adapter, ['lince']);
+    assert.equal(ids.length, 50);
+    assert.equal(result.incomplete, true);
+    assert.equal(result.districts.length, 1);
+    assert.match(result.districts[0].errors[0], /50 postings collected, 100 claimed/);
   });
 
   it('falls back to the HTML crawler for an urbania district, without handing a card over twice', async () => {
