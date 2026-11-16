@@ -4,34 +4,31 @@
  *
  *   tsx --env-file-if-exists=.env scripts/export-duplicate-decisions.ts   (from the repo root)
  *
- * Each pair is written as the two sides the matcher compares today, built the
- * same way ingest builds them, plus the status.
+ * Each pair is written as the two sides the matcher saw when the owner decided
+ * (stored in DuplicateDecision, since a confirm deletes one property), plus the
+ * status.
  */
 
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { prisma } from '../lib/db';
 import { DuplicateStatus } from '../lib/generated/prisma/enums';
-import { dedupePropertySelect, dedupeSideFromProperty } from '../lib/dedupe-side';
+import type { DedupeSide } from '../lib/dedupe';
 import type { DuplicateDecision } from '../lib/duplicates';
 
 const OUTPUT = join(process.cwd(), 'lib', '__fixtures__', 'duplicate-decisions.json');
 
 async function main() {
-  const rows = await prisma.duplicateCandidate.findMany({
+  const rows = await prisma.duplicateDecision.findMany({
     where: { status: { in: [DuplicateStatus.CONFIRMED, DuplicateStatus.REJECTED] } },
-    orderBy: { id: 'asc' },
-    select: {
-      status: true,
-      propertyA: { select: dedupePropertySelect },
-      propertyB: { select: dedupePropertySelect },
-    },
+    orderBy: [{ decidedAt: 'asc' }, { id: 'asc' }],
+    select: { status: true, sideA: true, sideB: true },
   });
 
   const decisions: DuplicateDecision[] = rows.map((row) => ({
     status: row.status === DuplicateStatus.CONFIRMED ? 'CONFIRMED' : 'REJECTED',
-    a: dedupeSideFromProperty(row.propertyA),
-    b: dedupeSideFromProperty(row.propertyB),
+    a: row.sideA as unknown as DedupeSide,
+    b: row.sideB as unknown as DedupeSide,
   }));
 
   mkdirSync(dirname(OUTPUT), { recursive: true });

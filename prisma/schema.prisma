@@ -341,6 +341,25 @@ model DuplicateCandidate {
   @@unique([propertyAId, propertyBId])
 }
 
+/// One owner verdict on a pair, kept as test fixtures for tuning the dedupe
+/// levels. The two sides are copied as the matcher saw them before anything was
+/// merged, so the row outlives both properties: a confirm deletes one of them,
+/// and its candidate row goes with it.
+model DuplicateDecision {
+  id          String          @id @default(cuid())
+  /// The reviewed candidate. Null for a split, and left dangling once a confirm
+  /// deletes the candidate, so there is no foreign key.
+  candidateId String?
+  status      DuplicateStatus
+  /// The candidate's level. Null for a split, which has no candidate.
+  level       DuplicateLevel?
+  signals     Json
+  /// `DedupeSide` of each property, built by lib/dedupe-side.ts.
+  sideA       Json
+  sideB       Json
+  decidedAt   DateTime        @default(now())
+}
+
 /// Assumptions and constants. Has no relation to anything: it is configuration.
 model Assumptions {
   /// Single row, so it is addressable without a lookup.

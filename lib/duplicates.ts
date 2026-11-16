@@ -10,7 +10,7 @@
 import type { Prisma } from './generated/prisma/client';
 import { DuplicateLevel, DuplicateStatus } from './generated/prisma/enums';
 import { nameNorm, pairKey, streetNorm, type DedupeSide } from './dedupe';
-import { unitNorm } from './dedupe-side';
+import { dedupePropertySelect, dedupeSideFromProperty, unitNorm } from './dedupe-side';
 import { areaBucket, normalizeAddress, propertyFingerprint } from './fingerprint';
 
 export type Annotations = {
@@ -141,7 +141,16 @@ export async function confirmDuplicate(candidateId: string): Promise<void> {
       tx.property.findUnique({ where: { id: candidate.propertyAId }, select: annotationSelect }),
       tx.property.findUnique({ where: { id: candidate.propertyBId }, select: annotationSelect }),
     ]);
-    if (!first || !second) throw new DuplicateReviewError('Una de las dos propiedades ya no existe.');
+    const sides = await sidesOf(tx, candidate.propertyAId, candidate.propertyBId);
+    if (!first || !second || !sides) throw new DuplicateReviewError('Una de las dos propiedades ya no existe.');
+    // Before anything moves: after the merge one side no longer exists.
+    await recordDecision(tx, {
+      candidateId: candidate.id,
+      status: DuplicateStatus.CONFIRMED,
+      level: candidate.level,
+      signals: storedSignals(candidate.signals),
+      sides,
+    });
 
     const firstIsOlder =
       first.createdAt.getTime() !== second.createdAt.getTime()
@@ -184,6 +193,15 @@ export async function rejectDuplicate(candidateId: string): Promise<void> {
   const prisma = await db();
   await prisma.$transaction(async (tx) => {
     const candidate = await openCandidate(tx, candidateId);
+    const sides = await sidesOf(tx, candidate.propertyAId, candidate.propertyBId);
+    if (!sides) throw new DuplicateReviewError('Una de las dos propiedades ya no existe.');
+    await recordDecision(tx, {
+      candidateId: candidate.id,
+      status: DuplicateStatus.REJECTED,
+      level: candidate.level,
+      signals: storedSignals(candidate.signals),
+      sides,
+    });
     await tx.duplicateCandidate.update({
       where: { id: candidate.id },
       data: { status: DuplicateStatus.REJECTED, decidedAt: new Date() },
@@ -194,13 +212,51 @@ export async function rejectDuplicate(candidateId: string): Promise<void> {
 async function openCandidate(tx: Prisma.TransactionClient, candidateId: string) {
   const candidate = await tx.duplicateCandidate.findUnique({
     where: { id: candidateId },
-    select: { id: true, propertyAId: true, propertyBId: true, status: true },
+    select: { id: true, propertyAId: true, propertyBId: true, status: true, level: true, signals: true },
   });
   if (!candidate) throw new DuplicateReviewError('Este posible duplicado ya no existe.');
   if (candidate.status !== DuplicateStatus.OPEN) {
     throw new DuplicateReviewError('Este posible duplicado ya fue revisado.');
   }
   return candidate;
+}
+
+/** Both sides as the matcher sees them now. Null when a property is gone. */
+async function sidesOf(tx: Prisma.TransactionClient, propertyAId: string, propertyBId: string) {
+  const [a, b] = await Promise.all([
+    tx.property.findUnique({ where: { id: propertyAId }, select: dedupePropertySelect }),
+    tx.property.findUnique({ where: { id: propertyBId }, select: dedupePropertySelect }),
+  ]);
+  if (!a || !b) return null;
+  return { a: dedupeSideFromProperty(a), b: dedupeSideFromProperty(b) };
+}
+
+/** Keeps the verdict with both sides, so it outlives the properties and the candidate. */
+async function recordDecision(
+  tx: Prisma.TransactionClient,
+  decision: {
+    candidateId: string | null;
+    status: DuplicateStatus;
+    level: DuplicateLevel | null;
+    signals: Prisma.InputJsonValue;
+    sides: { a: DedupeSide; b: DedupeSide };
+  }
+) {
+  await tx.duplicateDecision.create({
+    data: {
+      candidateId: decision.candidateId,
+      status: decision.status,
+      level: decision.level,
+      signals: decision.signals,
+      sideA: decision.sides.a as unknown as Prisma.InputJsonValue,
+      sideB: decision.sides.b as unknown as Prisma.InputJsonValue,
+    },
+  });
+}
+
+/** The candidate's stored signals, or none when the column holds something else. */
+function storedSignals(value: Prisma.JsonValue): Prisma.InputJsonValue {
+  return Array.isArray(value) ? (value as Prisma.InputJsonValue) : [];
 }
 
 /**
@@ -220,6 +276,7 @@ export async function splitPosting(postingId: string): Promise<void> {
         id: true,
         districtSlug: true,
         propertyId: true,
+        projectId: true,
         currentSnapshot: {
           select: {
             address: true,
@@ -259,15 +316,26 @@ export async function splitPosting(postingId: string): Promise<void> {
         latitude: snapshot?.latitude ?? null,
         longitude: snapshot?.longitude ?? null,
         // Ingest links a unit to a project through the card's project key, which
-        // the snapshot does not keep. Copying the old property's project would be
-        // a guess, so the link is left empty.
-        projectId: null,
+        // the snapshot does not keep. The posting's own project is used when it
+        // has one; copying the old property's project would be a guess.
+        projectId: posting.projectId,
       },
       select: { id: true },
     });
     await tx.posting.update({ where: { id: posting.id }, data: { propertyId: created.id } });
 
     const [propertyAId, propertyBId] = pairKey(created.id, oldPropertyId);
+    // A split merges and deletes nothing, and the two sides only exist apart
+    // once the posting has moved, so they are built here.
+    const sides = await sidesOf(tx, propertyAId, propertyBId);
+    if (!sides) throw new Error(`split ${posting.id}: a property vanished inside the transaction`);
+    await recordDecision(tx, {
+      candidateId: null,
+      status: DuplicateStatus.REJECTED,
+      level: null,
+      signals: ['split'],
+      sides,
+    });
     await tx.duplicateCandidate.create({
       data: {
         propertyAId,
