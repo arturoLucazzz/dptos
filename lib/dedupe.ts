@@ -79,6 +79,15 @@ function priceGap(a: number | null, b: number | null): number | null {
   return Math.abs(a - b) / low;
 }
 
+/** Whether the digit-containing tokens (street number, dpto, unit) of two addresses are the same set. */
+function sameNumberTokens(a: string | null, b: string | null): boolean {
+  const numbers = (value: string | null) =>
+    new Set((value ?? '').split(' ').filter((token) => /\d/.test(token)));
+  const setA = numbers(a);
+  const setB = numbers(b);
+  return setA.size === setB.size && [...setA].every((token) => setB.has(token));
+}
+
 function equalNonNull<T>(a: T | null, b: T | null): boolean {
   return a != null && b != null && a === b;
 }
@@ -88,7 +97,7 @@ function areaWithin(a: number | null, b: number | null, limit: number): boolean 
 }
 
 function high(signal: string, gap: number | null): PairResult {
-  return { level: 'HIGH', signals: [signal], closeness: gap == null ? 0 : 1 - gap };
+  return { level: 'HIGH', signals: [signal], closeness: gap == null ? 0 : Math.min(1, Math.max(0, 1 - gap)) };
 }
 
 export function classifyPair(subject: DedupeSide, candidate: DedupeSide): PairResult {
@@ -139,12 +148,26 @@ export function classifyPair(subject: DedupeSide, candidate: DedupeSide): PairRe
       pricePen: candidate.pricePen,
     }
   );
-  if (door.same) return high('same-door', gap);
+  // propertyMatch lets every null pass and accepts 75% token overlap, so
+  // require both areas and prices, and the same door and unit numbers.
+  if (
+    door.same &&
+    subject.areaM2 != null &&
+    candidate.areaM2 != null &&
+    subject.pricePen != null &&
+    candidate.pricePen != null &&
+    sameNumberTokens(subject.addressNorm, candidate.addressNorm)
+  ) {
+    return high('same-door', gap);
+  }
 
   // HIGH: same building and same unit number.
   if (
     equalNonNull(subject.buildingNorm, candidate.buildingNorm) &&
-    equalNonNull(subject.unitNumber, candidate.unitNumber)
+    equalNonNull(subject.unitNumber, candidate.unitNumber) &&
+    (subject.bedrooms == null || candidate.bedrooms == null || subject.bedrooms === candidate.bedrooms) &&
+    (subject.areaM2 == null || candidate.areaM2 == null || areaWithin(subject.areaM2, candidate.areaM2, MEDIUM_AREA_M2)) &&
+    (gap == null || gap <= MAX_PRICE_GAP)
   ) {
     return high('same-unit', gap);
   }

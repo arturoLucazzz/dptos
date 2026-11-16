@@ -44,7 +44,7 @@ describe('classifyPair', () => {
 
   it('same building and unit is high', () => {
     const a = side({ buildingNorm: 'prolongacion iquitos', unitNumber: '202', pricePen: 399000 });
-    const b = side({ id: 'b', buildingNorm: 'prolongacion iquitos', unitNumber: '202', pricePen: 450000 });
+    const b = side({ id: 'b', buildingNorm: 'prolongacion iquitos', unitNumber: '202', pricePen: 410000 });
     const r = classifyPair(a, b);
     assert.equal(r.level, 'HIGH');
     assert.deepEqual(r.signals, ['same-unit']);
@@ -74,8 +74,8 @@ describe('classifyPair', () => {
   });
 
   it('publisher alone is nothing', () => {
-    const a = side({ developerNorm: null, areaM2: 40, bedrooms: 1 });
-    const b = side({ id: 'b', developerNorm: null, areaM2: 90, bedrooms: 3, pricePen: 800000 });
+    const a = side({ sources: ['proper'], titleNorm: 'depa lince' });
+    const b = side({ id: 'b', sources: ['nexo'], titleNorm: 'depa lince', pricePen: 520000 });
     assert.equal(classifyPair(a, b).level, null);
   });
 
@@ -118,6 +118,50 @@ describe('classifyPair', () => {
     assert.equal(classifyPair(a, b).level, null);
   });
 
+  it('same door with different dpto numbers in the address is not high', () => {
+    const a = side({ addressNorm: 'benavides 1234 dpto 202', pricePen: 399000 });
+    const b = side({ id: 'b', addressNorm: 'benavides 1234 dpto 305', pricePen: 410000 });
+    assert.notEqual(classifyPair(a, b).level, 'HIGH');
+  });
+
+  it('same door with null bedrooms, area and price is not high', () => {
+    const a = side({ addressNorm: 'benavides 1234', bedrooms: null, areaM2: null, pricePen: null });
+    const b = side({ id: 'b', addressNorm: 'benavides 1234', bedrooms: 3, areaM2: 120, pricePen: 900000 });
+    assert.notEqual(classifyPair(a, b).level, 'HIGH');
+  });
+
+  it('numbered new building units never merge', () => {
+    const units = Array.from({ length: 12 }, (_, i) =>
+      side({
+        id: `u${i}`,
+        addressNorm: `benavides 1234 dpto ${101 + i}`,
+        streetNorm: 'benavides dpto',
+        areaM2: 52 + i * 0.6,
+        pricePen: 494000 + i * 3000,
+      })
+    );
+    for (const x of units) {
+      for (const y of units) {
+        if (x.id === y.id) continue;
+        assert.notEqual(classifyPair(x, y).level, 'HIGH');
+      }
+    }
+  });
+
+  it('same building and unit with different size and price is not high', () => {
+    const a = side({ buildingNorm: 'a', unitNumber: '202', bedrooms: 1, areaM2: 40, pricePen: 200000 });
+    const b = side({ id: 'b', buildingNorm: 'a', unitNumber: '202', bedrooms: 3, areaM2: 120, pricePen: 900000 });
+    assert.notEqual(classifyPair(a, b).level, 'HIGH');
+  });
+
+  it('closeness stays within 0 and 1', () => {
+    const a = side({ buildingNorm: 'a', unitNumber: '202', pricePen: 399000 });
+    const b = side({ id: 'b', buildingNorm: 'a', unitNumber: '202', pricePen: 420000 });
+    const r = classifyPair(a, b);
+    assert.equal(r.level, 'HIGH');
+    assert.ok(r.closeness >= 0 && r.closeness <= 1);
+  });
+
   it('null price gives no medium', () => {
     const a = side({ buildingNorm: 'x', pricePen: null });
     const b = side({ id: 'b', buildingNorm: 'x' });
@@ -141,6 +185,24 @@ describe('decideProperty', () => {
     const medium = side({ id: 'med', buildingNorm: 'x' });
     const d = decideProperty({ ...subject, buildingNorm: 'x' }, [far, medium, near]);
     assert.equal(d.attachTo, 'near');
+    assert.deepEqual(d.flags, []);
+  });
+
+  it('decideProperty tie goes to the first candidate', () => {
+    const subject = side({ id: 's', addressNorm: 'iquitos 1234' });
+    const first = side({ id: 'first', addressNorm: 'iquitos 1234' });
+    const second = side({ id: 'second', addressNorm: 'iquitos 1234' });
+    assert.equal(decideProperty(subject, [first, second]).attachTo, 'first');
+    assert.equal(decideProperty(subject, [second, first]).attachTo, 'second');
+  });
+
+  it('decideProperty with two highs and a medium attaches to the closer high and flags nothing', () => {
+    const subject = side({ id: 's', addressNorm: 'iquitos 1234', buildingNorm: 'x', pricePen: 400000 });
+    const worse = side({ id: 'worse', addressNorm: 'iquitos 1234', pricePen: 415000 });
+    const better = side({ id: 'better', addressNorm: 'iquitos 1234', pricePen: 402000 });
+    const medium = side({ id: 'med', buildingNorm: 'x' });
+    const d = decideProperty(subject, [worse, medium, better]);
+    assert.equal(d.attachTo, 'better');
     assert.deepEqual(d.flags, []);
   });
 
