@@ -17,6 +17,7 @@ import {
 import { Operation, ScrapeMode, ScrapeStatus } from '@/lib/generated/prisma/enums';
 import { prisma } from '@/lib/db';
 import { invalidateMarketCache } from '@/lib/market';
+import { fromUrbaniaCard } from '@/lib/listing-card';
 
 /**
  * Main entry point
@@ -71,7 +72,7 @@ async function runScrapers(args: string[]) {
   const mode = (argValue(args, 'mode') as ScrapeMode) ?? ScrapeMode.TARGET_DAILY;
   const dryRun = args.includes('--dry-run');
 
-  const run = await startRun({ mode, gitSha: currentGitSha() });
+  const run = await startRun({ mode, gitSha: currentGitSha(), sources: ['urbania'] });
   console.log(`Run ${run.id} (${mode})${dryRun ? ' DRY RUN, nothing written' : ''}`);
   console.log(`  districts: ${districts.join(', ')}`);
   console.log(`  operations: ${operations.join(', ')}`);
@@ -129,6 +130,7 @@ async function runScrapers(args: string[]) {
         districtCounts[district.districtSlug][operation] = cards.length;
 
         const { skip, previousCount } = await shouldSkipDistrict(
+          'urbania',
           district.districtSlug,
           operation,
           cards.length,
@@ -145,9 +147,10 @@ async function runScrapers(args: string[]) {
         if (!dryRun) {
           const ingested = await ingestCards({
             runId: run.id,
+            source: 'urbania',
             districtSlug: district.districtSlug,
             operation,
-            cards,
+            cards: cards.map((card) => fromUrbaniaCard(card, 'urbania', district.districtSlug)),
             touchLastSeen: !skip,
           });
           console.log(
@@ -172,7 +175,7 @@ async function runScrapers(args: string[]) {
         : ScrapeStatus.SUCCESS;
     await finishRun(run.id, {
       status,
-      districtCounts,
+      districtCounts: { urbania: districtCounts },
       pagesFetched,
       skippedDistricts,
       errors: runErrors.length ? runErrors : undefined,
@@ -183,7 +186,7 @@ async function runScrapers(args: string[]) {
     console.error('Run failed:', error);
     await finishRun(run.id, {
       status: ScrapeStatus.FAILED,
-      districtCounts,
+      districtCounts: { urbania: districtCounts },
       pagesFetched,
       skippedDistricts,
       errors: [...runErrors, error instanceof Error ? error.message : String(error)],

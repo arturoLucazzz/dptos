@@ -38,6 +38,7 @@ import {
   type DistrictCounts,
 } from '../scraper/src/db/ingest';
 import type { UrbaniaCardRaw } from '../scraper/src/scrapers/urbania/types';
+import { fromUrbaniaCard } from '../lib/listing-card';
 
 const MS_PER_WEEK = 7 * 86_400_000;
 
@@ -557,14 +558,15 @@ async function main() {
         districtCounts[district.slug] ??= {};
         districtCounts[district.slug][operation] = observed.length;
 
-        const { skip } = await shouldSkipDistrict(district.slug, operation, observed.length, run.id);
+        const { skip } = await shouldSkipDistrict('urbania', district.slug, operation, observed.length, run.id);
         if (skip) skipped.push(`${district.slug}:${operation}`);
 
         await ingestCards({
           runId: run.id,
+          source: 'urbania',
           districtSlug: district.slug,
           operation,
-          cards: observed,
+          cards: observed.map((card) => fromUrbaniaCard(card, 'urbania', district.slug)),
           observedAt: startedAt,
           touchLastSeen: !skip,
         });

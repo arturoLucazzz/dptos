@@ -21,18 +21,14 @@ import type { Prisma, PostingSnapshot } from '@/lib/generated/prisma/client';
 import { Operation, PostingKind, ScrapeMode, ScrapeStatus, Currency } from '@/lib/generated/prisma/enums';
 import { toPen } from '@/lib/money';
 import { flagsForListing, flagsFromSlug } from '@/lib/quality-flags';
-import {
-  areaBucket,
-  normalizeAddress,
-  propertyFingerprint,
-  propertyMatch,
-  type MatchCandidate,
-} from '@/lib/fingerprint';
-import type { UrbaniaCardRaw } from '../scrapers/urbania/types';
+import type { ListingCard, SourceId } from '@/lib/listing-card';
+import { gateSkips, previousCountFrom, type SourceDistrictCounts } from '@/lib/sanity-gate';
+import { resolveProject, resolveUnitProperty } from './resolve';
 
 /**
- * A district that returns less than this share of what it returned last time is
- * treated as broken rather than empty, and no `lastSeenAt` in it is touched.
+ * A source and district that return less than this share of what they returned
+ * last time are treated as broken rather than empty, and no `lastSeenAt` in them
+ * is touched.
  */
 const SANITY_GATE_RATIO = Number(process.env.SANITY_GATE_RATIO) || 0.2;
 
@@ -54,6 +50,7 @@ const TRACKED_FIELDS = [
   'address',
 ] as const;
 
+/** One source's counts per district and operation. */
 export type DistrictCounts = Record<string, Partial<Record<Operation, number>>>;
 
 export interface RunHandle {
@@ -64,6 +61,7 @@ export interface RunHandle {
 export async function startRun(input: {
   mode: ScrapeMode;
   gitSha?: string | null;
+  sources: SourceId[];
   notes?: string | null;
 }): Promise<RunHandle> {
   const run = await prisma.scrapeRun.create({
@@ -71,6 +69,7 @@ export async function startRun(input: {
       mode: input.mode,
       status: ScrapeStatus.RUNNING,
       gitSha: input.gitSha ?? null,
+      sources: input.sources,
       notes: input.notes ?? null,
     },
     select: { id: true, startedAt: true },
@@ -82,7 +81,7 @@ export async function finishRun(
   runId: string,
   input: {
     status: ScrapeStatus;
-    districtCounts: DistrictCounts;
+    districtCounts: SourceDistrictCounts;
     pagesFetched: number;
     skippedDistricts: string[];
     errors?: unknown;
@@ -102,12 +101,14 @@ export async function finishRun(
 }
 
 /**
- * Whether a district's count collapsed compared to the last run that measured it.
+ * Whether a source's count for a district collapsed compared to the last run
+ * of that source.
  *
- * Ten lines of code, and the only protection against a broken parser silently
- * marking a whole district as sold.
+ * The only protection against a broken parser silently marking a whole
+ * district as sold. Runs from before `sources` existed were Urbania runs.
  */
 export async function shouldSkipDistrict(
+  source: SourceId,
   districtSlug: string,
   operation: Operation,
   observedCount: number,
@@ -117,16 +118,28 @@ export async function shouldSkipDistrict(
     where: {
       id: { not: currentRunId },
       status: { in: [ScrapeStatus.SUCCESS, ScrapeStatus.PARTIAL] },
+      ...(source === 'urbania'
+        ? { OR: [{ sources: { has: source } }, { sources: { isEmpty: true } }] }
+        : { sources: { has: source } }),
     },
     orderBy: { startedAt: 'desc' },
     select: { districtCounts: true },
   });
 
-  const counts = (previous?.districtCounts ?? null) as DistrictCounts | null;
-  const previousCount = counts?.[districtSlug]?.[operation] ?? null;
-  if (previousCount == null || previousCount === 0) return { skip: false, previousCount };
+  const previousCount = previousCountFrom(previous?.districtCounts ?? null, source, districtSlug, operation);
+  return { skip: gateSkips(observedCount, previousCount, SANITY_GATE_RATIO), previousCount };
+}
 
-  return { skip: observedCount < previousCount * SANITY_GATE_RATIO, previousCount };
+/**
+ * Manual listings are never seen again by a scraper, so each run keeps them
+ * live until the owner marks them as removed.
+ */
+export async function refreshManualPostings(observedAt: Date): Promise<number> {
+  const result = await prisma.posting.updateMany({
+    where: { source: 'manual', removedAt: null },
+    data: { lastSeenAt: observedAt },
+  });
+  return result.count;
 }
 
 interface SnapshotFields {
@@ -163,6 +176,11 @@ interface SnapshotFields {
   firstDateOnline: Date | null;
   hasDuplicate: boolean | null;
   imageUrl: string | null;
+  imageUrls: string[];
+  sourceUrl: string | null;
+  buildingName: string | null;
+  unitNumber: string | null;
+  developerName: string | null;
   qualityFlags: string[];
 }
 
@@ -172,7 +190,7 @@ function dateOrNull(value: string | null | undefined): Date | null {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-function snapshotFieldsFromCard(card: UrbaniaCardRaw, operation: Operation): SnapshotFields {
+function snapshotFieldsFromCard(card: ListingCard, operation: Operation): SnapshotFields {
   const pricePen = toPen(card.priceAmount, card.priceCurrency);
   const area = card.areaTotal ?? card.areaCovered;
 
@@ -210,6 +228,11 @@ function snapshotFieldsFromCard(card: UrbaniaCardRaw, operation: Operation): Sna
     firstDateOnline: dateOrNull(card.firstDateOnline),
     hasDuplicate: card.hasDuplicate,
     imageUrl: card.imageUrl,
+    imageUrls: card.imageUrls,
+    sourceUrl: card.url || null,
+    buildingName: card.buildingName,
+    unitNumber: card.unitNumber,
+    developerName: card.developerName,
     qualityFlags: [
       ...flagsForListing({
         operation,
@@ -241,113 +264,8 @@ function hasChanged(previous: PostingSnapshot | null, next: SnapshotFields): boo
   );
 }
 
-/**
- * Find or create the physical apartment this listing belongs to.
- *
- * The fingerprint only narrows the search; `propertyMatch` makes the decision.
- */
-async function resolveProperty(
-  card: UrbaniaCardRaw,
-  districtSlug: string,
-  pricePen: number | null
-): Promise<string | null> {
-  const addressNorm = normalizeAddress(card.address);
-  const area = card.areaTotal ?? card.areaCovered;
-  const bucket = areaBucket(area);
-  const fingerprint = propertyFingerprint({
-    districtSlug,
-    address: card.address,
-    bedrooms: card.bedrooms,
-    area,
-  });
-
-  // Candidates: same district, and either the same blocking key, the same street,
-  // or nearby coordinates. The fingerprint is not consulted as a decision, only to
-  // narrow the search.
-  const candidates = await prisma.property.findMany({
-    where: {
-      districtSlug,
-      OR: [
-        { fingerprint },
-        addressNorm ? { addressNorm } : {},
-        card.latitude != null && card.longitude != null
-          ? {
-              latitude: { gte: card.latitude - 0.002, lte: card.latitude + 0.002 },
-              longitude: { gte: card.longitude - 0.002, lte: card.longitude + 0.002 },
-            }
-          : {},
-      ].filter((clause) => Object.keys(clause).length > 0),
-    },
-    select: {
-      id: true,
-      districtSlug: true,
-      addressNorm: true,
-      bedrooms: true,
-      areaBucket: true,
-      latitude: true,
-      longitude: true,
-      postings: {
-        select: {
-          currentSnapshot: { select: { pricePen: true, areaTotal: true, areaCovered: true } },
-        },
-      },
-    },
-    take: 200,
-  });
-
-  const subject = {
-    districtSlug,
-    addressNorm,
-    bedrooms: card.bedrooms,
-    area,
-    latitude: card.latitude,
-    longitude: card.longitude,
-    pricePen,
-  };
-
-  let best: { id: string; closeness: number } | null = null;
-  for (const candidate of candidates) {
-    const snapshots = candidate.postings
-      .map((posting) => posting.currentSnapshot)
-      .filter((snapshot): snapshot is NonNullable<typeof snapshot> => snapshot != null);
-
-    // A multi-listed apartment has several prices; the cheapest live one is the
-    // real anchor, so that is what the comparison uses.
-    const prices = snapshots.map((s) => s.pricePen).filter((p) => p != null).map(Number);
-    const areas = snapshots
-      .map((s) => s.areaTotal ?? s.areaCovered)
-      .filter((a) => a != null)
-      .map(Number);
-
-    const asCandidate: MatchCandidate = {
-      districtSlug: candidate.districtSlug,
-      addressNorm: candidate.addressNorm,
-      bedrooms: candidate.bedrooms,
-      areaM2: areas.length ? areas[0] : null,
-      latitude: candidate.latitude == null ? null : Number(candidate.latitude),
-      longitude: candidate.longitude == null ? null : Number(candidate.longitude),
-      pricePen: prices.length ? Math.min(...prices) : null,
-    };
-    const match = propertyMatch(subject, asCandidate);
-    if (match.same && (!best || match.closeness > best.closeness)) {
-      best = { id: candidate.id, closeness: match.closeness };
-    }
-  }
-  if (best) return best.id;
-
-  const created = await prisma.property.create({
-    data: {
-      districtSlug,
-      fingerprint,
-      addressNorm,
-      bedrooms: card.bedrooms,
-      areaBucket: bucket,
-      latitude: card.latitude,
-      longitude: card.longitude,
-    },
-    select: { id: true },
-  });
-  return created.id;
+function rawCardOf(card: ListingCard): Prisma.InputJsonValue {
+  return (card.raw ?? card) as Prisma.InputJsonValue;
 }
 
 export interface IngestResult {
@@ -365,9 +283,10 @@ export interface IngestResult {
  */
 export async function ingestCards(input: {
   runId: string;
+  source: SourceId;
   districtSlug: string;
   operation: Operation;
-  cards: UrbaniaCardRaw[];
+  cards: ListingCard[];
   observedAt?: Date;
   touchLastSeen?: boolean;
 }): Promise<IngestResult> {
@@ -384,7 +303,7 @@ export async function ingestCards(input: {
     const existing = await prisma.posting.findUnique({
       where: {
         source_sourcePostingId_operation: {
-          source: 'urbania',
+          source: input.source,
           sourcePostingId: card.sourcePostingId,
           operation,
         },
@@ -395,10 +314,14 @@ export async function ingestCards(input: {
     const fields = snapshotFieldsFromCard(card, operation);
 
     if (!existing) {
-      const propertyId = await resolveProperty(card, districtSlug, fields.pricePen);
+      // A project card's "desde" price belongs to no single apartment, so it
+      // links to a project and never to a property.
+      const isProject = card.kind === 'PROJECT';
+      const projectId = isProject ? await resolveProject(card, districtSlug) : null;
+      const propertyId = isProject ? null : await resolveUnitProperty(card, districtSlug, fields.pricePen);
       const posting = await prisma.posting.create({
         data: {
-          source: 'urbania',
+          source: input.source,
           sourcePostingId: card.sourcePostingId,
           sourcePath: card.sourcePath,
           slugPrefix: card.slugPrefix,
@@ -407,6 +330,7 @@ export async function ingestCards(input: {
           operation,
           districtSlug,
           propertyId,
+          projectId,
           // Urbania's own publication date beats the moment we happened to look,
           // when it is available.
           firstSeenAt: fields.firstDateOnline ?? observedAt,
@@ -416,7 +340,7 @@ export async function ingestCards(input: {
       });
 
       const snapshot = await prisma.postingSnapshot.create({
-        data: { postingId: posting.id, scrapeRunId: input.runId, observedAt, ...fields, rawCard: card as unknown as Prisma.InputJsonValue },
+        data: { postingId: posting.id, scrapeRunId: input.runId, observedAt, ...fields, rawCard: rawCardOf(card) },
         select: { id: true },
       });
       await prisma.posting.update({
@@ -432,7 +356,7 @@ export async function ingestCards(input: {
     const changed = hasChanged(existing.currentSnapshot, fields);
     if (changed) {
       const snapshot = await prisma.postingSnapshot.create({
-        data: { postingId: existing.id, scrapeRunId: input.runId, observedAt, ...fields, rawCard: card as unknown as Prisma.InputJsonValue },
+        data: { postingId: existing.id, scrapeRunId: input.runId, observedAt, ...fields, rawCard: rawCardOf(card) },
         select: { id: true },
       });
       await prisma.posting.update({

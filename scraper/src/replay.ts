@@ -16,6 +16,7 @@ import { prisma } from '@/lib/db';
 import { Operation, ScrapeMode, ScrapeStatus } from '@/lib/generated/prisma/enums';
 import { finishRun, ingestCards, startRun, type DistrictCounts } from './db/ingest';
 import type { UrbaniaCardRaw } from './scrapers/urbania/types';
+import { fromUrbaniaCard } from '@/lib/listing-card';
 
 async function readCards(filePath: string): Promise<UrbaniaCardRaw[]> {
   const cards: UrbaniaCardRaw[] = [];
@@ -63,7 +64,11 @@ async function main() {
     console.log('Cleared postings, snapshots and properties.');
   }
 
-  const run = await startRun({ mode: ScrapeMode.MANUAL, notes: `replay of ${files.length} file(s)` });
+  const run = await startRun({
+    mode: ScrapeMode.MANUAL,
+    sources: ['urbania'],
+    notes: `replay of ${files.length} file(s)`,
+  });
   const districtCounts: DistrictCounts = {};
 
   try {
@@ -84,9 +89,10 @@ async function main() {
       for (const [districtSlug, districtCards] of byDistrict) {
         const result = await ingestCards({
           runId: run.id,
+          source: 'urbania',
           districtSlug,
           operation,
-          cards: districtCards,
+          cards: districtCards.map((card) => fromUrbaniaCard(card, 'urbania', districtSlug)),
         });
         districtCounts[districtSlug] ??= {};
         districtCounts[districtSlug][operation] = districtCards.length;
@@ -99,7 +105,7 @@ async function main() {
 
     await finishRun(run.id, {
       status: ScrapeStatus.SUCCESS,
-      districtCounts,
+      districtCounts: { urbania: districtCounts },
       pagesFetched: 0,
       skippedDistricts: [],
     });
@@ -108,7 +114,7 @@ async function main() {
     console.error(error);
     await finishRun(run.id, {
       status: ScrapeStatus.FAILED,
-      districtCounts,
+      districtCounts: { urbania: districtCounts },
       pagesFetched: 0,
       skippedDistricts: [],
       errors: [error instanceof Error ? error.message : String(error)],
