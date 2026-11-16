@@ -6,6 +6,7 @@ import { emptyCard } from './listing-card';
 function snapshot(over: Partial<NonNullable<DedupePropertyRow['postings'][number]['currentSnapshot']>> = {}) {
   return {
     title: null,
+    address: null,
     pricePen: null,
     areaTotal: null,
     areaCovered: null,
@@ -58,6 +59,14 @@ describe('dedupeSideFromProperty', () => {
     assert.equal(side.developerNorm, 'altea');
     assert.equal(side.streetNorm, 'pedro conde');
     assert.equal(side.bedrooms, 2);
+    assert.equal(side.addressIsBlock, false);
+  });
+
+  it('reads block wording from the snapshot address', () => {
+    const side = dedupeSideFromProperty(
+      property([{ source: 'urbania', removedAt: null, currentSnapshot: snapshot({ address: 'Pedro Conde  al 500' }) }])
+    );
+    assert.equal(side.addressIsBlock, true);
   });
 
   it('falls back to a removed posting when none is live', () => {
@@ -83,5 +92,7 @@ describe('dedupeSideFromCard', () => {
     assert.equal(side.streetNorm, 'pedro conde');
     assert.deepEqual(side.sources, ['proper']);
     assert.equal(side.areaM2, 70);
+    assert.equal(side.addressIsBlock, false);
+    assert.equal(dedupeSideFromCard(emptyCard('urbania', { address: 'Pedro Conde al 500' }), 'lince', null).addressIsBlock, true);
   });
 });

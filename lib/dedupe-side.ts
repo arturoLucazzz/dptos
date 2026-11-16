@@ -6,7 +6,7 @@
 
 import type { Prisma } from './generated/prisma/client';
 import { PostingKind } from './generated/prisma/enums';
-import { nameNorm, streetNorm, type DedupeSide } from './dedupe';
+import { addressIsBlock, nameNorm, streetNorm, type DedupeSide } from './dedupe';
 import { normalizeAddress } from './fingerprint';
 import { SOURCE_IDS, type ListingCard, type SourceId } from './listing-card';
 
@@ -40,6 +40,7 @@ export function dedupeSideFromCard(card: ListingCard, districtSlug: string, pric
     sources: [card.source],
     districtSlug,
     addressNorm: normalizeAddress(card.address),
+    addressIsBlock: addressIsBlock(card.address),
     streetNorm: streetNorm(card.address),
     buildingNorm: nameNorm(card.buildingName),
     unitNumber: unitNorm(card.unitNumber),
@@ -74,6 +75,7 @@ export const dedupePropertySelect = {
       currentSnapshot: {
         select: {
           title: true,
+          address: true,
           pricePen: true,
           areaTotal: true,
           areaCovered: true,
@@ -108,6 +110,8 @@ export function dedupeSideFromProperty(property: DedupePropertyRow): DedupeSide 
     sources,
     districtSlug: property.districtSlug,
     addressNorm: property.addressNorm,
+    // The property keeps only the normalized address, which has lost "al".
+    addressIsBlock: addressIsBlock(snapshot?.address),
     streetNorm: property.streetNorm ?? streetNorm(property.addressNorm),
     buildingNorm: property.buildingNorm,
     unitNumber: property.unitNumber,

@@ -42,7 +42,7 @@ export async function resolveProject(card: ListingCard, districtSlug: string): P
     where: { districtSlug },
     select: { id: true, districtSlug: true, nameNorm: true, addressNorm: true, latitude: true, longitude: true },
   });
-  const match = projects.find((project) =>
+  const matches = projects.filter((project) =>
     sameProject(side, {
       districtSlug: project.districtSlug,
       nameNorm: project.nameNorm,
@@ -51,7 +51,15 @@ export async function resolveProject(card: ListingCard, districtSlug: string): P
       longitude: project.longitude == null ? null : Number(project.longitude),
     })
   );
-  if (match) {
+  // Two projects that both look like this one: linking to either is a guess, so
+  // a new project is created and the owner can see the copies separately.
+  if (matches.length > 1) {
+    console.warn(
+      `  project ${key}: matches ${matches.length} projects in ${districtSlug} ` +
+        `(${matches.map((project) => project.id).join(', ')}), creating a new one`
+    );
+  } else if (matches.length === 1) {
+    const match = matches[0];
     await prisma.project.update({ where: { id: match.id }, data: { sourceKeys: { push: key } } });
     return match.id;
   }
@@ -72,6 +80,15 @@ export async function resolveProject(card: ListingCard, districtSlug: string): P
     select: { id: true },
   });
   return created.id;
+}
+
+/** The project a unit card names through its project source key, if that project is known. */
+async function projectOfUnit(card: ListingCard): Promise<{ id: string } | null> {
+  if (!card.projectSourceId) return null;
+  return prisma.project.findFirst({
+    where: { sourceKeys: { has: projectKey(card.source, card.projectSourceId) } },
+    select: { id: true },
+  });
 }
 
 /** Ids among `candidateIds` that the owner already rejected as the same apartment as `propertyId`. */
@@ -146,14 +163,18 @@ export async function resolveUnitProperty(
   });
 
   const decision = decideProperty(subject, rows.map(dedupeSideFromProperty));
-  if (decision.attachTo) return decision.attachTo;
+  const project = await projectOfUnit(card);
 
-  const project = card.projectSourceId
-    ? await prisma.project.findFirst({
-        where: { sourceKeys: { has: projectKey(card.source, card.projectSourceId) } },
-        select: { id: true },
-      })
-    : null;
+  if (decision.attachTo) {
+    // Only fills a missing link: a project the property already has is kept.
+    if (project) {
+      await prisma.property.updateMany({
+        where: { id: decision.attachTo, projectId: null },
+        data: { projectId: project.id },
+      });
+    }
+    return decision.attachTo;
+  }
 
   const created = await prisma.property.create({
     data: {

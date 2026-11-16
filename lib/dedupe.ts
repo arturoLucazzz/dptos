@@ -16,6 +16,8 @@ export interface DedupeSide {
   sources: SourceId[];
   districtSlug: string;
   addressNorm: string | null;
+  /** The raw address names a block ("al 500", "cdra. 5"), not a door. */
+  addressIsBlock: boolean;
   streetNorm: string | null;
   buildingNorm: string | null;
   unitNumber: string | null;
@@ -49,6 +51,16 @@ export function streetNorm(address: string | null | undefined): string | null {
     .filter((token) => token !== '' && !/\d/.test(token))
     .join(' ');
   return street || null;
+}
+
+/**
+ * Whether a raw address names a block rather than a door: "Pedro Conde al 500",
+ * "Av. Arequipa cdra. 19". normalizeAddress drops "al", so this must read the raw text.
+ */
+export function addressIsBlock(address: string | null | undefined): boolean {
+  if (!address) return false;
+  const plain = address.toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '');
+  return /\bal\s+\d/.test(plain) || /\bc(dra|uadra)/.test(plain);
 }
 
 const NAME_NOISE_WORDS = ['edificio', 'residencial', 'proyecto', 'condominio', 'torre'];
@@ -150,8 +162,11 @@ export function classifyPair(subject: DedupeSide, candidate: DedupeSide): PairRe
   );
   // propertyMatch lets every null pass and accepts 75% token overlap, so
   // require both areas and prices, and the same door and unit numbers.
+  // A block number ("al 500") is shared by a whole block of buildings.
   if (
     door.same &&
+    !subject.addressIsBlock &&
+    !candidate.addressIsBlock &&
     subject.areaM2 != null &&
     candidate.areaM2 != null &&
     subject.pricePen != null &&

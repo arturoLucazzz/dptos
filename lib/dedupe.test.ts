@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { classifyPair, decideProperty, nameNorm, pairKey, streetNorm, type DedupeSide } from './dedupe';
+import { addressIsBlock, classifyPair, decideProperty, nameNorm, pairKey, streetNorm, type DedupeSide } from './dedupe';
 import { toPen } from './money';
 import { normalizeAddress } from './fingerprint';
 
@@ -10,6 +10,7 @@ function side(over: Partial<DedupeSide> = {}): DedupeSide {
     sources: ['urbania'],
     districtSlug: 'lince',
     addressNorm: null,
+    addressIsBlock: false,
     streetNorm: null,
     buildingNorm: null,
     unitNumber: null,
@@ -116,6 +117,20 @@ describe('classifyPair', () => {
     const a = side({ addressNorm: null, streetNorm: null });
     const b = side({ id: 'b', addressNorm: null, streetNorm: null });
     assert.equal(classifyPair(a, b).level, null);
+  });
+
+  it('a block address is not a door', () => {
+    const raw = 'Pedro Conde  al 500';
+    const a = side({ addressNorm: normalizeAddress(raw), addressIsBlock: addressIsBlock(raw), areaM2: 50, pricePen: 230000 });
+    const b = side({ id: 'b', addressNorm: normalizeAddress(raw), addressIsBlock: addressIsBlock(raw), areaM2: 50, pricePen: 230000 });
+    assert.notEqual(classifyPair(a, b).level, 'HIGH');
+  });
+
+  it('a door address is still high', () => {
+    const raw = 'Av. Arequipa 1900';
+    const a = side({ addressNorm: normalizeAddress(raw), addressIsBlock: addressIsBlock(raw), areaM2: 50, pricePen: 230000 });
+    const b = side({ id: 'b', addressNorm: normalizeAddress(raw), addressIsBlock: addressIsBlock(raw), areaM2: 50, pricePen: 230000 });
+    assert.equal(classifyPair(a, b).level, 'HIGH');
   });
 
   it('same door with different dpto numbers in the address is not high', () => {
@@ -236,5 +251,14 @@ describe('helpers', () => {
   it('nameNorm strips noise words and accents', () => {
     assert.equal(nameNorm('Edificio Residencial Gálvez, Torre 2'), 'galvez 2');
     assert.equal(nameNorm('Proyecto'), null);
+  });
+  it('addressIsBlock reads block wording from the raw address', () => {
+    assert.equal(addressIsBlock('Pedro Conde  al 500'), true);
+    assert.equal(addressIsBlock('Av. Arequipa al 1900'), true);
+    assert.equal(addressIsBlock('Av. Arequipa Cdra. 19'), true);
+    assert.equal(addressIsBlock('Jr. Huáscar cuadra 3'), true);
+    assert.equal(addressIsBlock('Av. Arequipa 1900'), false);
+    assert.equal(addressIsBlock('Calle Alcanfores 300'), false);
+    assert.equal(addressIsBlock(null), false);
   });
 });
