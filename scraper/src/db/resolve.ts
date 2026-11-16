@@ -21,23 +21,21 @@ function projectKey(source: SourceId, id: string): string {
   return `${source}:${id}`;
 }
 
-/** The project a PROJECT posting describes: by source key, then by `sameProject`, else a new one. */
-export async function resolveProject(card: ListingCard, districtSlug: string): Promise<string | null> {
+/** What `resolveProject` would do with a card, without writing anything. */
+export type ProjectMatch =
+  | { kind: 'by-key'; id: string }
+  | { kind: 'match'; id: string }
+  | { kind: 'new'; ambiguous: string[] };
+
+/** The project a PROJECT card describes: by source key, then by `sameProject`, else none. Read only. */
+export async function findProject(card: ListingCard, districtSlug: string): Promise<ProjectMatch | null> {
   if (!card.sourcePostingId) return null;
   const key = projectKey(card.source, card.sourcePostingId);
 
   const byKey = await prisma.project.findFirst({ where: { sourceKeys: { has: key } }, select: { id: true } });
-  if (byKey) return byKey.id;
+  if (byKey) return { kind: 'by-key', id: byKey.id };
 
-  const name = card.buildingName ?? card.title;
-  const side = {
-    districtSlug,
-    nameNorm: nameNorm(name),
-    addressNorm: normalizeAddress(card.address),
-    latitude: card.latitude,
-    longitude: card.longitude,
-  };
-
+  const side = projectSide(card, districtSlug);
   const projects = await prisma.project.findMany({
     where: { districtSlug },
     select: { id: true, districtSlug: true, nameNorm: true, addressNorm: true, latitude: true, longitude: true },
@@ -51,23 +49,45 @@ export async function resolveProject(card: ListingCard, districtSlug: string): P
       longitude: project.longitude == null ? null : Number(project.longitude),
     })
   );
+  if (matches.length === 1) return { kind: 'match', id: matches[0].id };
   // Two projects that both look like this one: linking to either is a guess, so
   // a new project is created and the owner can see the copies separately.
-  if (matches.length > 1) {
+  return { kind: 'new', ambiguous: matches.map((project) => project.id) };
+}
+
+function projectSide(card: ListingCard, districtSlug: string) {
+  return {
+    districtSlug,
+    nameNorm: nameNorm(card.buildingName ?? card.title),
+    addressNorm: normalizeAddress(card.address),
+    latitude: card.latitude,
+    longitude: card.longitude,
+  };
+}
+
+/** The project a PROJECT posting describes: by source key, then by `sameProject`, else a new one. */
+export async function resolveProject(card: ListingCard, districtSlug: string): Promise<string | null> {
+  const found = await findProject(card, districtSlug);
+  if (!found) return null;
+  if (found.kind === 'by-key') return found.id;
+
+  const key = projectKey(card.source, card.sourcePostingId as string);
+  if (found.kind === 'match') {
+    await prisma.project.update({ where: { id: found.id }, data: { sourceKeys: { push: key } } });
+    return found.id;
+  }
+  if (found.ambiguous.length > 1) {
     console.warn(
-      `  project ${key}: matches ${matches.length} projects in ${districtSlug} ` +
-        `(${matches.map((project) => project.id).join(', ')}), creating a new one`
+      `  project ${key}: matches ${found.ambiguous.length} projects in ${districtSlug} ` +
+        `(${found.ambiguous.join(', ')}), creating a new one`
     );
-  } else if (matches.length === 1) {
-    const match = matches[0];
-    await prisma.project.update({ where: { id: match.id }, data: { sourceKeys: { push: key } } });
-    return match.id;
   }
 
+  const side = projectSide(card, districtSlug);
   const created = await prisma.project.create({
     data: {
       districtSlug,
-      name,
+      name: card.buildingName ?? card.title,
       nameNorm: side.nameNorm,
       developerName: card.developerName,
       addressNorm: side.addressNorm,
