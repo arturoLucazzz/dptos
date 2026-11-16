@@ -39,7 +39,7 @@ interface StatePrice {
   currency?: string | null;
 }
 
-interface StatePosting {
+export interface StatePosting {
   postingId?: string;
   postingCode?: string | null;
   title?: string | null;
@@ -85,7 +85,7 @@ interface StateTuple<T> {
   tuple1?: T | null;
 }
 
-interface StateDevelopment {
+export interface StateDevelopment {
   totalArea?: StateTuple<number> | null;
   coveredArea?: StateTuple<number> | null;
   minorPrices?: StateTuple<StatePrice> | null;
@@ -97,7 +97,7 @@ interface StateDevelopment {
   steps?: Array<{ status?: string | null; stage?: string | null }> | null;
 }
 
-interface StateListStore {
+export interface StateListStore {
   listPostings?: StatePosting[] | null;
   paging?: {
     total?: number | null;
@@ -224,7 +224,7 @@ function isoFromEpoch(value: number | null | undefined): string | null {
   return new Date(value).toISOString();
 }
 
-function mapPosting(
+export function mapPosting(
   posting: StatePosting,
   development: StateDevelopment | undefined,
   baseUrl: string

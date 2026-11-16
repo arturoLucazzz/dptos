@@ -4,9 +4,10 @@
  */
 
 import type { SourceId } from '@/lib/listing-card';
+import { naventAdapter } from './navent/adapter';
 import type { SourceAdapter } from './types';
-import { createUrbaniaAdapter } from './urbania';
 
 export const ADAPTERS: Partial<Record<Exclude<SourceId, 'manual'>, () => SourceAdapter>> = {
-  urbania: createUrbaniaAdapter,
+  urbania: () => naventAdapter('urbania'),
+  adondevivir: () => naventAdapter('adondevivir'),
 };
