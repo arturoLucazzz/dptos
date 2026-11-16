@@ -110,6 +110,8 @@ export async function loadPriceIndex(operation: Operation): Promise<PriceIndexPo
       id: true,
       propertyId: true,
       source: true,
+      districtSlug: true,
+      operation: true,
       lastSeenAt: true,
       removedAt: true,
       firstSeenAt: true,

@@ -50,6 +50,47 @@ export function previousCountFrom(
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
+/** Whether stored counts are the old `{ district: {...} }` shape with something in it. */
+function isOldShape(counts: unknown): counts is Record<string, unknown> {
+  return isRecord(counts) && !isPerSourceShape(counts) && Object.keys(counts).length > 0;
+}
+
+/** Districts a run counted for one source. The old flat shape counted Urbania only. */
+export function countedDistricts(counts: unknown, source: SourceId): string[] {
+  if (isPerSourceShape(counts)) {
+    const byDistrict = counts[source];
+    return isRecord(byDistrict) ? Object.keys(byDistrict) : [];
+  }
+  return source === 'urbania' && isRecord(counts) ? Object.keys(counts) : [];
+}
+
+/**
+ * The sources a finished run vouches for. A run with `sources` lists them. An
+ * empty list means an old Urbania run when the counts are the old flat shape,
+ * and nothing at all otherwise: a replay, or a run that recorded no source.
+ */
+export function recordedSources(counts: unknown, sources: string[]): SourceId[] {
+  const listed = sources.filter((source): source is SourceId => (SOURCE_IDS as readonly string[]).includes(source));
+  if (listed.length > 0) return listed;
+  return isOldShape(counts) ? ['urbania'] : [];
+}
+
+export interface StoredRun {
+  districtCounts: unknown;
+  sources: string[];
+}
+
+/** The gate baseline: the count of the newest run that recorded the source. */
+export function previousCountForSource(
+  runsNewestFirst: StoredRun[],
+  source: SourceId,
+  district: string,
+  operation: 'SALE' | 'RENT'
+): number | null {
+  const previous = runsNewestFirst.find((run) => recordedSources(run.districtCounts, run.sources).includes(source));
+  return previous ? previousCountFrom(previous.districtCounts, source, district, operation) : null;
+}
+
 /** Whether the observed count collapsed below `ratio` of the previous one. */
 export function gateSkips(observed: number, previous: number | null, ratio: number): boolean {
   return previous != null && previous > 0 && observed < previous * ratio;

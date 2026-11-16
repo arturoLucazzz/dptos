@@ -25,7 +25,7 @@ import type { ListingCard, SourceId } from '@/lib/listing-card';
 import {
   gateSkips,
   gateVerdict,
-  previousCountFrom,
+  previousCountForSource,
   sliceHistory,
   type GateVerdict,
   type SourceDistrictCounts,
@@ -122,7 +122,8 @@ const GATE_HISTORY_RUNS = 50;
  * of that source, and whether that collapse is accepted anyway.
  *
  * The only protection against a broken parser silently marking a whole
- * district as sold. Runs from before `sources` existed were Urbania runs.
+ * district as sold. The baseline is the newest run that recorded the source
+ * (`recordedSources`: old flat runs were Urbania runs, a replay records none).
  * The verdict rules live in `gateVerdict`.
  */
 export async function shouldSkipDistrict(
@@ -133,18 +134,13 @@ export async function shouldSkipDistrict(
   currentRunId: string,
   manualAccept = false
 ): Promise<{ skip: boolean; previousCount: number | null; verdict: GateVerdict }> {
-  const previous = await prisma.scrapeRun.findFirst({
-    where: {
-      id: { not: currentRunId },
-      status: { in: [ScrapeStatus.SUCCESS, ScrapeStatus.PARTIAL] },
-      ...(source === 'urbania'
-        ? { OR: [{ sources: { has: source } }, { sources: { isEmpty: true } }] }
-        : { sources: { has: source } }),
-    },
+  const finished = await prisma.scrapeRun.findMany({
+    where: { id: { not: currentRunId }, status: { in: [ScrapeStatus.SUCCESS, ScrapeStatus.PARTIAL] } },
     orderBy: { startedAt: 'desc' },
-    select: { districtCounts: true },
+    take: GATE_HISTORY_RUNS,
+    select: { districtCounts: true, sources: true },
   });
-  const previousCount = previousCountFrom(previous?.districtCounts ?? null, source, districtSlug, operation);
+  const previousCount = previousCountForSource(finished, source, districtSlug, operation);
 
   // Every finished run, whatever its status: a run where this source was gated
   // can be FAILED when it was the only source, and it still observed the slice.

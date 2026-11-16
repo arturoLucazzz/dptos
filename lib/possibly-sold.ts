@@ -2,13 +2,15 @@
  * "Possibly sold", per source. Pure functions; the run lookup lives in market.ts.
  *
  * A listing unseen for RUNS_BEFORE_POSSIBLY_SOLD runs is treated as possibly sold.
- * The runs counted are the ones that crawled the listing's own source: a run that
- * left a source out (it was not selected, or its adapter failed) says nothing about
- * that source's listings, so it must not push them toward sold.
+ * The runs counted are the ones that crawled the listing's own slice: its source,
+ * district and operation. A run that left any of those out (the source was not
+ * selected or failed, the district was not asked for, a sale-only run) says
+ * nothing about that listing, so it must not push it toward sold.
  */
 
 import type { Prisma } from './generated/prisma/client';
-import { SOURCE_IDS, type SourceId } from './listing-card';
+import { SOURCE_IDS } from './listing-card';
+import { countedDistricts, previousCountFrom, recordedSources } from './sanity-gate';
 
 /**
  * Runs rather than days, because the thing being tolerated is a missed run — a
@@ -17,34 +19,72 @@ import { SOURCE_IDS, type SourceId } from './listing-card';
  */
 export const RUNS_BEFORE_POSSIBLY_SOLD = 3;
 
-/** Per source, listings last seen before this moment are possibly sold. */
-export type PossiblySoldCutoffs = Partial<Record<SourceId, Date>>;
+type OperationKey = 'SALE' | 'RENT';
+const OPERATIONS: OperationKey[] = ['SALE', 'RENT'];
+
+/**
+ * Per slice (source, district, operation), listings last seen before this
+ * moment are possibly sold. Keyed by `sliceKey`.
+ */
+export type PossiblySoldCutoffs = Map<string, Date>;
+
+export function sliceKey(source: string, districtSlug: string, operation: string): string {
+  return `${source}|${districtSlug}|${operation}`;
+}
+
+function parseSliceKey(key: string): { source: string; districtSlug: string; operation: string } {
+  const [source, districtSlug, operation] = key.split('|');
+  return { source, districtSlug, operation };
+}
 
 export interface FinishedRun {
   startedAt: Date;
   sources: string[];
+  districtCounts: unknown;
 }
 
 /** Sources a scraper crawls. Manual listings leave only through `removedAt`. */
-const SCRAPED_SOURCES = SOURCE_IDS.filter((id) => id !== 'manual');
+const SCRAPED_SOURCES: readonly string[] = SOURCE_IDS.filter((id) => id !== 'manual');
 
 /**
- * Each source's cutoff: the start of its 3rd newest finished run.
+ * The slices a run looked at: each source it recorded, each district and
+ * operation it has a count for under that source. A daily run of ten districts
+ * says nothing about the others, and a run that left a source out (failed,
+ * gated, not selected, a replay) says nothing about that source.
+ */
+export function coveredSlices(run: { sources: string[]; districtCounts: unknown }): string[] {
+  const slices: string[] = [];
+  for (const source of recordedSources(run.districtCounts, run.sources)) {
+    if (!SCRAPED_SOURCES.includes(source)) continue;
+    for (const district of countedDistricts(run.districtCounts, source)) {
+      for (const operation of OPERATIONS) {
+        if (previousCountFrom(run.districtCounts, source, district, operation) != null) {
+          slices.push(sliceKey(source, district, operation));
+        }
+      }
+    }
+  }
+  return slices;
+}
+
+/**
+ * Each slice's cutoff: the start of the 3rd newest finished run that covered it.
  *
  * `runs` are SUCCESS or PARTIAL runs. Runs from before `sources` existed have it
- * empty, and they were Urbania runs. A source with fewer runs than that has no
- * cutoff, so nothing of it is possibly sold, which is the right answer on day one.
+ * empty and flat counts, and they were Urbania runs. A slice with fewer runs
+ * than that has no cutoff, so nothing in it is possibly sold, which is the right
+ * answer on day one.
  */
 export function cutoffsFromRuns(runs: FinishedRun[]): PossiblySoldCutoffs {
   const newestFirst = [...runs].sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime());
-  const cutoffs: PossiblySoldCutoffs = {};
+  const seen = new Map<string, number>();
+  const cutoffs: PossiblySoldCutoffs = new Map();
 
-  for (const source of SCRAPED_SOURCES) {
-    const covering = newestFirst.filter(
-      (run) => run.sources.includes(source) || (source === 'urbania' && run.sources.length === 0)
-    );
-    if (covering.length >= RUNS_BEFORE_POSSIBLY_SOLD) {
-      cutoffs[source] = covering[RUNS_BEFORE_POSSIBLY_SOLD - 1].startedAt;
+  for (const run of newestFirst) {
+    for (const slice of new Set(coveredSlices(run))) {
+      const count = (seen.get(slice) ?? 0) + 1;
+      seen.set(slice, count);
+      if (count === RUNS_BEFORE_POSSIBLY_SOLD) cutoffs.set(slice, run.startedAt);
     }
   }
   return cutoffs;
@@ -52,18 +92,16 @@ export function cutoffsFromRuns(runs: FinishedRun[]): PossiblySoldCutoffs {
 
 export interface PostingLiveness {
   source: string;
+  districtSlug: string;
+  operation: string;
   lastSeenAt: Date;
   removedAt: Date | null;
 }
 
-function cutoffFor(source: string, cutoffs: PossiblySoldCutoffs): Date | undefined {
-  return (SOURCE_IDS as readonly string[]).includes(source) ? cutoffs[source as SourceId] : undefined;
-}
-
-/** Unseen by its own source for too many runs. A removed posting is removed, not sold. */
+/** Unseen by runs covering its own slice for too many runs. A removed posting is removed, not sold. */
 export function isPossiblySold(posting: PostingLiveness, cutoffs: PossiblySoldCutoffs): boolean {
   if (posting.removedAt) return false;
-  const cutoff = cutoffFor(posting.source, cutoffs);
+  const cutoff = cutoffs.get(sliceKey(posting.source, posting.districtSlug, posting.operation));
   return cutoff != null && posting.lastSeenAt < cutoff;
 }
 
@@ -72,8 +110,35 @@ export function isLivePosting(posting: PostingLiveness, cutoffs: PossiblySoldCut
   return !posting.removedAt && !isPossiblySold(posting, cutoffs);
 }
 
-function cutoffEntries(cutoffs: PossiblySoldCutoffs): [SourceId, Date][] {
-  return Object.entries(cutoffs).filter((entry): entry is [SourceId, Date] => entry[1] != null);
+interface CutoffGroup {
+  source: string;
+  operation: string;
+  cutoff: Date;
+  districts: string[];
+}
+
+/**
+ * Slices grouped by source, operation and cutoff: most districts of a source
+ * share their cutoff, so the filter stays a handful of branches.
+ */
+function cutoffGroups(cutoffs: PossiblySoldCutoffs): CutoffGroup[] {
+  const groups = new Map<string, CutoffGroup>();
+  for (const [key, cutoff] of [...cutoffs.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+    const { source, districtSlug, operation } = parseSliceKey(key);
+    const groupKey = `${source}|${operation}|${cutoff.getTime()}`;
+    const group = groups.get(groupKey);
+    if (group) group.districts.push(districtSlug);
+    else groups.set(groupKey, { source, operation, cutoff, districts: [districtSlug] });
+  }
+  return [...groups.values()];
+}
+
+function sliceFilter(group: { source: string; operation: string; districts: string[] }) {
+  return {
+    source: group.source,
+    operation: group.operation as OperationKey,
+    districtSlug: { in: group.districts },
+  };
 }
 
 /**
@@ -82,13 +147,14 @@ function cutoffEntries(cutoffs: PossiblySoldCutoffs): [SourceId, Date][] {
  * It carries its own `OR`, so callers that have one too put it under `AND`.
  */
 export function livePostingWhere(cutoffs: PossiblySoldCutoffs): Prisma.PostingWhereInput {
-  const entries = cutoffEntries(cutoffs);
-  if (entries.length === 0) return { removedAt: null };
+  const groups = cutoffGroups(cutoffs);
+  if (groups.length === 0) return { removedAt: null };
   return {
     removedAt: null,
     OR: [
-      ...entries.map(([source, cutoff]) => ({ source, lastSeenAt: { gte: cutoff } })),
-      { source: { notIn: entries.map(([source]) => source) } },
+      ...groups.map((group) => ({ ...sliceFilter(group), lastSeenAt: { gte: group.cutoff } })),
+      // A slice without a cutoff: nothing in it is possibly sold.
+      { NOT: { OR: groups.map(sliceFilter) } },
     ],
   };
 }
@@ -98,7 +164,7 @@ export function notLivePostingWhere(cutoffs: PossiblySoldCutoffs): Prisma.Postin
   return {
     OR: [
       { removedAt: { not: null } },
-      ...cutoffEntries(cutoffs).map(([source, cutoff]) => ({ source, lastSeenAt: { lt: cutoff } })),
+      ...cutoffGroups(cutoffs).map((group) => ({ ...sliceFilter(group), lastSeenAt: { lt: group.cutoff } })),
     ],
   };
 }

@@ -20,15 +20,16 @@ import { cutoffsFromRuns, livePostingWhere, type PossiblySoldCutoffs } from './p
 import { collapseCopies, postingSource } from './official-price';
 
 /**
- * Each source's possibly-sold cutoff, from the run history.
+ * Each slice's possibly-sold cutoff (source, district, operation), from the run
+ * history.
  *
- * A source with too little history has no cutoff, which means nothing of it can
+ * A slice with too little history has no cutoff, which means nothing in it can
  * be called sold, which is the correct answer on day one.
  */
 export async function possiblySoldCutoffs(): Promise<PossiblySoldCutoffs> {
   const runs = await prisma.scrapeRun.findMany({
     where: { status: { in: [ScrapeStatus.SUCCESS, ScrapeStatus.PARTIAL] } },
-    select: { startedAt: true, sources: true },
+    select: { startedAt: true, sources: true, districtCounts: true },
   });
   return cutoffsFromRuns(runs);
 }

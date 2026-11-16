@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { gateSkips, gateVerdict, previousCountFrom, sliceHistory } from './sanity-gate';
+import {
+  countedDistricts,
+  gateSkips,
+  gateVerdict,
+  previousCountForSource,
+  previousCountFrom,
+  recordedSources,
+  sliceHistory,
+} from './sanity-gate';
 
 describe('previousCountFrom', () => {
   it('reads the new shape', () => {
@@ -83,5 +91,44 @@ describe('gateVerdict', () => {
 
   it('the manual override does nothing to a count that passes', () => {
     assert.equal(gateVerdict({ ...base, observed: 270, recent: [], manualAccept: true }), 'pass');
+  });
+});
+
+describe('recordedSources', () => {
+  it('lists the run sources, ignoring unknown names', () => {
+    assert.deepEqual(recordedSources({ urbania: {} }, ['urbania', 'zillow']), ['urbania']);
+  });
+
+  it('an empty list is urbania only for the old flat counts', () => {
+    assert.deepEqual(recordedSources({ lince: { SALE: 3 } }, []), ['urbania']);
+    // A replay or a run that recorded nothing: per-source counts, no sources.
+    assert.deepEqual(recordedSources({ urbania: { lince: { SALE: 3 } } }, []), []);
+    assert.deepEqual(recordedSources(null, []), []);
+    assert.deepEqual(recordedSources({}, []), []);
+  });
+});
+
+describe('countedDistricts', () => {
+  it('reads the per-source and the old flat shapes', () => {
+    assert.deepEqual(countedDistricts({ proper: { lince: {}, barranco: {} } }, 'proper'), ['lince', 'barranco']);
+    assert.deepEqual(countedDistricts({ lince: { SALE: 1 } }, 'urbania'), ['lince']);
+    assert.deepEqual(countedDistricts({ lince: { SALE: 1 } }, 'proper'), []);
+  });
+});
+
+describe('previousCountForSource', () => {
+  it('skips replays and runs that did not record the source', () => {
+    const runs = [
+      { sources: [], districtCounts: { urbania: { lince: { SALE: 999 } } } },
+      { sources: ['proper'], districtCounts: { urbania: { lince: { SALE: 5 } }, proper: { lince: { SALE: 2 } } } },
+      { sources: ['urbania'], districtCounts: { urbania: { lince: { SALE: 300 } } } },
+    ];
+    assert.equal(previousCountForSource(runs, 'urbania', 'lince', 'SALE'), 300);
+    assert.equal(previousCountForSource(runs, 'proper', 'lince', 'SALE'), 2);
+    assert.equal(previousCountForSource(runs, 'nexo', 'lince', 'SALE'), null);
+  });
+
+  it('old flat runs are urbania baselines', () => {
+    assert.equal(previousCountForSource([{ sources: [], districtCounts: { lince: { SALE: 281 } } }], 'urbania', 'lince', 'SALE'), 281);
   });
 });

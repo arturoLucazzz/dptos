@@ -9,6 +9,7 @@
 import { unstable_cache } from 'next/cache';
 import { getFixedAssumptions } from './assumptions';
 import { prisma } from './db';
+import type { Prisma } from './generated/prisma/client';
 import { DuplicateLevel, DuplicateStatus, Operation, PostingKind, ScrapeStatus } from './generated/prisma/enums';
 import type { DuplicateFlag, ListingRow } from './listing-row';
 import { collapseCopies, postingSource, postingUrl } from './official-price';
@@ -40,6 +41,9 @@ export interface ListingsPage {
   districtOptions: { value: string; label: string }[];
 }
 
+/** Runs that are more than one `/agregar` entry, which records only `manual`. */
+const NOT_A_MANUAL_ENTRY = { NOT: { sources: { equals: ['manual'] } } } satisfies Prisma.ScrapeRunWhereInput;
+
 /**
  * Live sale units for the departamentos table.
  *
@@ -58,7 +62,8 @@ export async function loadSaleListings(): Promise<ListingsPage> {
     getFairPriceModel(),
     getRentIndex(),
     prisma.scrapeRun.findFirst({
-      where: { status: { in: [ScrapeStatus.SUCCESS, ScrapeStatus.PARTIAL] } },
+      // A hand-typed listing is not a scrape: it must not make the data look fresh.
+      where: { status: { in: [ScrapeStatus.SUCCESS, ScrapeStatus.PARTIAL] }, ...NOT_A_MANUAL_ENTRY },
       orderBy: { startedAt: 'desc' },
       select: { finishedAt: true, startedAt: true },
     }),

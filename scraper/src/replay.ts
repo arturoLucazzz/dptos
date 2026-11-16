@@ -124,11 +124,15 @@ async function main() {
       }
     }
 
+    // A replay observed nothing new: it re-reads old cards. It records no
+    // source, so it never becomes a covering run for the possibly-sold cutoff
+    // or a sanity-gate baseline (see recordedSources in lib/sanity-gate.ts).
     await finishRun(run.id, {
       status: ScrapeStatus.SUCCESS,
       districtCounts,
       pagesFetched: 0,
       skippedDistricts: [],
+      sources: [],
     });
     console.log(`\nReplay ${run.id} finished.`);
   } catch (error) {
@@ -139,6 +143,7 @@ async function main() {
       pagesFetched: 0,
       skippedDistricts: [],
       errors: [error instanceof Error ? error.message : String(error)],
+      sources: [],
     });
     process.exitCode = 1;
   } finally {

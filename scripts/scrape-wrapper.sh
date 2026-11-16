@@ -68,7 +68,8 @@ needs_run() {
     import { ScrapeStatus } from './lib/generated/prisma/enums.ts';
     const hours = Number(process.env.SCRAPER_STALE_HOURS || $STALE_HOURS);
     const latest = await prisma.scrapeRun.findFirst({
-      where: { status: { in: [ScrapeStatus.SUCCESS, ScrapeStatus.PARTIAL] } },
+      // A manual /agregar entry records only 'manual' and is not a scrape.
+      where: { status: { in: [ScrapeStatus.SUCCESS, ScrapeStatus.PARTIAL] }, NOT: { sources: { equals: ['manual'] } } },
       orderBy: { startedAt: 'desc' },
       select: { startedAt: true, status: true },
     });
