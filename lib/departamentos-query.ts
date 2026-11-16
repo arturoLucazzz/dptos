@@ -5,8 +5,10 @@
 
 import { DEFAULT_PANEL, type FixedAssumptions, type PanelAssumptions } from './assumption-defaults';
 import { financeForListing, loanForListing } from './listing-finance';
+import type { SourceId } from './listing-card';
 import type { ListingRow } from './listing-row';
 import { median } from './linalg';
+import { isSourceId } from './official-price';
 
 export const DEPARTAMENTOS_PAGE_SIZE = 50;
 
@@ -23,6 +25,8 @@ export type DepartamentosSortId = (typeof DEPARTAMENTOS_SORT_IDS)[number];
 
 export interface DepartamentosQueryInput {
   districts: string[];
+  /** Keep rows with at least one copy from these sources. Empty means all. */
+  sources: SourceId[];
   priceMin: number | null;
   priceMax: number | null;
   bedroomsMin: number | null;
@@ -82,6 +86,11 @@ export function parseDepartamentosSearchParams(params: URLSearchParams): Departa
     .map((s) => s.trim())
     .filter(Boolean);
 
+  const sources = (params.get('fuentes') ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(isSourceId);
+
   const sortRaw = params.get('sort') ?? 'coverage';
   const sort = isDepartamentosSortId(sortRaw) ? sortRaw : 'coverage';
   const orderRaw = params.get('order') ?? 'desc';
@@ -92,6 +101,7 @@ export function parseDepartamentosSearchParams(params: URLSearchParams): Departa
 
   return {
     districts,
+    sources,
     priceMin: parseOptionalNumber(params.get('priceMin')),
     priceMax: parseOptionalNumber(params.get('priceMax')),
     bedroomsMin: parseOptionalInt(params.get('bedroomsMin')),
@@ -141,6 +151,10 @@ export function queryDepartamentos(
   if (input.districts.length > 0) {
     const set = new Set(input.districts);
     list = list.filter((r) => set.has(r.districtSlug));
+  }
+  if (input.sources.length > 0) {
+    const set = new Set<SourceId>(input.sources);
+    list = list.filter((r) => r.copies.some((c) => set.has(c.source)));
   }
   if (input.priceMin != null) list = list.filter((r) => r.pricePen >= input.priceMin!);
   if (input.priceMax != null) list = list.filter((r) => r.pricePen <= input.priceMax!);

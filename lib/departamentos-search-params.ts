@@ -12,9 +12,12 @@ import {
 } from 'nuqs';
 import { DEFAULT_PANEL } from './assumption-defaults';
 import { DEPARTAMENTOS_SORT_IDS } from './departamentos-query';
+import { SOURCE_IDS } from './listing-card';
 
 export const departamentosSearchParams = {
   districts: parseAsArrayOf(parseAsString).withDefault([]),
+  /** Source ids; unknown values are dropped by the literal parser. */
+  fuentes: parseAsArrayOf(parseAsStringLiteral(SOURCE_IDS)).withDefault([]),
   priceMin: parseAsFloat,
   priceMax: parseAsFloat,
   bedroomsMin: parseAsInteger,
@@ -32,6 +35,7 @@ export const departamentosSearchParams = {
 /** Build the API query string from URL state (skip nulls / empty arrays). */
 export function departamentosApiQuery(state: {
   districts: string[];
+  fuentes: string[];
   priceMin: number | null;
   priceMax: number | null;
   bedroomsMin: number | null;
@@ -47,6 +51,7 @@ export function departamentosApiQuery(state: {
 }): string {
   const params = new URLSearchParams();
   if (state.districts.length > 0) params.set('districts', state.districts.join(','));
+  if (state.fuentes.length > 0) params.set('fuentes', state.fuentes.join(','));
   if (state.priceMin != null) params.set('priceMin', String(state.priceMin));
   if (state.priceMax != null) params.set('priceMax', String(state.priceMax));
   if (state.bedroomsMin != null) params.set('bedroomsMin', String(state.bedroomsMin));

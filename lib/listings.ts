@@ -9,8 +9,9 @@
 import { unstable_cache } from 'next/cache';
 import { getFixedAssumptions } from './assumptions';
 import { prisma } from './db';
-import { Operation, PostingKind, ScrapeStatus } from './generated/prisma/enums';
-import type { ListingRow } from './listing-row';
+import { DuplicateLevel, DuplicateStatus, Operation, PostingKind, ScrapeStatus } from './generated/prisma/enums';
+import type { DuplicateFlag, ListingRow } from './listing-row';
+import { collapseCopies, postingSource, postingUrl } from './official-price';
 import { getFairPriceModel, getRentIndex, possiblySoldCutoffs } from './market';
 import { livePostingWhere, notLivePostingWhere } from './possibly-sold';
 import { daysOnMarket, fitIdToDate, publishedAtFor, type IdDateAnchor } from './posting-age';
@@ -44,6 +45,10 @@ export interface ListingsPage {
  * Projects are excluded: their price is a "desde" and every coverage number built
  * on it would be fiction. Discarded properties stay out of the default view; the
  * discard reason is what teaches the model which variable it is missing.
+ *
+ * One row per property: the copy with the lowest live price is the official row,
+ * and every per-row number (fair price gap, rent, coverage downstream) is computed
+ * on that price. The other copies ride along in `copies`.
  */
 export async function loadSaleListings(): Promise<ListingsPage> {
   const [cutoffs, fixedAssumptions, fairPriceModel, rentIndex, latestRun] = await Promise.all([
@@ -68,6 +73,7 @@ export async function loadSaleListings(): Promise<ListingsPage> {
     },
     select: {
       id: true,
+      source: true,
       sourcePostingId: true,
       sourcePath: true,
       districtSlug: true,
@@ -91,6 +97,7 @@ export async function loadSaleListings(): Promise<ListingsPage> {
           address: true,
           title: true,
           imageUrl: true,
+          sourceUrl: true,
           firstDateOnline: true,
         },
       },
@@ -132,16 +139,11 @@ export async function loadSaleListings(): Promise<ListingsPage> {
   const ageModel = fitIdToDate(anchors);
   const asOf = asOfTime(latestRun) ? new Date(asOfTime(latestRun)) : new Date();
 
-  // Live listing counts per property and per district, before quality filtering, so
-  // a multi-listed apartment still counts as multi-listed even if one of the
-  // copies is flagged.
-  const liveByProperty = new Map<string, number>();
+  // Live listing count per district, for inventory months. Counted in postings,
+  // like the "gone" side above, so the ratio compares like with like.
   const liveByDistrict = new Map<string, number>();
   for (const posting of postings) {
     liveByDistrict.set(posting.districtSlug, (liveByDistrict.get(posting.districtSlug) ?? 0) + 1);
-    if (posting.propertyId) {
-      liveByProperty.set(posting.propertyId, (liveByProperty.get(posting.propertyId) ?? 0) + 1);
-    }
   }
 
   const inventoryByDistrict = new Map<string, number | null>();
@@ -152,17 +154,58 @@ export async function loadSaleListings(): Promise<ListingsPage> {
     );
   }
 
-  type Draft = ListingRow & { _pricePen: number; _areaM2: number | null };
-  const drafts: Draft[] = [];
-
-  for (const posting of postings) {
+  // Copies that can carry a price: usable, priced, and not an outlier for their
+  // district. A flagged copy must not become the official price, so these filters
+  // run before choosing it.
+  const priced = postings.flatMap((posting) => {
     const snapshot = posting.currentSnapshot;
-    if (!snapshot || snapshot.pricePen == null) continue;
-    if (!isUsableComparable(snapshot.qualityFlags)) continue;
-
+    if (!snapshot || snapshot.pricePen == null) return [];
+    if (!isUsableComparable(snapshot.qualityFlags)) return [];
     const areaRaw = snapshot.areaTotal ?? snapshot.areaCovered;
-    const areaM2 = areaRaw == null ? null : Number(areaRaw);
-    const pricePen = Number(snapshot.pricePen);
+    return [
+      {
+        posting,
+        snapshot,
+        pricePen: Number(snapshot.pricePen),
+        areaM2: areaRaw == null ? null : Number(areaRaw),
+      },
+    ];
+  });
+  const outliers = pricePerM2OutlierMask(
+    priced.map((p) => ({
+      districtSlug: p.posting.districtSlug,
+      pricePen: p.pricePen,
+      areaM2: p.areaM2,
+    }))
+  );
+  const candidates = priced.filter((_, i) => !outliers[i]);
+
+  const official = collapseCopies(
+    candidates.map(({ posting, snapshot, pricePen }) => {
+      const source = postingSource(posting.source);
+      return {
+        postingId: posting.id,
+        propertyId: posting.propertyId,
+        source,
+        url: postingUrl(source, posting.sourcePath, snapshot.sourceUrl),
+        pricePen,
+      };
+    })
+  );
+
+  const propertyIds = new Set<string>();
+  for (const { posting } of candidates) {
+    if (posting.propertyId && official.has(posting.id)) propertyIds.add(posting.propertyId);
+  }
+  const duplicateFlags = await loadDuplicateFlags([...propertyIds]);
+
+  const listings: ListingRow[] = [];
+
+  for (const { posting, snapshot, pricePen, areaM2 } of candidates) {
+    const group = official.get(posting.id);
+    if (!group) continue;
+
+    const source = postingSource(posting.source);
     const isNew =
       !!snapshot.developmentStage ||
       (snapshot.antiquityYears != null && snapshot.antiquityYears <= 1);
@@ -209,7 +252,7 @@ export async function loadSaleListings(): Promise<ListingsPage> {
     }
     const peakPen = prices.length ? Math.max(...prices) : pricePen;
     const cutPct = totalCutFromPeak(peakPen, pricePen);
-    const listingCount = posting.propertyId ? (liveByProperty.get(posting.propertyId) ?? 1) : 1;
+    const listingCount = group.copies.length;
     const invMonths = inventoryByDistrict.get(posting.districtSlug) ?? null;
     const days = daysOnMarket(publishedAt, asOf);
     const cut = priceCutScore({
@@ -220,15 +263,20 @@ export async function loadSaleListings(): Promise<ListingsPage> {
       inventoryMonths: invMonths,
     });
 
-    drafts.push({
+    listings.push({
       postingId: posting.id,
       propertyId: posting.propertyId,
       sourcePostingId: posting.sourcePostingId,
+      source,
       sourcePath: posting.sourcePath,
+      url: postingUrl(source, posting.sourcePath, snapshot.sourceUrl),
       districtSlug: posting.districtSlug,
       districtName: titleCaseDistrict(posting.districtSlug),
       operation: 'SALE',
       pricePen,
+      priceMaxPen: group.priceMaxPen,
+      copies: group.copies,
+      duplicateFlags: (posting.propertyId && duplicateFlags.get(posting.propertyId)) || [],
       areaM2,
       bedrooms: snapshot.bedrooms,
       bathrooms: snapshot.bathrooms,
@@ -257,23 +305,8 @@ export async function loadSaleListings(): Promise<ListingsPage> {
       imageUrl: snapshot.imageUrl,
       favorite: posting.property?.favorite ?? false,
       discarded: posting.property?.discarded ?? false,
-      _pricePen: pricePen,
-      _areaM2: areaM2,
     });
   }
-
-  // Relative outlier flag needs the whole district, so it runs after the loop.
-  const outliers = pricePerM2OutlierMask(
-    drafts.map((d) => ({
-      districtSlug: d.districtSlug,
-      pricePen: d._pricePen,
-      areaM2: d._areaM2,
-    }))
-  );
-
-  const listings: ListingRow[] = drafts
-    .filter((_, i) => !outliers[i])
-    .map(({ _pricePen: _, _areaM2: __, ...row }) => row);
 
   const districtOptions = Array.from(
     new Map(listings.map((l) => [l.districtSlug, { value: l.districtSlug, label: l.districtName }])).values()
@@ -285,6 +318,40 @@ export async function loadSaleListings(): Promise<ListingsPage> {
     fixedAssumptions,
     districtOptions,
   };
+}
+
+/**
+ * Open MEDIUM and LOW duplicate candidates, per property, seen from that property.
+ *
+ * HIGH matches are merged by the matcher and never get a candidate row.
+ */
+async function loadDuplicateFlags(propertyIds: string[]): Promise<Map<string, DuplicateFlag[]>> {
+  const flags = new Map<string, DuplicateFlag[]>();
+  if (propertyIds.length === 0) return flags;
+
+  const candidates = await prisma.duplicateCandidate.findMany({
+    where: {
+      status: DuplicateStatus.OPEN,
+      level: { in: [DuplicateLevel.MEDIUM, DuplicateLevel.LOW] },
+      OR: [{ propertyAId: { in: propertyIds } }, { propertyBId: { in: propertyIds } }],
+    },
+    select: { id: true, propertyAId: true, propertyBId: true, level: true },
+    orderBy: { id: 'asc' },
+  });
+
+  const wanted = new Set(propertyIds);
+  const add = (propertyId: string, flag: DuplicateFlag) => {
+    if (!wanted.has(propertyId)) return;
+    const list = flags.get(propertyId);
+    if (list) list.push(flag);
+    else flags.set(propertyId, [flag]);
+  };
+  for (const c of candidates) {
+    const level = c.level === DuplicateLevel.MEDIUM ? 'MEDIUM' : 'LOW';
+    add(c.propertyAId, { candidateId: c.id, level, otherPropertyId: c.propertyBId });
+    add(c.propertyBId, { candidateId: c.id, level, otherPropertyId: c.propertyAId });
+  }
+  return flags;
 }
 
 async function latestScrapeCacheKey(): Promise<string> {
@@ -299,7 +366,9 @@ async function latestScrapeCacheKey(): Promise<string> {
 
 const loadSaleListingsCached = unstable_cache(
   async (_scrapeKey: string) => loadSaleListings(),
-  ['sale-listings'],
+  // The version part changes when the row shape does, so an entry cached by an
+  // older build is not served with fields missing.
+  ['sale-listings', 'rows-v2-one-per-property'],
   { revalidate: 3600, tags: ['sale-listings'] }
 );
 

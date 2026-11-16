@@ -193,6 +193,7 @@ export function DepartamentosUnifiedClient() {
     () =>
       departamentosApiQuery({
         districts: urlState.districts,
+        fuentes: urlState.fuentes,
         priceMin: urlState.priceMin,
         priceMax: urlState.priceMax,
         bedroomsMin: urlState.bedroomsMin,
