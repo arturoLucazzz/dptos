@@ -42,7 +42,11 @@ function defaultDeps(): ProperAdapterDeps {
   const limiter = new RateLimiter(1000, 3000);
   return {
     fetchText: async (url) => {
-      const response = await fetch(url, { headers: { Accept: 'application/json,text/html' } });
+      const response = await fetch(url, {
+        headers: { Accept: 'application/json,text/html' },
+        // A stalled socket would otherwise hang the whole run.
+        signal: AbortSignal.timeout(30_000),
+      });
       if (!response.ok) throw new Error(`HTTP ${response.status} for ${url}`);
       return response.text();
     },
