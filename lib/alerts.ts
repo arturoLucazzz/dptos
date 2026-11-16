@@ -19,7 +19,8 @@ import { getFixedAssumptions } from './assumptions';
 import { financeForListing } from './listing-finance';
 import type { ListingRow } from './listing-row';
 import { loadSaleListings } from './listings';
-import { possiblySoldCutoff } from './market';
+import { possiblySoldCutoffs } from './market';
+import { livePostingWhere } from './possibly-sold';
 
 const ALERT_WINDOW_MS = 24 * 60 * 60 * 1000;
 /** Coverage percentile that counts as "top of the market" for a new listing. */
@@ -159,13 +160,13 @@ export async function loadNewCoverageAlerts(
   const thresholdIndex = Math.floor(withCoverage.length * TOP_COVERAGE_PERCENTILE);
   const threshold = withCoverage[Math.min(thresholdIndex, withCoverage.length - 1)].coveragePct;
 
-  const cutoff = await possiblySoldCutoff();
+  const cutoffs = await possiblySoldCutoffs();
   const newcomers = await prisma.posting.findMany({
     where: {
       kind: PostingKind.UNIT,
       operation: Operation.SALE,
       firstSeenAt: { gte: since },
-      ...(cutoff ? { lastSeenAt: { gte: cutoff } } : {}),
+      AND: [livePostingWhere(cutoffs)],
     },
     select: { id: true, firstSeenAt: true },
   });

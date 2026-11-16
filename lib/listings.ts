@@ -11,7 +11,8 @@ import { getFixedAssumptions } from './assumptions';
 import { prisma } from './db';
 import { Operation, PostingKind, ScrapeStatus } from './generated/prisma/enums';
 import type { ListingRow } from './listing-row';
-import { getFairPriceModel, getRentIndex, possiblySoldCutoff } from './market';
+import { getFairPriceModel, getRentIndex, possiblySoldCutoffs } from './market';
+import { livePostingWhere, notLivePostingWhere } from './possibly-sold';
 import { daysOnMarket, fitIdToDate, publishedAtFor, type IdDateAnchor } from './posting-age';
 import { estimateGrossRent } from './rent';
 import { isUsableComparable, pricePerM2OutlierMask } from './quality-flags';
@@ -45,8 +46,8 @@ export interface ListingsPage {
  * discard reason is what teaches the model which variable it is missing.
  */
 export async function loadSaleListings(): Promise<ListingsPage> {
-  const [cutoff, fixedAssumptions, fairPriceModel, rentIndex, latestRun] = await Promise.all([
-    possiblySoldCutoff(),
+  const [cutoffs, fixedAssumptions, fairPriceModel, rentIndex, latestRun] = await Promise.all([
+    possiblySoldCutoffs(),
     getFixedAssumptions(),
     getFairPriceModel(),
     getRentIndex(),
@@ -61,7 +62,7 @@ export async function loadSaleListings(): Promise<ListingsPage> {
     where: {
       kind: PostingKind.UNIT,
       operation: Operation.SALE,
-      ...(cutoff ? { lastSeenAt: { gte: cutoff } } : {}),
+      AND: [livePostingWhere(cutoffs)],
       currentSnapshot: { isNot: null },
       OR: [{ propertyId: null }, { property: { discarded: false } }],
     },
@@ -102,14 +103,15 @@ export async function loadSaleListings(): Promise<ListingsPage> {
     },
   });
 
-  // Possibly-sold in the last 90 days, for inventory months. Counted per district
+  // Possibly sold (or removed) in the last 90 days, for inventory months. Counted per district
   // so a quiet district does not inherit Miraflores' turnover.
   const soldSince = new Date(asOfTime(latestRun) - 90 * 86_400_000);
   const recentlyGone = await prisma.posting.findMany({
     where: {
       kind: PostingKind.UNIT,
       operation: Operation.SALE,
-      lastSeenAt: { lt: cutoff ?? new Date(0), gte: soldSince },
+      lastSeenAt: { gte: soldSince },
+      AND: [notLivePostingWhere(cutoffs)],
     },
     select: { districtSlug: true },
   });

@@ -13,7 +13,8 @@
 import { prisma } from './db';
 import { Operation, PostingKind } from './generated/prisma/enums';
 import { median, quantile } from './linalg';
-import { possiblySoldCutoff } from './market';
+import { possiblySoldCutoffs } from './market';
+import { isLivePosting, livePostingWhere } from './possibly-sold';
 import { isUsableComparable } from './quality-flags';
 import { weekKey } from './dates';
 
@@ -85,13 +86,13 @@ function stageBucket(stage: string | null): keyof Pick<
 /**
  * Weekly price/m² for live listings and for listings that exited.
  *
- * "Exited" means lastSeenAt fell behind the possibly-sold cutoff — the best proxy
- * for sold that reversible state gives. Using their *last* asking price is the
+ * "Exited" means lastSeenAt fell behind its source's possibly-sold cutoff, or the
+ * posting was removed — the best proxy for sold that reversible state gives. Using their *last* asking price is the
  * point: the cheap ones leave, and without them the live median drifts up even when
  * nothing got more expensive.
  */
 export async function loadPriceIndex(operation: Operation): Promise<PriceIndexPoint[]> {
-  const cutoff = await possiblySoldCutoff();
+  const cutoffs = await possiblySoldCutoffs();
 
   const postings = await prisma.posting.findMany({
     where: {
@@ -100,7 +101,9 @@ export async function loadPriceIndex(operation: Operation): Promise<PriceIndexPo
       currentSnapshot: { isNot: null },
     },
     select: {
+      source: true,
       lastSeenAt: true,
+      removedAt: true,
       firstSeenAt: true,
       currentSnapshot: {
         select: {
@@ -129,7 +132,7 @@ export async function loadPriceIndex(operation: Operation): Promise<PriceIndexPo
     if (area == null || Number(area) <= 0) continue;
     const perM2 = Number(snap.pricePen) / Number(area);
 
-    const live = !cutoff || posting.lastSeenAt >= cutoff;
+    const live = isLivePosting(posting, cutoffs);
     if (live) {
       // A live listing contributes to every week it has been on the market, using
       // the current price as a coarse stand-in. With short history that is fine;
@@ -142,7 +145,7 @@ export async function loadPriceIndex(operation: Operation): Promise<PriceIndexPo
         list.push(perM2);
         liveByWeek.set(week, list);
       }
-    } else if (cutoff) {
+    } else {
       const week = weekKey(posting.lastSeenAt);
       const list = exitedByWeek.get(week) ?? [];
       list.push(perM2);
@@ -171,12 +174,12 @@ export async function loadPriceIndex(operation: Operation): Promise<PriceIndexPo
  * would call a multi-listed district "deep" when it is just noisy.
  */
 export async function loadDistrictInventory(): Promise<DistrictInventory[]> {
-  const cutoff = await possiblySoldCutoff();
+  const cutoffs = await possiblySoldCutoffs();
 
   const postings = await prisma.posting.findMany({
     where: {
       kind: PostingKind.UNIT,
-      ...(cutoff ? { lastSeenAt: { gte: cutoff } } : {}),
+      AND: [livePostingWhere(cutoffs)],
       currentSnapshot: { isNot: null },
       OR: [{ propertyId: null }, { property: { discarded: false } }],
     },
@@ -258,13 +261,13 @@ export async function loadDistrictInventory(): Promise<DistrictInventory[]> {
  * the coverage numbers of everything already bought there.
  */
 export async function loadConstructionPipeline(): Promise<ConstructionPipeline[]> {
-  const cutoff = await possiblySoldCutoff();
+  const cutoffs = await possiblySoldCutoffs();
 
   const projects = await prisma.posting.findMany({
     where: {
       kind: PostingKind.PROJECT,
       operation: Operation.SALE,
-      ...(cutoff ? { lastSeenAt: { gte: cutoff } } : {}),
+      AND: [livePostingWhere(cutoffs)],
       currentSnapshot: { isNot: null },
     },
     select: {

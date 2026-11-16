@@ -16,31 +16,20 @@ import { Operation, PostingKind, ScrapeStatus } from './generated/prisma/enums';
 import { fitFairPrice, type Comparable, type FairPriceModel } from './fair-price';
 import { isUsableComparable, pricePerM2OutlierMask } from './quality-flags';
 import { buildRentIndex, type RentIndex, type RentObservation } from './rent';
+import { cutoffsFromRuns, livePostingWhere, type PossiblySoldCutoffs } from './possibly-sold';
 
 /**
- * A listing unseen for this many runs is treated as possibly sold.
+ * Each source's possibly-sold cutoff, from the run history.
  *
- * Runs rather than days, because the thing being tolerated is a missed run — a
- * blocked night, a machine asleep — and that is counted in runs. Changing this is
- * changing a constant; nothing is stored that depends on it.
+ * A source with too little history has no cutoff, which means nothing of it can
+ * be called sold, which is the correct answer on day one.
  */
-export const RUNS_BEFORE_POSSIBLY_SOLD = 3;
-
-/**
- * Listings last seen before this moment are possibly sold.
- *
- * Null when there is not enough run history yet, which means nothing can be called
- * sold, which is the correct answer on day one.
- */
-export async function possiblySoldCutoff(): Promise<Date | null> {
+export async function possiblySoldCutoffs(): Promise<PossiblySoldCutoffs> {
   const runs = await prisma.scrapeRun.findMany({
     where: { status: { in: [ScrapeStatus.SUCCESS, ScrapeStatus.PARTIAL] } },
-    orderBy: { startedAt: 'desc' },
-    take: RUNS_BEFORE_POSSIBLY_SOLD,
-    select: { startedAt: true },
+    select: { startedAt: true, sources: true },
   });
-  if (runs.length < RUNS_BEFORE_POSSIBLY_SOLD) return null;
-  return runs[runs.length - 1].startedAt;
+  return cutoffsFromRuns(runs);
 }
 
 /**
@@ -72,13 +61,13 @@ function isBrandNew(snapshot: { antiquityYears: number | null; developmentStage:
  * per-listing rule catches it.
  */
 export async function loadSaleComparables(): Promise<Comparable[]> {
-  const cutoff = await possiblySoldCutoff();
+  const cutoffs = await possiblySoldCutoffs();
 
   const postings = await prisma.posting.findMany({
     where: {
       kind: PostingKind.UNIT,
       operation: Operation.SALE,
-      ...(cutoff ? { lastSeenAt: { gte: cutoff } } : {}),
+      AND: [livePostingWhere(cutoffs)],
       currentSnapshot: { isNot: null },
     },
     select: {
@@ -132,13 +121,13 @@ export async function loadSaleComparables(): Promise<Comparable[]> {
  * enough to change every coverage number in it.
  */
 export async function loadRentObservations(): Promise<RentObservation[]> {
-  const cutoff = await possiblySoldCutoff();
+  const cutoffs = await possiblySoldCutoffs();
 
   const postings = await prisma.posting.findMany({
     where: {
       kind: PostingKind.UNIT,
       operation: Operation.RENT,
-      ...(cutoff ? { lastSeenAt: { gte: cutoff } } : {}),
+      AND: [livePostingWhere(cutoffs)],
       currentSnapshot: { isNot: null },
     },
     select: {
