@@ -3,6 +3,16 @@
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { SOURCE_LABELS, type SourceId } from "@/lib/listing-card";
+
+export interface RunSource {
+  id: string;
+  /** False when the run observed the source but did not record it (gated or incomplete). */
+  recorded: boolean;
+  sale: number;
+  rent: number;
+  districts: { slug: string; sale: number; rent: number }[];
+}
 
 export interface RunRow {
   id: string;
@@ -17,8 +27,12 @@ export interface RunRow {
   notes: string | null;
   sale: number;
   rent: number;
-  districts: { slug: string; sale: number; rent: number }[];
+  sources: RunSource[];
   durationMs: number | null;
+}
+
+function isThin(d: { sale: number; rent: number }): boolean {
+  return (d.sale > 0 && d.sale < 50) || (d.rent > 0 && d.rent < 20);
 }
 
 function statusTone(status: string): string {
@@ -59,9 +73,6 @@ export function RunsClient({ runs }: { runs: RunRow[] }) {
     <div className="space-y-3">
       {runs.map((run) => {
         const open = openId === run.id;
-        const suspicious = run.districts.filter(
-          (d) => (d.sale > 0 && d.sale < 50) || (d.rent > 0 && d.rent < 20)
-        );
         return (
           <Card key={run.id}>
             <CardHeader className="cursor-pointer py-3" onClick={() => setOpenId(open ? null : run.id)}>
@@ -88,32 +99,48 @@ export function RunsClient({ runs }: { runs: RunRow[] }) {
             {open && (
               <CardContent className="space-y-4 border-t pt-4 text-sm">
                 {run.notes && <p className="text-muted-foreground">{run.notes}</p>}
-                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                  {run.districts.map((d) => {
-                    const thin = (d.sale > 0 && d.sale < 50) || (d.rent > 0 && d.rent < 20);
-                    return (
-                      <div
-                        key={d.slug}
-                        className={
-                          thin
-                            ? "rounded border border-amber-300 bg-amber-50 px-3 py-2"
-                            : "rounded border px-3 py-2"
-                        }
-                      >
-                        <div className="font-medium">{d.slug}</div>
-                        <div className="text-muted-foreground">
-                          venta {d.sale} · alquiler {d.rent}
-                        </div>
+                {run.sources.map((source) => {
+                  const suspicious = source.districts.filter(isThin);
+                  return (
+                    <section key={source.id} className="space-y-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="font-medium">{SOURCE_LABELS[source.id as SourceId] ?? source.id}</h3>
+                        <span className="text-muted-foreground">
+                          {source.sale.toLocaleString("es-PE")} venta · {source.rent.toLocaleString("es-PE")} alquiler
+                        </span>
+                        {!source.recorded && (
+                          <Badge className="bg-amber-100 text-amber-900">no registrada en esta corrida</Badge>
+                        )}
                       </div>
-                    );
-                  })}
-                </div>
-                {suspicious.length > 0 && (
-                  <p className="text-amber-800">
-                    Distritos con conteos bajos (revisar):{" "}
-                    {suspicious.map((d) => d.slug).join(", ")}
-                  </p>
-                )}
+                      {source.districts.length === 0 ? (
+                        <p className="text-muted-foreground">Sin conteos.</p>
+                      ) : (
+                        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                          {source.districts.map((d) => (
+                            <div
+                              key={d.slug}
+                              className={
+                                isThin(d)
+                                  ? "rounded border border-amber-300 bg-amber-50 px-3 py-2"
+                                  : "rounded border px-3 py-2"
+                              }
+                            >
+                              <div className="font-medium">{d.slug}</div>
+                              <div className="text-muted-foreground">
+                                venta {d.sale} · alquiler {d.rent}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {suspicious.length > 0 && (
+                        <p className="text-amber-800">
+                          Distritos con conteos bajos (revisar): {suspicious.map((d) => d.slug).join(", ")}
+                        </p>
+                      )}
+                    </section>
+                  );
+                })}
                 {run.skippedDistricts.length > 0 && (
                   <p>
                     Compuerta de sanidad: no se tocó <code>lastSeenAt</code> en{" "}
