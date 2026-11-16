@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { mergeAnnotations, planCandidateRepoint, type Annotations } from './duplicates';
+import { DuplicateReviewError, mergeAnnotations, planCandidateRepoint, toReviewError, type Annotations } from './duplicates';
 
 function notes(over: Partial<Annotations> = {}): Annotations {
   return { favorite: false, discarded: false, discardReason: null, notes: null, ...over };
@@ -65,5 +65,26 @@ describe('planCandidateRepoint', () => {
     ]);
     assert.deepEqual(plan.update, [{ id: 'moved-rejected', propertyAId: 'k', propertyBId: 'x' }]);
     assert.deepEqual(plan.remove.sort(), ['kept-open', 'moved-open']);
+  });
+});
+
+describe('toReviewError', () => {
+  it('a row deleted by another review is a refusal', () => {
+    assert.ok(toReviewError({ code: 'P2025', message: 'not found' }) instanceof DuplicateReviewError);
+  });
+
+  it('crossing transactions are a refusal', () => {
+    for (const code of ['P2034', '40001', '40P01']) {
+      assert.ok(toReviewError({ code, message: '' }) instanceof DuplicateReviewError, code);
+    }
+    assert.ok(toReviewError(new Error('ERROR: deadlock detected')) instanceof DuplicateReviewError);
+  });
+
+  it('a refusal passes through and anything else stays a bug', () => {
+    const refusal = new DuplicateReviewError('x');
+    assert.equal(toReviewError(refusal), refusal);
+    assert.equal(toReviewError(new Error('column does not exist')), null);
+    assert.equal(toReviewError({ code: 'P2002' }), null);
+    assert.equal(toReviewError('boom'), null);
   });
 });

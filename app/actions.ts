@@ -62,7 +62,9 @@ export async function setNotes(propertyId: string, notes: string): Promise<void>
 export type ReviewResult = { ok: true } | { ok: false; error: string };
 
 /** An expected refusal comes back as a message; anything else is a bug and is thrown. */
-async function review(run: () => Promise<void>): Promise<ReviewResult> {
+async function review(id: unknown, run: () => Promise<void>): Promise<ReviewResult> {
+  // Server actions are public endpoints: the argument is whatever the request sent.
+  if (typeof id !== 'string' || id.trim() === '') return { ok: false, error: 'Falta el identificador.' };
   try {
     await run();
   } catch (error) {
@@ -75,15 +77,15 @@ async function review(run: () => Promise<void>): Promise<ReviewResult> {
 
 /** "es el mismo": merge the two properties of a flagged pair. */
 export async function confirmDuplicate(candidateId: string): Promise<ReviewResult> {
-  return review(() => confirmDuplicateInDb(candidateId));
+  return review(candidateId, () => confirmDuplicateInDb(candidateId));
 }
 
 /** "no es el mismo" on a flag: keep both and never flag the pair again. */
 export async function rejectDuplicate(candidateId: string): Promise<ReviewResult> {
-  return review(() => rejectDuplicateInDb(candidateId));
+  return review(candidateId, () => rejectDuplicateInDb(candidateId));
 }
 
 /** "no es el mismo" on a copy: move it to its own property. */
 export async function splitPosting(postingId: string): Promise<ReviewResult> {
-  return review(() => splitPostingInDb(postingId));
+  return review(postingId, () => splitPostingInDb(postingId));
 }

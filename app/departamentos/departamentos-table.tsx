@@ -73,6 +73,11 @@ function SortHeader({
   );
 }
 
+const DUPLICATE_BADGES: Partial<Record<string, string>> = {
+  MEDIUM: "posible duplicado (media)",
+  LOW: "posible duplicado (baja)",
+};
+
 /** "S/ 399k": short enough for the copies line. */
 function formatPenK(value: number): string {
   return `S/ ${Math.round(value / 1000).toLocaleString("es-PE")}k`;
@@ -166,23 +171,28 @@ function SourcesCell({ row, onReviewed }: { row: DepartamentosRow; onReviewed: (
           </div>
         );
       })}
-      {duplicateFlags.map((flag) => (
-        <div key={flag.candidateId} className="flex items-center gap-1.5">
-          <Badge variant="outline" className="border-amber-400 text-amber-800">
-            {flag.level === "MEDIUM" ? "posible duplicado (media)" : "posible duplicado (baja)"}
-          </Badge>
-          <ReviewButton
-            label="es el mismo"
-            disabled={pending}
-            onClick={() => run(() => confirmDuplicate(flag.candidateId))}
-          />
-          <ReviewButton
-            label="no es el mismo"
-            disabled={pending}
-            onClick={() => run(() => rejectDuplicate(flag.candidateId))}
-          />
-        </div>
-      ))}
+      {duplicateFlags.map((flag) => {
+        const badge = DUPLICATE_BADGES[flag.level];
+        // A level the table does not know is not shown rather than guessed.
+        if (!badge) return null;
+        return (
+          <div key={flag.candidateId} className="flex items-center gap-1.5">
+            <Badge variant="outline" className="border-amber-400 text-amber-800">
+              {badge}
+            </Badge>
+            <ReviewButton
+              label="es el mismo"
+              disabled={pending}
+              onClick={() => run(() => confirmDuplicate(flag.candidateId))}
+            />
+            <ReviewButton
+              label="no es el mismo"
+              disabled={pending}
+              onClick={() => run(() => rejectDuplicate(flag.candidateId))}
+            />
+          </div>
+        );
+      })}
       {error && <div className="text-red-700">{error}</div>}
     </div>
   );

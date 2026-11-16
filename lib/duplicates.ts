@@ -118,6 +118,47 @@ async function db() {
   return (await import('./db')).prisma;
 }
 
+const STALE = 'Este posible duplicado ya fue revisado.';
+const CHANGED = 'Los datos cambiaron mientras se guardaba. Vuelve a cargar e intenta de nuevo.';
+
+/**
+ * A database error that only means another review got there first: a row it
+ * needed was deleted (P2025), or Postgres aborted one of two crossing
+ * transactions (P2034, serialization failure, deadlock). The action reports it
+ * instead of crashing. Anything else is a bug and stays an error.
+ */
+export function toReviewError(error: unknown): DuplicateReviewError | null {
+  if (error instanceof DuplicateReviewError) return error;
+  if (typeof error !== 'object' || error === null) return null;
+  const { code, message } = error as { code?: unknown; message?: unknown };
+  if (code === 'P2025') return new DuplicateReviewError(STALE);
+  if (code === 'P2034' || code === '40001' || code === '40P01') return new DuplicateReviewError(CHANGED);
+  if (typeof message === 'string' && /deadlock detected|could not serialize access/i.test(message)) {
+    return new DuplicateReviewError(CHANGED);
+  }
+  return null;
+}
+
+async function inReviewTransaction(run: (tx: Prisma.TransactionClient) => Promise<void>): Promise<void> {
+  const prisma = await db();
+  try {
+    await prisma.$transaction(run);
+  } catch (error) {
+    throw toReviewError(error) ?? error;
+  }
+}
+
+/**
+ * Row locks on the properties, smaller id first so two reviews never wait on
+ * each other in a circle. Returns the ids that still exist.
+ */
+async function lockProperties(tx: Prisma.TransactionClient, ids: string[]): Promise<Set<string>> {
+  const sorted = [...new Set(ids)].sort();
+  const rows = await tx.$queryRaw<{ id: string }[]>`
+    SELECT id FROM "Property" WHERE id = ANY(${sorted}::text[]) ORDER BY id FOR UPDATE`;
+  return new Set(rows.map((row) => row.id));
+}
+
 const annotationSelect = {
   id: true,
   createdAt: true,
@@ -134,16 +175,33 @@ const annotationSelect = {
  * annotations; the other property is deleted after its candidates are moved.
  */
 export async function confirmDuplicate(candidateId: string): Promise<void> {
-  const prisma = await db();
-  await prisma.$transaction(async (tx) => {
-    const candidate = await openCandidate(tx, candidateId);
+  await inReviewTransaction(async (tx) => {
+    const peek = await tx.duplicateCandidate.findUnique({
+      where: { id: candidateId },
+      select: { propertyAId: true, propertyBId: true },
+    });
+    if (!peek) throw new DuplicateReviewError('Este posible duplicado ya no existe.');
+    // Lock the properties before claiming, so a confirm on a neighbouring pair
+    // waits here instead of crossing this one.
+    const alive = await lockProperties(tx, [peek.propertyAId, peek.propertyBId]);
+    const candidate = await claimCandidate(tx, candidateId, DuplicateStatus.CONFIRMED);
+    if (candidate.propertyAId !== peek.propertyAId || candidate.propertyBId !== peek.propertyBId) {
+      throw new DuplicateReviewError(CHANGED);
+    }
+    if (!alive.has(candidate.propertyAId) || !alive.has(candidate.propertyBId)) {
+      throw new DuplicateReviewError('Una de las dos propiedades ya no existe.');
+    }
+
     const [first, second] = await Promise.all([
       tx.property.findUnique({ where: { id: candidate.propertyAId }, select: annotationSelect }),
       tx.property.findUnique({ where: { id: candidate.propertyBId }, select: annotationSelect }),
     ]);
     const sides = await sidesOf(tx, candidate.propertyAId, candidate.propertyBId);
     if (!first || !second || !sides) throw new DuplicateReviewError('Una de las dos propiedades ya no existe.');
-    // Before anything moves: after the merge one side no longer exists.
+    // Before anything moves: after the merge one side no longer exists. This
+    // row, not the candidate, is the durable record of the confirm: the
+    // CONFIRMED status written by the claim is deleted with the removed
+    // property by the cascade at the end.
     await recordDecision(tx, {
       candidateId: candidate.id,
       status: DuplicateStatus.CONFIRMED,
@@ -180,19 +238,14 @@ export async function confirmDuplicate(candidateId: string): Promise<void> {
       });
     }
 
-    await tx.duplicateCandidate.update({
-      where: { id: candidate.id },
-      data: { status: DuplicateStatus.CONFIRMED, decidedAt: new Date() },
-    });
     await tx.property.delete({ where: { id: removed.id } });
   });
 }
 
 /** The owner says the two properties are different apartments. Ingest never flags the pair again. */
 export async function rejectDuplicate(candidateId: string): Promise<void> {
-  const prisma = await db();
-  await prisma.$transaction(async (tx) => {
-    const candidate = await openCandidate(tx, candidateId);
+  await inReviewTransaction(async (tx) => {
+    const candidate = await claimCandidate(tx, candidateId, DuplicateStatus.REJECTED);
     const sides = await sidesOf(tx, candidate.propertyAId, candidate.propertyBId);
     if (!sides) throw new DuplicateReviewError('Una de las dos propiedades ya no existe.');
     await recordDecision(tx, {
@@ -202,22 +255,31 @@ export async function rejectDuplicate(candidateId: string): Promise<void> {
       signals: storedSignals(candidate.signals),
       sides,
     });
-    await tx.duplicateCandidate.update({
-      where: { id: candidate.id },
-      data: { status: DuplicateStatus.REJECTED, decidedAt: new Date() },
-    });
   });
 }
 
-async function openCandidate(tx: Prisma.TransactionClient, candidateId: string) {
+/**
+ * Decides the candidate if it is still OPEN, and returns it. The conditional
+ * update takes the row lock, so of two reviews of one candidate exactly one
+ * wins; the other sees a count of 0 once the first commits.
+ */
+async function claimCandidate(
+  tx: Prisma.TransactionClient,
+  candidateId: string,
+  status: typeof DuplicateStatus.CONFIRMED | typeof DuplicateStatus.REJECTED
+) {
+  const claimed = await tx.duplicateCandidate.updateMany({
+    where: { id: candidateId, status: DuplicateStatus.OPEN },
+    data: { status, decidedAt: new Date() },
+  });
   const candidate = await tx.duplicateCandidate.findUnique({
     where: { id: candidateId },
-    select: { id: true, propertyAId: true, propertyBId: true, status: true, level: true, signals: true },
+    select: { id: true, propertyAId: true, propertyBId: true, level: true, signals: true },
   });
-  if (!candidate) throw new DuplicateReviewError('Este posible duplicado ya no existe.');
-  if (candidate.status !== DuplicateStatus.OPEN) {
-    throw new DuplicateReviewError('Este posible duplicado ya fue revisado.');
+  if (claimed.count !== 1) {
+    throw new DuplicateReviewError(candidate ? STALE : 'Este posible duplicado ya no existe.');
   }
+  if (!candidate) throw new DuplicateReviewError(STALE);
   return candidate;
 }
 
@@ -268,8 +330,15 @@ function storedSignals(value: Prisma.JsonValue): Prisma.InputJsonValue {
  * flagged again, so the split holds on later scrapes.
  */
 export async function splitPosting(postingId: string): Promise<void> {
-  const prisma = await db();
-  await prisma.$transaction(async (tx) => {
+  await inReviewTransaction(async (tx) => {
+    const peek = await tx.posting.findUnique({ where: { id: postingId }, select: { propertyId: true } });
+    if (!peek) throw new DuplicateReviewError('Este aviso ya no existe.');
+    if (!peek.propertyId) throw new DuplicateReviewError('Este aviso no está agrupado con otros.');
+    // Two splits of one two-copy property must not both see two copies, and a
+    // confirm must not merge into it halfway: the property row lock orders them.
+    const alive = await lockProperties(tx, [peek.propertyId]);
+    if (!alive.has(peek.propertyId)) throw new DuplicateReviewError(CHANGED);
+
     const posting = await tx.posting.findUnique({
       where: { id: postingId },
       select: {
@@ -292,8 +361,8 @@ export async function splitPosting(postingId: string): Promise<void> {
       },
     });
     if (!posting) throw new DuplicateReviewError('Este aviso ya no existe.');
-    if (!posting.propertyId) throw new DuplicateReviewError('Este aviso no está agrupado con otros.');
-    const oldPropertyId = posting.propertyId;
+    if (posting.propertyId !== peek.propertyId) throw new DuplicateReviewError(CHANGED);
+    const oldPropertyId = peek.propertyId;
     const copies = await tx.posting.count({ where: { propertyId: oldPropertyId } });
     if (copies < 2) throw new DuplicateReviewError('Esta propiedad tiene un solo aviso; no hay nada que separar.');
 
