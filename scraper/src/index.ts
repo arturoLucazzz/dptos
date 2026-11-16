@@ -1,23 +1,17 @@
 #!/usr/bin/env node
 
 import { execSync } from 'child_process';
-import { ScraperFilters } from './types/index';
 import { LIMA_DISTRICT_SLUGS } from './config/districts';
-import { UrbaniaScraper } from './scrapers/urbania-scraper';
-import type { UrbaniaCardRaw } from './scrapers/urbania/types';
 import { createIncrementalSink } from './utils/file-utils';
 import { DataProcessor } from './processor';
-import {
-  finishRun,
-  ingestCards,
-  shouldSkipDistrict,
-  startRun,
-  type DistrictCounts,
-} from './db/ingest';
+import { finishRun, ingestCards, refreshManualPostings, shouldSkipDistrict, startRun } from './db/ingest';
+import { ADAPTERS } from './sources/registry';
+import type { SourceAdapter } from './sources/types';
 import { Operation, ScrapeMode, ScrapeStatus } from '@/lib/generated/prisma/enums';
 import { prisma } from '@/lib/db';
 import { invalidateMarketCache } from '@/lib/market';
-import { fromUrbaniaCard } from '@/lib/listing-card';
+import type { ListingCard, SourceId } from '@/lib/listing-card';
+import type { SourceDistrictCounts } from '@/lib/sanity-gate';
 
 /**
  * Main entry point
@@ -57,8 +51,119 @@ function currentGitSha(): string | null {
   }
 }
 
+/** Everything the run records, filled in by each source as it goes. */
+interface RunState {
+  id: string;
+  dryRun: boolean;
+  districtCounts: SourceDistrictCounts;
+  skippedDistricts: string[];
+  errors: unknown[];
+  pagesFetched: number;
+  blocked: boolean;
+}
+
+function operationLabel(operation: Operation): 'sale' | 'rent' {
+  return operation === Operation.RENT ? 'rent' : 'sale';
+}
+
 /**
- * Run the scrapers across the configured districts and persist what they observe.
+ * Crawl one source for one operation, then gate and ingest it district by district.
+ */
+async function runSource(
+  adapter: SourceAdapter,
+  run: RunState,
+  opts: { districts: string[]; operation: Operation }
+): Promise<void> {
+  const { operation } = opts;
+  const label = operationLabel(operation);
+
+  // The raw NDJSON is kept alongside the database rows: it is the only copy of
+  // what the site actually returned, and it costs nothing.
+  const sink = await createIncrementalSink(adapter.id, run.id, label);
+
+  // Cards are buffered per district so the sanity gate can look at the whole
+  // district before deciding whether to trust it.
+  const pending = new Map<string, ListingCard[]>();
+
+  console.log(`\n=== Scraping ${adapter.id} (${label}) ===`);
+  const result = await adapter.crawl({
+    districts: opts.districts,
+    operation,
+    onBatch: async (batch) => {
+      await sink.append(batch.cards);
+      const existing = pending.get(batch.districtSlug) ?? [];
+      existing.push(...batch.cards);
+      pending.set(batch.districtSlug, existing);
+    },
+  });
+  console.log(`Observed ${sink.count()} postings (raw copy: ${sink.path})`);
+  if (result.skippedOutsideLima > 0) {
+    console.log(`Skipped ${result.skippedOutsideLima} postings outside Lima`);
+  }
+
+  console.log('\nPer-district health');
+  const counts = (run.districtCounts[adapter.id] ??= {});
+  for (const district of result.districts) {
+    run.pagesFetched += district.pagesFetched;
+    if (district.blocked) run.blocked = true;
+    if (district.errors.length) run.errors.push(...district.errors.map((e) => `${adapter.id}: ${e}`));
+
+    const cards = pending.get(district.districtSlug) ?? [];
+    counts[district.districtSlug] ??= {};
+    counts[district.districtSlug][operation] = cards.length;
+
+    const { skip, previousCount } = await shouldSkipDistrict(
+      adapter.id,
+      district.districtSlug,
+      operation,
+      cards.length,
+      run.id
+    );
+    if (skip) {
+      run.skippedDistricts.push(`${adapter.id}:${district.districtSlug}:${operation}`);
+      console.log(
+        `  ${district.districtSlug}: ${cards.length} postings against ${previousCount} last run. ` +
+          `Treating this as a broken parser, not an empty district: no lastSeenAt touched.`
+      );
+    }
+
+    let ingestNote = '';
+    if (!run.dryRun) {
+      const ingested = await ingestCards({
+        runId: run.id,
+        source: adapter.id,
+        districtSlug: district.districtSlug,
+        operation,
+        cards,
+        touchLastSeen: !skip,
+      });
+      ingestNote = `  +${ingested.created} new, ${ingested.snapshots} snapshot(s)`;
+    }
+    console.log(
+      `  ${district.districtSlug.padEnd(20)} ${String(cards.length).padStart(5)} postings` +
+        `  claimed ${String(district.claimedTotal ?? '?').padStart(5)}` +
+        `  ${String(district.pagesFetched).padStart(3)} pages` +
+        ingestNote +
+        (district.blocked ? '  BLOCKED' : '')
+    );
+  }
+}
+
+/** The adapters to run: `--sources=a,b`, or every registered one. */
+function selectAdapters(sourcesArg: string | undefined): SourceAdapter[] {
+  const registered = Object.keys(ADAPTERS) as Array<keyof typeof ADAPTERS>;
+  const wanted = sourcesArg ? sourcesArg.split(',').map((s) => s.trim()).filter(Boolean) : registered;
+  const unknown = wanted.filter((id) => !(registered as string[]).includes(id));
+  if (unknown.length > 0) {
+    throw new Error(`Unknown source(s): ${unknown.join(', ')}. Registered: ${registered.join(', ')}`);
+  }
+  return (wanted as Array<keyof typeof ADAPTERS>).map((id) => ADAPTERS[id]!());
+}
+
+/**
+ * Run every selected source across the configured districts and persist what
+ * they observe. A dry run crawls, gates and logs, and writes nothing to the
+ * database; the raw NDJSON is still kept.
  */
 async function runScrapers(args: string[]) {
   if (process.env.SCRAPER_ENABLED === 'false') {
@@ -68,129 +173,91 @@ async function runScrapers(args: string[]) {
 
   const districtsArg = argValue(args, 'districts');
   const districts = districtsArg ? districtsArg.split(',') : Array.from(LIMA_DISTRICT_SLUGS);
-  const operations = (argValue(args, 'operations') ?? 'sale,rent').split(',') as Array<'sale' | 'rent'>;
+  const operations = (argValue(args, 'operations') ?? 'sale,rent')
+    .split(',')
+    .map((op) => (op === 'rent' ? Operation.RENT : Operation.SALE));
   const mode = (argValue(args, 'mode') as ScrapeMode) ?? ScrapeMode.TARGET_DAILY;
   const dryRun = args.includes('--dry-run');
+  const adapters = selectAdapters(argValue(args, 'sources'));
+  const sources = adapters.map((adapter) => adapter.id);
 
-  const run = await startRun({ mode, gitSha: currentGitSha(), sources: ['urbania'] });
-  console.log(`Run ${run.id} (${mode})${dryRun ? ' DRY RUN, nothing written' : ''}`);
+  const runId = dryRun
+    ? `dryrun-${Date.now()}`
+    : (await startRun({ mode, gitSha: currentGitSha(), sources })).id;
+  const run: RunState = {
+    id: runId,
+    dryRun,
+    districtCounts: {},
+    skippedDistricts: [],
+    errors: [],
+    pagesFetched: 0,
+    blocked: false,
+  };
+  console.log(`Run ${run.id} (${mode})${dryRun ? ' DRY RUN, nothing written to the database' : ''}`);
+  console.log(`  sources: ${sources.join(', ')}`);
   console.log(`  districts: ${districts.join(', ')}`);
   console.log(`  operations: ${operations.join(', ')}`);
 
-  const districtCounts: DistrictCounts = {};
-  const skippedDistricts: string[] = [];
-  const runErrors: unknown[] = [];
-  let pagesFetched = 0;
-  let blockedAnywhere = false;
+  // Only sources that crawled without failing stay on the run. A run counts
+  // toward marking a source's listings as possibly sold, so a source that broke
+  // must not be on it.
+  const crawled: SourceId[] = [];
 
   try {
-    for (const operationArg of operations) {
-      const operation = operationArg === 'rent' ? Operation.RENT : Operation.SALE;
-
-      // No bedroom filter: the whole district is wanted, and narrowing it also
-      // narrows the comparables the fair-price model can use later.
-      const filters: ScraperFilters = {
-        propertyType: 'apartment',
-        operationType: operationArg,
-        districts,
-        city: 'Lima',
-        sort: 'priceAsc',
-      };
-
-      // The raw NDJSON is kept alongside the database rows: it is the only copy of
-      // what the site actually returned, and it costs nothing.
-      const sink = await createIncrementalSink(`${run.id}_${operationArg}`, 'urbania');
-
-      // Cards are buffered per district so the sanity gate can look at the whole
-      // district before deciding whether to trust it.
-      const pending = new Map<string, UrbaniaCardRaw[]>();
-
-      const scraper = new UrbaniaScraper({
-        engine: (process.env.SCRAPER_ENGINE as 'playwright' | 'puppeteer') || 'playwright',
-        onBatch: async (batch) => {
-          await sink.append(batch.cards);
-          const existing = pending.get(batch.districtSlug) ?? [];
-          existing.push(...batch.cards);
-          pending.set(batch.districtSlug, existing);
-        },
-      });
-
-      console.log(`\n=== Scraping ${scraper.getName()} (${operationArg}) ===`);
-      const result = await scraper.scrape(filters);
-      console.log(`Observed ${result.totalResults} postings (raw copy: ${sink.path})`);
-
-      console.log('\nPer-district health');
-      for (const district of scraper.districtResults) {
-        pagesFetched += district.pagesFetched;
-        if (district.blocked) blockedAnywhere = true;
-        if (district.errors.length) runErrors.push(...district.errors);
-
-        const cards = pending.get(district.districtSlug) ?? [];
-        districtCounts[district.districtSlug] ??= {};
-        districtCounts[district.districtSlug][operation] = cards.length;
-
-        const { skip, previousCount } = await shouldSkipDistrict(
-          'urbania',
-          district.districtSlug,
-          operation,
-          cards.length,
-          run.id
-        );
-        if (skip) {
-          skippedDistricts.push(`${district.districtSlug}:${operation}`);
-          console.log(
-            `  ${district.districtSlug}: ${cards.length} postings against ${previousCount} last run. ` +
-              `Treating this as a broken parser, not an empty district: no lastSeenAt touched.`
-          );
-        }
-
-        if (!dryRun) {
-          const ingested = await ingestCards({
-            runId: run.id,
-            source: 'urbania',
-            districtSlug: district.districtSlug,
-            operation,
-            cards: cards.map((card) => fromUrbaniaCard(card, 'urbania', district.districtSlug)),
-            touchLastSeen: !skip,
-          });
-          console.log(
-            `  ${district.districtSlug.padEnd(20)} ${String(cards.length).padStart(5)} postings` +
-              `  claimed ${String(district.claimedTotal ?? '?').padStart(5)}` +
-              `  ${String(district.pagesFetched).padStart(3)} pages` +
-              `  ${district.bands.length} band(s)` +
-              `  +${ingested.created} new, ${ingested.snapshots} snapshot(s)` +
-              (district.blocked ? '  BLOCKED' : '')
-          );
+    for (const adapter of adapters) {
+      const adapterOperations = adapter.operations.filter((op) => operations.includes(op));
+      let failed = false;
+      for (const operation of adapterOperations) {
+        try {
+          await runSource(adapter, run, { districts, operation });
+        } catch (error) {
+          failed = true;
+          const message = error instanceof Error ? error.message : String(error);
+          console.error(`Source ${adapter.id} (${operationLabel(operation)}) failed: ${message}`);
+          run.errors.push(`${adapter.id} (${operationLabel(operation)}) failed: ${message}`);
         }
       }
-
-      if (result.metadata?.errors?.length) {
-        runErrors.push(...result.metadata.errors);
-      }
+      if (adapterOperations.length > 0 && !failed) crawled.push(adapter.id);
     }
 
+    // A run with no sources would read as an old Urbania run, so a run where
+    // nothing crawled is a failure, not a partial success.
     const status =
-      blockedAnywhere || runErrors.length > 0 || skippedDistricts.length > 0
-        ? ScrapeStatus.PARTIAL
-        : ScrapeStatus.SUCCESS;
-    await finishRun(run.id, {
-      status,
-      districtCounts: { urbania: districtCounts },
-      pagesFetched,
-      skippedDistricts,
-      errors: runErrors.length ? runErrors : undefined,
-    });
+      crawled.length === 0
+        ? ScrapeStatus.FAILED
+        : run.blocked || run.errors.length > 0 || run.skippedDistricts.length > 0
+          ? ScrapeStatus.PARTIAL
+          : ScrapeStatus.SUCCESS;
+
+    if (!dryRun) {
+      if (status !== ScrapeStatus.FAILED) {
+        const refreshed = await refreshManualPostings(new Date());
+        if (refreshed > 0) console.log(`\nKept ${refreshed} manual listing(s) live`);
+      }
+      await finishRun(run.id, {
+        status,
+        districtCounts: run.districtCounts,
+        pagesFetched: run.pagesFetched,
+        skippedDistricts: run.skippedDistricts,
+        errors: run.errors.length ? run.errors : crawled.length === 0 ? ['no source crawled'] : undefined,
+        sources: crawled,
+      });
+      invalidateMarketCache();
+    }
     console.log(`\nRun ${run.id} finished: ${status}`);
-    invalidateMarketCache();
+    if (status === ScrapeStatus.FAILED) process.exitCode = 1;
   } catch (error) {
     console.error('Run failed:', error);
-    await finishRun(run.id, {
-      status: ScrapeStatus.FAILED,
-      districtCounts: { urbania: districtCounts },
-      pagesFetched,
-      skippedDistricts,
-      errors: [...runErrors, error instanceof Error ? error.message : String(error)],
-    });
+    if (!dryRun) {
+      await finishRun(run.id, {
+        status: ScrapeStatus.FAILED,
+        districtCounts: run.districtCounts,
+        pagesFetched: run.pagesFetched,
+        skippedDistricts: run.skippedDistricts,
+        errors: [...run.errors, error instanceof Error ? error.message : String(error)],
+        sources: crawled,
+      });
+    }
     process.exitCode = 1;
   } finally {
     await prisma.$disconnect();
@@ -218,7 +285,8 @@ function showHelp() {
 Real Estate Scraper
 
 Usage:
-  pnpm scrape                                   - Scrape every configured district, sale and rent
+  pnpm scrape                                   - Scrape every source and district, sale and rent
+  pnpm scrape --sources=urbania                 - Only these sources (default: every registered one)
   pnpm scrape --districts=lince,surquillo       - Only these districts
   pnpm scrape --operations=sale                 - Only one operation
   pnpm scrape --mode=FULL_WEEKLY                - Label the run (TARGET_DAILY | FULL_WEEKLY | MANUAL)

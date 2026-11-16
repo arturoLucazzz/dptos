@@ -85,6 +85,12 @@ export async function finishRun(
     pagesFetched: number;
     skippedDistricts: string[];
     errors?: unknown;
+    /**
+     * The sources that actually crawled, when that differs from what the run
+     * started with. A source that failed outright must leave the run, or the run
+     * would count toward marking that source's listings as possibly sold.
+     */
+    sources?: SourceId[];
   }
 ): Promise<void> {
   await prisma.scrapeRun.update({
@@ -96,6 +102,7 @@ export async function finishRun(
       pagesFetched: input.pagesFetched,
       skippedDistricts: input.skippedDistricts,
       errors: (input.errors ?? null) as Prisma.InputJsonValue,
+      ...(input.sources ? { sources: input.sources } : {}),
     },
   });
 }

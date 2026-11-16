@@ -14,24 +14,10 @@ import { createInterface } from 'readline';
 import path from 'path';
 import { prisma } from '@/lib/db';
 import { Operation, ScrapeMode, ScrapeStatus } from '@/lib/generated/prisma/enums';
-import { finishRun, ingestCards, startRun, type DistrictCounts } from './db/ingest';
+import { finishRun, ingestCards, startRun } from './db/ingest';
 import type { UrbaniaCardRaw } from './scrapers/urbania/types';
-import { fromUrbaniaCard } from '@/lib/listing-card';
-
-async function readCards(filePath: string): Promise<UrbaniaCardRaw[]> {
-  const cards: UrbaniaCardRaw[] = [];
-  const stream = createInterface({ input: createReadStream(filePath, 'utf-8'), crlfDelay: Infinity });
-  for await (const line of stream) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    try {
-      cards.push(JSON.parse(trimmed) as UrbaniaCardRaw);
-    } catch {
-      console.warn(`  skipping unparseable line in ${path.basename(filePath)}`);
-    }
-  }
-  return cards;
-}
+import { fromUrbaniaCard, type ListingCard, type SourceId } from '@/lib/listing-card';
+import type { SourceDistrictCounts } from '@/lib/sanity-gate';
 
 /** District slug from the card's own location tree, which beats the file name. */
 function districtSlugOf(card: UrbaniaCardRaw): string {
@@ -44,6 +30,32 @@ function districtSlugOf(card: UrbaniaCardRaw): string {
     .replace(/[^a-z0-9-]/g, '');
 }
 
+/**
+ * A line is a `ListingCard` when it names its source. Files written before
+ * there were several sources hold bare Urbania cards.
+ */
+function toListingCard(line: UrbaniaCardRaw | ListingCard): ListingCard {
+  if ('source' in line && line.source) {
+    return { ...line, districtSlug: line.districtSlug ?? districtSlugOf(line) };
+  }
+  return fromUrbaniaCard(line, 'urbania', districtSlugOf(line));
+}
+
+async function readCards(filePath: string): Promise<ListingCard[]> {
+  const cards: ListingCard[] = [];
+  const stream = createInterface({ input: createReadStream(filePath, 'utf-8'), crlfDelay: Infinity });
+  for await (const line of stream) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    try {
+      cards.push(toListingCard(JSON.parse(trimmed) as UrbaniaCardRaw | ListingCard));
+    } catch {
+      console.warn(`  skipping unparseable line in ${path.basename(filePath)}`);
+    }
+  }
+  return cards;
+}
+
 async function main() {
   const args = process.argv.slice(2);
   const reset = args.includes('--reset');
@@ -53,6 +65,15 @@ async function main() {
     console.log('Usage: pnpm replay [--reset] <file.ndjson> [more.ndjson ...]');
     process.exit(1);
   }
+
+  // Read everything first, so the run can say which sources it replays, and so
+  // a bad file stops the replay before --reset clears anything.
+  const loaded: { file: string; operation: Operation; cards: ListingCard[] }[] = [];
+  for (const file of files) {
+    const operation: Operation = /_rent\b|_rent\./.test(file) ? Operation.RENT : Operation.SALE;
+    loaded.push({ file, operation, cards: await readCards(file) });
+  }
+  const sources = [...new Set(loaded.flatMap(({ cards }) => cards.map((card) => card.source)))];
 
   if (reset) {
     // Order matters: the snapshot pointer on Posting has to go before the rows it
@@ -66,38 +87,38 @@ async function main() {
 
   const run = await startRun({
     mode: ScrapeMode.MANUAL,
-    sources: ['urbania'],
+    sources: sources.length ? sources : ['urbania'],
     notes: `replay of ${files.length} file(s)`,
   });
-  const districtCounts: DistrictCounts = {};
+  const districtCounts: SourceDistrictCounts = {};
 
   try {
-    for (const file of files) {
-      const cards = await readCards(file);
-      const operation: Operation = /_rent\b|_rent\./.test(file) ? Operation.RENT : Operation.SALE;
-
-      // Group by district so the ingest sees whole districts, as a live run does.
-      const byDistrict = new Map<string, UrbaniaCardRaw[]>();
+    for (const { file, operation, cards } of loaded) {
+      // Group by source and district so the ingest sees whole districts, as a
+      // live run does.
+      const groups = new Map<string, { source: SourceId; districtSlug: string; cards: ListingCard[] }>();
       for (const card of cards) {
-        const slug = districtSlugOf(card);
-        const list = byDistrict.get(slug) ?? [];
-        list.push(card);
-        byDistrict.set(slug, list);
+        const districtSlug = card.districtSlug ?? 'unknown';
+        const key = `${card.source}|${districtSlug}`;
+        const group = groups.get(key) ?? { source: card.source, districtSlug, cards: [] };
+        group.cards.push(card);
+        groups.set(key, group);
       }
 
-      console.log(`\n${path.basename(file)}: ${cards.length} cards, ${byDistrict.size} district(s), ${operation}`);
-      for (const [districtSlug, districtCards] of byDistrict) {
+      console.log(`\n${path.basename(file)}: ${cards.length} cards, ${groups.size} district(s), ${operation}`);
+      for (const { source, districtSlug, cards: districtCards } of groups.values()) {
         const result = await ingestCards({
           runId: run.id,
-          source: 'urbania',
+          source,
           districtSlug,
           operation,
-          cards: districtCards.map((card) => fromUrbaniaCard(card, 'urbania', districtSlug)),
+          cards: districtCards,
         });
-        districtCounts[districtSlug] ??= {};
-        districtCounts[districtSlug][operation] = districtCards.length;
+        const counts = (districtCounts[source] ??= {});
+        counts[districtSlug] ??= {};
+        counts[districtSlug][operation] = (counts[districtSlug][operation] ?? 0) + districtCards.length;
         console.log(
-          `  ${districtSlug.padEnd(20)} ${String(districtCards.length).padStart(5)} cards` +
+          `  ${`${source}/${districtSlug}`.padEnd(32)} ${String(districtCards.length).padStart(5)} cards` +
             `  +${result.created} new, ${result.updated} seen again, ${result.snapshots} snapshot(s)`
         );
       }
@@ -105,7 +126,7 @@ async function main() {
 
     await finishRun(run.id, {
       status: ScrapeStatus.SUCCESS,
-      districtCounts: { urbania: districtCounts },
+      districtCounts,
       pagesFetched: 0,
       skippedDistricts: [],
     });
@@ -114,7 +135,7 @@ async function main() {
     console.error(error);
     await finishRun(run.id, {
       status: ScrapeStatus.FAILED,
-      districtCounts: { urbania: districtCounts },
+      districtCounts,
       pagesFetched: 0,
       skippedDistricts: [],
       errors: [error instanceof Error ? error.message : String(error)],
