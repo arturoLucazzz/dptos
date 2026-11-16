@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useFavorites } from "@/app/providers";
-import { confirmDuplicate, rejectDuplicate, splitPosting, type ReviewResult } from "@/app/actions";
+import { confirmDuplicate, markManualRemoved, rejectDuplicate, splitPosting, type ReviewResult } from "@/app/actions";
 import type { DepartamentosRow, DepartamentosSortId } from "@/lib/departamentos-query";
 import { formatPen, formatPct } from "@/lib/listing-finance";
 import { SOURCE_LABELS } from "@/lib/listing-card";
@@ -161,6 +161,16 @@ function SourcesCell({ row, onReviewed }: { row: DepartamentosRow; onReviewed: (
               <span>{label}</span>
             )}
             {several && <span className="text-muted-foreground">{formatPenK(copy.pricePen)}</span>}
+            {copy.source === "manual" && (
+              <ReviewButton
+                label="marcar vendido o retirado"
+                disabled={pending}
+                onClick={() => run(async () => {
+                  await markManualRemoved(copy.postingId);
+                  return { ok: true };
+                })}
+              />
+            )}
             {several && (
               <ReviewButton
                 label="no es el mismo"

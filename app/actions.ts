@@ -89,3 +89,17 @@ export async function rejectDuplicate(candidateId: string): Promise<ReviewResult
 export async function splitPosting(postingId: string): Promise<ReviewResult> {
   return review(postingId, () => splitPostingInDb(postingId));
 }
+
+/**
+ * "marcar vendido o retirado" on a hand-entered listing. Nothing else ever removes
+ * one, since no scraper sees it. It leaves the table at once (a removed posting is
+ * not live) and the row is kept, never deleted.
+ */
+export async function markManualRemoved(postingId: string): Promise<void> {
+  if (typeof postingId !== 'string' || postingId.trim() === '') return;
+  await prisma.posting.updateMany({
+    where: { id: postingId, source: 'manual', removedAt: null },
+    data: { removedAt: new Date() },
+  });
+  refreshListings();
+}
