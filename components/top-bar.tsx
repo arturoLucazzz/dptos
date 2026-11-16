@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { Building2, Heart, Activity, BarChart3, Bell } from "lucide-react";
+import { Building2, Heart, Activity, BarChart3, Bell, Plus } from "lucide-react";
 
 const links = [
   { href: "/departamentos", label: "Departamentos", icon: Building2 },
@@ -11,6 +11,7 @@ const links = [
   { href: "/alertas", label: "Alertas", icon: Bell },
   { href: "/runs", label: "Corridas", icon: Activity },
   { href: "/favoritos", label: "Favoritos", icon: Heart },
+  { href: "/agregar", label: "Agregar", icon: Plus },
 ];
 
 export function TopBar() {

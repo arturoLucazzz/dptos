@@ -40,12 +40,22 @@ export interface IncrementalSink {
   path: string;
   append(records: unknown[]): Promise<void>;
   count(): number;
+  /** Close the file. Call it once the source is done, also after an error. */
+  close(): Promise<void>;
 }
 
-export async function createIncrementalSink(runId: string, source: string): Promise<IncrementalSink> {
+/**
+ * One file per source, run and operation: `data/runs/<source>_<runId>_<operation>.ndjson`.
+ * `pnpm replay` reads the operation back from the name.
+ */
+export async function createIncrementalSink(
+  source: string,
+  runId: string,
+  operation: 'sale' | 'rent'
+): Promise<IncrementalSink> {
   const dir = path.join(DATA_DIR, 'runs');
   await fs.mkdir(dir, { recursive: true });
-  const filePath = path.join(dir, `${source}_${runId}.ndjson`);
+  const filePath = path.join(dir, `${source}_${runId}_${operation}.ndjson`);
   const handle = await fs.open(filePath, 'a');
   let written = 0;
 
@@ -57,6 +67,7 @@ export async function createIncrementalSink(runId: string, source: string): Prom
       written += records.length;
     },
     count: () => written,
+    close: () => handle.close(),
   };
 }
 

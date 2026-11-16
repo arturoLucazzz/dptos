@@ -32,12 +32,15 @@ import { prisma } from '../lib/db';
 import { Operation, PostingKind, ScrapeMode, ScrapeStatus } from '../lib/generated/prisma/enums';
 import { fitFairPrice, type Comparable } from '../lib/fair-price';
 import { fitIdToDate } from '../lib/posting-age';
+import { possiblySoldCutoffs } from '../lib/market';
+import { notLivePostingWhere, RUNS_BEFORE_POSSIBLY_SOLD } from '../lib/possibly-sold';
 import {
   ingestCards,
   shouldSkipDistrict,
   type DistrictCounts,
 } from '../scraper/src/db/ingest';
 import type { UrbaniaCardRaw } from '../scraper/src/scrapers/urbania/types';
+import { fromUrbaniaCard } from '../lib/listing-card';
 
 const MS_PER_WEEK = 7 * 86_400_000;
 
@@ -557,14 +560,15 @@ async function main() {
         districtCounts[district.slug] ??= {};
         districtCounts[district.slug][operation] = observed.length;
 
-        const { skip } = await shouldSkipDistrict(district.slug, operation, observed.length, run.id);
+        const { skip } = await shouldSkipDistrict('urbania', district.slug, operation, observed.length, run.id);
         if (skip) skipped.push(`${district.slug}:${operation}`);
 
         await ingestCards({
           runId: run.id,
+          source: 'urbania',
           districtSlug: district.slug,
           operation,
-          cards: observed,
+          cards: observed.map((card) => fromUrbaniaCard(card, 'urbania', district.slug)),
           observedAt: startedAt,
           touchLastSeen: !skip,
         });
@@ -802,7 +806,7 @@ async function scoreMatcher(units: readonly Unit[]) {
 
 /** Confirm the ugly cases are present, since they are the reason for the seed. */
 async function countUglyCases() {
-  const cutoff = await possiblySoldCutoffFromRuns();
+  const cutoffs = await possiblySoldCutoffs();
 
   const withHistory = await prisma.posting.findMany({
     select: {
@@ -830,9 +834,9 @@ async function countUglyCases() {
     if (currencies.size > 1) currencyChanges++;
   }
 
-  const possiblySold = cutoff
-    ? await prisma.posting.count({ where: { lastSeenAt: { lt: cutoff } } })
-    : 0;
+  const possiblySold = await prisma.posting.count({
+    where: { removedAt: null, AND: [notLivePostingWhere(cutoffs)] },
+  });
   const missingArea = await prisma.posting.count({
     where: { currentSnapshot: { areaTotal: null } },
   });
@@ -850,22 +854,9 @@ async function countUglyCases() {
   console.log('\nUgly cases present:');
   console.log(`  ${priceDrops} observed price cuts, ${priceRises} rises (reposts reset the anchor upward)`);
   console.log(`  ${currencyChanges} listings that switched currency`);
-  console.log(`  ${possiblySold} listings unseen for ${RUNS_UNSEEN} runs, so possibly sold`);
+  console.log(`  ${possiblySold} listings unseen for ${RUNS_BEFORE_POSSIBLY_SOLD} runs, so possibly sold`);
   console.log(`  ${missingArea} listings with no area at all`);
   console.log(`  ${multiBroker} properties listed by more than one broker`);
-}
-
-const RUNS_UNSEEN = 3;
-
-/** The cutoff, read straight from the run history the seed just wrote. */
-async function possiblySoldCutoffFromRuns(): Promise<Date | null> {
-  const runs = await prisma.scrapeRun.findMany({
-    where: { status: { in: [ScrapeStatus.SUCCESS, ScrapeStatus.PARTIAL] } },
-    orderBy: { startedAt: 'desc' },
-    take: RUNS_UNSEEN,
-    select: { startedAt: true },
-  });
-  return runs.length < RUNS_UNSEEN ? null : runs[runs.length - 1].startedAt;
 }
 
 main()

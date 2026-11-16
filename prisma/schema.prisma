@@ -9,8 +9,8 @@
 // Money is always Decimal, never Float.
 
 generator client {
-  provider = "prisma-client"
-  output   = "../lib/generated/prisma"
+  provider     = "prisma-client"
+  output       = "../lib/generated/prisma"
   // The repository is CommonJS, so the generated client has to be too.
   moduleFormat = "cjs"
 }
@@ -55,6 +55,24 @@ enum Currency {
   USD
 }
 
+enum DuplicateLevel {
+  /// Same street, building, unit and features. Safe to treat as one apartment.
+  HIGH
+  /// Most signals agree but one is missing or conflicting. Needs a look.
+  MEDIUM
+  /// Some signals agree. Only worth surfacing, never merged automatically.
+  LOW
+}
+
+enum DuplicateStatus {
+  /// Found by the matcher, not reviewed yet.
+  OPEN
+  /// You confirmed they are the same apartment.
+  CONFIRMED
+  /// You confirmed they are different apartments, so it is not proposed again.
+  REJECTED
+}
+
 /// One row per execution. The operations log, and the source of the /runs page.
 model ScrapeRun {
   id         String       @id @default(cuid())
@@ -67,12 +85,15 @@ model ScrapeRun {
 
   /// Postings seen per district and operation: { "lince": { "SALE": 281 } }.
   /// This is what the sanity gate compares against the previous run.
-  districtCounts Json?
-  pagesFetched   Int   @default(0)
+  districtCounts   Json?
+  pagesFetched     Int      @default(0)
   /// Districts whose lastSeenAt was left untouched because the count collapsed.
   skippedDistricts String[]
-  errors         Json?
-  notes          String?
+  /// Sources this run covered, such as "urbania" or "proper". Empty on runs from
+  /// before there was more than one source.
+  sources          String[] @default([])
+  errors           Json?
+  notes            String?
 
   snapshots PostingSnapshot[]
 
@@ -83,18 +104,18 @@ model ScrapeRun {
 /// The listing on Urbania, not the apartment. Identity and dates only: the price
 /// changes, so it lives in the snapshots.
 model Posting {
-  id     String @id @default(cuid())
-  source String @default("urbania")
+  id              String  @id @default(cuid())
+  source          String  @default("urbania")
   /// Urbania's numeric posting id. The only stable identifier the platform gives.
   sourcePostingId String
   /// Full slug, kept for debugging and because it carries Urbania's own parse of
   /// the district and bedroom count, which is a free quality check.
-  sourcePath String?
-  slugPrefix String?
+  sourcePath      String?
+  slugPrefix      String?
   /// The publisher's own reference, as free text. Useless as an identifier: real
   /// values include "Erika" and "V&CLEI", the latter shared by twelve unrelated
   /// listings. Stored for debugging, never for identity.
-  postingCode String?
+  postingCode     String?
 
   kind         PostingKind
   /// A listing can be offered for sale and for rent at once, so the operation is
@@ -104,6 +125,13 @@ model Posting {
 
   propertyId String?
   property   Property? @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+
+  /// The development this posting belongs to, when it is a project listing.
+  projectId String?
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  /// When the source stopped listing it. The posting row is kept, never deleted.
+  removedAt DateTime?
 
   /// Cannot be recomputed later, so it is stored even though it looks derived.
   firstSeenAt DateTime @default(now())
@@ -121,6 +149,7 @@ model Posting {
   @@index([districtSlug, operation])
   @@index([lastSeenAt])
   @@index([propertyId])
+  @@index([projectId])
 }
 
 /// One row the first time a listing is seen, and one more every time something
@@ -129,9 +158,9 @@ model Posting {
 /// something. This only works because delisting is derived from lastSeenAt rather
 /// than from per-run presence accounting.
 model PostingSnapshot {
-  id        String   @id @default(cuid())
+  id        String  @id @default(cuid())
   postingId String
-  posting   Posting  @relation("PostingSnapshots", fields: [postingId], references: [id], onDelete: Cascade)
+  posting   Posting @relation("PostingSnapshots", fields: [postingId], references: [id], onDelete: Cascade)
 
   scrapeRunId String
   scrapeRun   ScrapeRun @relation(fields: [scrapeRunId], references: [id], onDelete: Cascade)
@@ -161,11 +190,11 @@ model PostingSnapshot {
   antiquityYears      Int?
 
   // ---- Project ranges, because a single value would be invented ----
-  areaMin      Decimal? @db.Decimal(8, 2)
-  areaMax      Decimal? @db.Decimal(8, 2)
-  bedroomsMin  Int?
-  bedroomsMax  Int?
-  unitsCount   Int?
+  areaMin          Decimal? @db.Decimal(8, 2)
+  areaMax          Decimal? @db.Decimal(8, 2)
+  bedroomsMin      Int?
+  bedroomsMax      Int?
+  unitsCount       Int?
   developmentStage String?
   deliveryDate     String?
 
@@ -187,6 +216,15 @@ model PostingSnapshot {
   /// Urbania's own duplicate flag.
   hasDuplicate    Boolean?
   imageUrl        String?
+  /// Every image the source published, where imageUrl is only the first.
+  imageUrls       String[]  @default([])
+  /// The listing's own page on the source, for sources that do not build it from the path.
+  sourceUrl       String?
+
+  // ---- Building, as published ----
+  buildingName  String?
+  unitNumber    String?
+  developerName String?
 
   /// Implausible values are marked, never deleted. Deleting a garbage listing
   /// makes the next run believe it disappeared and count it as a sale.
@@ -213,12 +251,18 @@ model Property {
   /// without being the same apartment.
   fingerprint  String
 
-  addressNorm String?
-  bedrooms    Int?
+  addressNorm  String?
+  /// The street alone: addressNorm with the digit tokens removed, so the same
+  /// street matches across sources that write the number differently.
+  streetNorm   String?
+  /// Normalized building name, when the source publishes one.
+  buildingNorm String?
+  unitNumber   String?
+  bedrooms     Int?
   /// Area rounded into a bucket, so a 64 m² and a 65 m² listing can still match.
-  areaBucket  Int?
-  latitude    Decimal? @db.Decimal(10, 7)
-  longitude   Decimal? @db.Decimal(10, 7)
+  areaBucket   Int?
+  latitude     Decimal? @db.Decimal(10, 7)
+  longitude    Decimal? @db.Decimal(10, 7)
 
   // Your own annotations. discardReason exists so that in three months you can
   // ask why twenty apartments were discarded and find out which variable the
@@ -231,12 +275,89 @@ model Property {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  projectId String?
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
   postings Posting[]
+
+  duplicatesAsA DuplicateCandidate[] @relation("DuplicateA")
+  duplicatesAsB DuplicateCandidate[] @relation("DuplicateB")
 
   @@index([districtSlug])
   @@index([fingerprint])
   @@index([addressNorm])
+  @@index([streetNorm])
+  @@index([buildingNorm])
+  @@index([projectId])
   @@index([favorite])
+}
+
+/// A development that sells many units. Several sources list the same project
+/// under different names, so this is the place they are grouped. Only what the
+/// sources published is stored.
+model Project {
+  id            String   @id @default(cuid())
+  districtSlug  String
+  name          String?
+  /// Normalized name, used to match the same project across sources.
+  nameNorm      String?
+  developerName String?
+  addressNorm   String?
+  latitude      Decimal? @db.Decimal(10, 7)
+  longitude     Decimal? @db.Decimal(10, 7)
+  deliveryDate  String?
+  stage         String?
+  /// Source keys that point at this project, such as "proper:prolongacion-iquitos".
+  sourceKeys    String[] @default([])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  postings   Posting[]
+  properties Property[]
+
+  @@index([districtSlug])
+  @@index([nameNorm])
+}
+
+/// A pair of properties the matcher thinks may be the same apartment. Nothing is
+/// merged automatically from this table: it is the review queue. The smaller id
+/// is always stored as A, so a pair has exactly one row.
+model DuplicateCandidate {
+  id          String   @id @default(cuid())
+  propertyAId String
+  propertyA   Property @relation("DuplicateA", fields: [propertyAId], references: [id], onDelete: Cascade)
+  propertyBId String
+  propertyB   Property @relation("DuplicateB", fields: [propertyBId], references: [id], onDelete: Cascade)
+
+  level   DuplicateLevel
+  /// The signals that agreed or conflicted, kept so the review can show why.
+  signals Json
+  status  DuplicateStatus @default(OPEN)
+
+  createdAt DateTime  @default(now())
+  decidedAt DateTime?
+
+  @@unique([propertyAId, propertyBId])
+}
+
+/// One owner verdict on a pair, kept as test fixtures for tuning the dedupe
+/// levels. The two sides are copied as the matcher saw them before anything was
+/// merged, so the row outlives both properties: a confirm deletes one of them,
+/// and its candidate row goes with it.
+model DuplicateDecision {
+  id          String          @id @default(cuid())
+  /// The reviewed candidate. Null for a split, and left dangling once a confirm
+  /// deletes the candidate, so there is no foreign key.
+  candidateId String?
+  status      DuplicateStatus
+  /// The candidate's level. Null for a split, which has no candidate.
+  level       DuplicateLevel?
+  signals     Json
+  /// `DedupeSide` of each property, built by lib/dedupe-side.ts.
+  sideA       Json
+  sideB       Json
+  decidedAt   DateTime        @default(now())
 }
 
 /// Assumptions and constants. Has no relation to anything: it is configuration.
@@ -245,7 +366,7 @@ model Assumptions {
   id String @id @default("default")
 
   /// Unidad Impositiva Tributaria. Changes every year and drives alcabala and predial.
-  uit Decimal @db.Decimal(10, 2)
+  uit    Decimal @db.Decimal(10, 2)
   /// Exchange rate used to convert USD prices. Changing it recomputes the history,
   /// because the published amount and currency are both stored.
   usdPen Decimal @db.Decimal(6, 3)
@@ -259,35 +380,35 @@ model Assumptions {
   termYears      Int
 
   // ---- Rental assumptions ----
-  vacancyMonthsPerYear Decimal @db.Decimal(4, 2)
-  rentGrowthPct        Decimal @db.Decimal(5, 2)
-  rentIncomeTaxPct     Decimal @db.Decimal(5, 2)
+  vacancyMonthsPerYear    Decimal @db.Decimal(4, 2)
+  rentGrowthPct           Decimal @db.Decimal(5, 2)
+  rentIncomeTaxPct        Decimal @db.Decimal(5, 2)
   /// Fallback when the listing does not publish a maintenance fee.
   defaultMaintenancePerM2 Decimal @db.Decimal(6, 2)
 
   // ---- One-off purchase costs ----
-  alcabalaRatePct   Decimal @db.Decimal(5, 2)
+  alcabalaRatePct               Decimal @db.Decimal(5, 2)
   /// Alcabala applies only above this many UIT.
-  alcabalaExemptUit Decimal @db.Decimal(5, 2)
+  alcabalaExemptUit             Decimal @db.Decimal(5, 2)
   /// The developer's first sale is exempt from alcabala *except* for the land
   /// portion, and how that portion is valued is a judgement, not a formula: at 50%
   /// the tax on a S/ 400,000 flat is S/ 4,320, at 0% it is nothing. Exposed as an
   /// assumption instead of hidden in a constant, because it moves the entry cost by
   /// a full percentage point.
   alcabalaFirstSaleLandSharePct Decimal @db.Decimal(5, 2)
-  notaryCost        Decimal @db.Decimal(10, 2)
-  registryPct       Decimal @db.Decimal(5, 3)
-  appraisalCost     Decimal @db.Decimal(10, 2)
-  titleStudyCost    Decimal @db.Decimal(10, 2)
+  notaryCost                    Decimal @db.Decimal(10, 2)
+  registryPct                   Decimal @db.Decimal(5, 3)
+  appraisalCost                 Decimal @db.Decimal(10, 2)
+  titleStudyCost                Decimal @db.Decimal(10, 2)
 
   // ---- Monthly costs ----
   /// Assessed value as a fraction of market price, for the predial calculation.
-  assessedValueRatio Decimal @db.Decimal(5, 3)
+  assessedValueRatio  Decimal @db.Decimal(5, 3)
   /// No programmatic source per district, so it is filled in by hand.
   /// { "lince": 100, "miraflores": 180 } in soles per month.
   arbitriosByDistrict Json
   /// Used when a district is missing from the table above, and marked as estimated.
-  defaultArbitrios Decimal @db.Decimal(10, 2)
+  defaultArbitrios    Decimal @db.Decimal(10, 2)
 
   updatedAt DateTime @updatedAt
 }

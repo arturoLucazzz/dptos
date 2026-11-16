@@ -7,18 +7,42 @@
  *
  * Gross rent *is* here, labelled as estimated, because it comes from the rent index
  * which needs the whole rental market.
+ *
+ * One row per property: the posting with the lowest live price (the "official"
+ * price) speaks for it, and every copy of the same apartment is listed in `copies`.
  */
 
+import type { SourceId } from './listing-card';
+import type { ListingCopy } from './official-price';
+
+export interface DuplicateFlag {
+  candidateId: string;
+  level: 'MEDIUM' | 'LOW';
+  otherPropertyId: string;
+}
+
 export interface ListingRow {
+  /** The official posting: the lowest live price among the property's copies. */
   postingId: string;
   propertyId: string | null;
   sourcePostingId: string;
+  /** Source of the official posting. */
+  source: SourceId | null;
   /** Relative path on Urbania, for linking out. */
   sourcePath: string | null;
+  /** The official posting's own page, when known. */
+  url: string | null;
   districtSlug: string;
   districtName: string;
   operation: 'SALE' | 'RENT';
+  /** Official price: the lowest live price among the copies. */
   pricePen: number;
+  /** Highest live price among the copies; equals `pricePen` with one copy. */
+  priceMaxPen: number;
+  /** Every live copy of this property, lowest price first. */
+  copies: ListingCopy[];
+  /** Open MEDIUM or LOW duplicate candidates this property is part of. */
+  duplicateFlags: DuplicateFlag[];
   areaM2: number | null;
   bedrooms: number | null;
   bathrooms: number | null;
@@ -43,7 +67,7 @@ export interface ListingRow {
   fairPriceConfidence: 'high' | 'low' | null;
   daysPublished: number | null;
   daysPublishedEstimated: boolean;
-  /** Distinct live listings on the same property. */
+  /** Live copies of the same property: `copies.length`. */
   listingCount: number;
   /** Times the asking price has fallen across snapshots. */
   priceCutCount: number;

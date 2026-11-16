@@ -68,7 +68,8 @@ needs_run() {
     import { ScrapeStatus } from './lib/generated/prisma/enums.ts';
     const hours = Number(process.env.SCRAPER_STALE_HOURS || $STALE_HOURS);
     const latest = await prisma.scrapeRun.findFirst({
-      where: { status: { in: [ScrapeStatus.SUCCESS, ScrapeStatus.PARTIAL] } },
+      // A manual /agregar entry records only 'manual' and is not a scrape.
+      where: { status: { in: [ScrapeStatus.SUCCESS, ScrapeStatus.PARTIAL] }, NOT: { sources: { equals: ['manual'] } } },
       orderBy: { startedAt: 'desc' },
       select: { startedAt: true, status: true },
     });
@@ -82,8 +83,9 @@ needs_run() {
 
 case "$MODE" in
   daily)
-    # Ten target districts, sale and rent. About an hour.
-    DISTRICTS="${SCRAPER_DAILY_DISTRICTS:-lince,jesus-maria,san-miguel,surquillo,magdalena-del-mar,pueblo-libre,san-isidro,miraflores,barranco,santiago-de-surco}"
+    # Ten target districts, sale and rent. About an hour. Slugs must be the ones in
+    # scraper/src/config/districts.ts; the scraper refuses any other.
+    DISTRICTS="${SCRAPER_DAILY_DISTRICTS:-lince,jesus-maria,san-miguel,surquillo,magdalena,pueblo-libre,san-isidro,miraflores,barranco,santiago-de-surco}"
     ARGS=(--mode=TARGET_DAILY --districts="$DISTRICTS" --operations=sale,rent)
     if ! needs_run; then
       echo "Last successful run is fresh; daily catch-up not needed."

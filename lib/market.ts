@@ -16,31 +16,22 @@ import { Operation, PostingKind, ScrapeStatus } from './generated/prisma/enums';
 import { fitFairPrice, type Comparable, type FairPriceModel } from './fair-price';
 import { isUsableComparable, pricePerM2OutlierMask } from './quality-flags';
 import { buildRentIndex, type RentIndex, type RentObservation } from './rent';
+import { cutoffsFromRuns, livePostingWhere, type PossiblySoldCutoffs } from './possibly-sold';
+import { collapseCopies, postingSource } from './official-price';
 
 /**
- * A listing unseen for this many runs is treated as possibly sold.
+ * Each slice's possibly-sold cutoff (source, district, operation), from the run
+ * history.
  *
- * Runs rather than days, because the thing being tolerated is a missed run — a
- * blocked night, a machine asleep — and that is counted in runs. Changing this is
- * changing a constant; nothing is stored that depends on it.
+ * A slice with too little history has no cutoff, which means nothing in it can
+ * be called sold, which is the correct answer on day one.
  */
-export const RUNS_BEFORE_POSSIBLY_SOLD = 3;
-
-/**
- * Listings last seen before this moment are possibly sold.
- *
- * Null when there is not enough run history yet, which means nothing can be called
- * sold, which is the correct answer on day one.
- */
-export async function possiblySoldCutoff(): Promise<Date | null> {
+export async function possiblySoldCutoffs(): Promise<PossiblySoldCutoffs> {
   const runs = await prisma.scrapeRun.findMany({
     where: { status: { in: [ScrapeStatus.SUCCESS, ScrapeStatus.PARTIAL] } },
-    orderBy: { startedAt: 'desc' },
-    take: RUNS_BEFORE_POSSIBLY_SOLD,
-    select: { startedAt: true },
+    select: { startedAt: true, sources: true, districtCounts: true },
   });
-  if (runs.length < RUNS_BEFORE_POSSIBLY_SOLD) return null;
-  return runs[runs.length - 1].startedAt;
+  return cutoffsFromRuns(runs);
 }
 
 /**
@@ -53,6 +44,31 @@ export async function possiblySoldCutoff(): Promise<Date | null> {
 function isBrandNew(snapshot: { antiquityYears: number | null; developmentStage: string | null }): boolean {
   if (snapshot.developmentStage) return true;
   return snapshot.antiquityYears != null && snapshot.antiquityYears <= 1;
+}
+
+interface PostingIdentity {
+  postingId: string;
+  propertyId: string | null;
+  source: string;
+}
+
+/**
+ * One row per property, at its official (lowest) price.
+ *
+ * Copies of one apartment on several sources are one apartment: counting each
+ * would weigh it two or three times in a coefficient or a district median.
+ */
+function onePerProperty<T extends PostingIdentity & { pricePen: number }>(rows: T[]): T[] {
+  const official = collapseCopies(
+    rows.map((row) => ({
+      postingId: row.postingId,
+      propertyId: row.propertyId,
+      source: postingSource(row.source),
+      url: null,
+      pricePen: row.pricePen,
+    }))
+  );
+  return rows.filter((row) => official.has(row.postingId));
 }
 
 /**
@@ -70,18 +86,23 @@ function isBrandNew(snapshot: { antiquityYears: number | null; developmentStage:
  * Plus one exclusion that needs the whole set to decide: prices absurd for their
  * own district per m². A real Lince listing asks S/ 55,275,000 for 60 m², and no
  * per-listing rule catches it.
+ *
+ * Then each property counts once, at its official price.
  */
 export async function loadSaleComparables(): Promise<Comparable[]> {
-  const cutoff = await possiblySoldCutoff();
+  const cutoffs = await possiblySoldCutoffs();
 
   const postings = await prisma.posting.findMany({
     where: {
       kind: PostingKind.UNIT,
       operation: Operation.SALE,
-      ...(cutoff ? { lastSeenAt: { gte: cutoff } } : {}),
+      AND: [livePostingWhere(cutoffs)],
       currentSnapshot: { isNot: null },
     },
     select: {
+      id: true,
+      propertyId: true,
+      source: true,
       districtSlug: true,
       currentSnapshot: {
         select: {
@@ -99,7 +120,7 @@ export async function loadSaleComparables(): Promise<Comparable[]> {
     },
   });
 
-  const comparables: Comparable[] = [];
+  const comparables: (Comparable & PostingIdentity)[] = [];
   for (const posting of postings) {
     const snapshot = posting.currentSnapshot;
     if (!snapshot) continue;
@@ -109,6 +130,9 @@ export async function loadSaleComparables(): Promise<Comparable[]> {
     if (snapshot.pricePen == null || areaRaw == null) continue;
 
     comparables.push({
+      postingId: posting.id,
+      propertyId: posting.propertyId,
+      source: posting.source,
       districtSlug: posting.districtSlug,
       pricePen: Number(snapshot.pricePen),
       areaM2: Number(areaRaw),
@@ -121,7 +145,7 @@ export async function loadSaleComparables(): Promise<Comparable[]> {
   }
 
   const outliers = pricePerM2OutlierMask(comparables);
-  return comparables.filter((_, i) => !outliers[i]);
+  return onePerProperty(comparables.filter((_, i) => !outliers[i]));
 }
 
 /**
@@ -130,18 +154,24 @@ export async function loadSaleComparables(): Promise<Comparable[]> {
  * The quality gate matters more here than for sales: a sale price filed as a rent is
  * six thousand soles a month of pure fiction, and it would move a district median
  * enough to change every coverage number in it.
+ *
+ * Each property counts once, at its lowest live rent: an Adondevivir copy of an
+ * Urbania ad is the same flat, not a second data point.
  */
 export async function loadRentObservations(): Promise<RentObservation[]> {
-  const cutoff = await possiblySoldCutoff();
+  const cutoffs = await possiblySoldCutoffs();
 
   const postings = await prisma.posting.findMany({
     where: {
       kind: PostingKind.UNIT,
       operation: Operation.RENT,
-      ...(cutoff ? { lastSeenAt: { gte: cutoff } } : {}),
+      AND: [livePostingWhere(cutoffs)],
       currentSnapshot: { isNot: null },
     },
     select: {
+      id: true,
+      propertyId: true,
+      source: true,
       districtSlug: true,
       currentSnapshot: {
         select: {
@@ -155,7 +185,7 @@ export async function loadRentObservations(): Promise<RentObservation[]> {
     },
   });
 
-  const rows: RentObservation[] = [];
+  const rows: (RentObservation & PostingIdentity)[] = [];
   for (const posting of postings) {
     const snapshot = posting.currentSnapshot;
     if (!snapshot || !isUsableComparable(snapshot.qualityFlags)) continue;
@@ -163,6 +193,9 @@ export async function loadRentObservations(): Promise<RentObservation[]> {
     if (snapshot.pricePen == null || area == null) continue;
 
     rows.push({
+      postingId: posting.id,
+      propertyId: posting.propertyId,
+      source: posting.source,
       districtSlug: posting.districtSlug,
       pricePen: Number(snapshot.pricePen),
       areaM2: Number(area),
@@ -171,7 +204,7 @@ export async function loadRentObservations(): Promise<RentObservation[]> {
   }
 
   const outliers = pricePerM2OutlierMask(rows);
-  return rows.filter((_, i) => !outliers[i]);
+  return onePerProperty(rows.filter((_, i) => !outliers[i]));
 }
 
 /** Identity of the current data: a new finished run means new models. */

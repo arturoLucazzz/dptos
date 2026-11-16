@@ -13,9 +13,16 @@
 import { prisma } from './db';
 import { Operation, PostingKind } from './generated/prisma/enums';
 import { median, quantile } from './linalg';
-import { possiblySoldCutoff } from './market';
+import { possiblySoldCutoffs } from './market';
+import { isLivePosting, livePostingWhere } from './possibly-sold';
 import { isUsableComparable } from './quality-flags';
 import { weekKey } from './dates';
+import {
+  collapseProjects,
+  perPropertyPerM2,
+  priceIndexSamples,
+  type PriceIndexRow,
+} from './property-stats';
 
 export { weekKey } from './dates';
 
@@ -85,13 +92,13 @@ function stageBucket(stage: string | null): keyof Pick<
 /**
  * Weekly price/m² for live listings and for listings that exited.
  *
- * "Exited" means lastSeenAt fell behind the possibly-sold cutoff — the best proxy
- * for sold that reversible state gives. Using their *last* asking price is the
+ * "Exited" means lastSeenAt fell behind its source's possibly-sold cutoff, or the
+ * posting was removed — the best proxy for sold that reversible state gives. Using their *last* asking price is the
  * point: the cheap ones leave, and without them the live median drifts up even when
  * nothing got more expensive.
  */
 export async function loadPriceIndex(operation: Operation): Promise<PriceIndexPoint[]> {
-  const cutoff = await possiblySoldCutoff();
+  const cutoffs = await possiblySoldCutoffs();
 
   const postings = await prisma.posting.findMany({
     where: {
@@ -100,7 +107,13 @@ export async function loadPriceIndex(operation: Operation): Promise<PriceIndexPo
       currentSnapshot: { isNot: null },
     },
     select: {
+      id: true,
+      propertyId: true,
+      source: true,
+      districtSlug: true,
+      operation: true,
       lastSeenAt: true,
+      removedAt: true,
       firstSeenAt: true,
       currentSnapshot: {
         select: {
@@ -118,37 +131,35 @@ export async function loadPriceIndex(operation: Operation): Promise<PriceIndexPo
     },
   });
 
-  const liveByWeek = new Map<string, number[]>();
-  const exitedByWeek = new Map<string, number[]>();
-
-  for (const posting of postings) {
+  const rows: PriceIndexRow[] = postings.map((posting) => {
     const snap = posting.currentSnapshot;
-    if (!snap || snap.pricePen == null) continue;
-    if (!isUsableComparable(snap.qualityFlags)) continue;
-    const area = snap.areaTotal ?? snap.areaCovered;
-    if (area == null || Number(area) <= 0) continue;
-    const perM2 = Number(snap.pricePen) / Number(area);
-
-    const live = !cutoff || posting.lastSeenAt >= cutoff;
+    const area = snap?.areaTotal ?? snap?.areaCovered;
+    const usable =
+      snap != null &&
+      snap.pricePen != null &&
+      isUsableComparable(snap.qualityFlags) &&
+      area != null &&
+      Number(area) > 0;
+    const live = isLivePosting(posting, cutoffs);
+    // A live listing contributes to every week it has been on the market, using
+    // the current price as a coarse stand-in. With short history that is fine;
+    // with long history the snapshot trail is preferred.
+    const weeks = new Set<string>();
     if (live) {
-      // A live listing contributes to every week it has been on the market, using
-      // the current price as a coarse stand-in. With short history that is fine;
-      // with long history the snapshot trail below is preferred.
-      const weeks = new Set<string>();
       for (const s of posting.snapshots) weeks.add(weekKey(s.observedAt));
       weeks.add(weekKey(posting.lastSeenAt));
-      for (const week of weeks) {
-        const list = liveByWeek.get(week) ?? [];
-        list.push(perM2);
-        liveByWeek.set(week, list);
-      }
-    } else if (cutoff) {
-      const week = weekKey(posting.lastSeenAt);
-      const list = exitedByWeek.get(week) ?? [];
-      list.push(perM2);
-      exitedByWeek.set(week, list);
     }
-  }
+    return {
+      postingId: posting.id,
+      propertyId: posting.propertyId,
+      live,
+      lastSeenAt: posting.lastSeenAt,
+      liveWeeks: [...weeks],
+      pricePen: usable ? Number(snap.pricePen) : 0,
+      perM2: usable ? Number(snap.pricePen) / Number(area) : null,
+    };
+  });
+  const { live: liveByWeek, exited: exitedByWeek } = priceIndexSamples(rows);
 
   const weeks = [...new Set([...liveByWeek.keys(), ...exitedByWeek.keys()])].sort();
   return weeks.map((week) => {
@@ -171,12 +182,12 @@ export async function loadPriceIndex(operation: Operation): Promise<PriceIndexPo
  * would call a multi-listed district "deep" when it is just noisy.
  */
 export async function loadDistrictInventory(): Promise<DistrictInventory[]> {
-  const cutoff = await possiblySoldCutoff();
+  const cutoffs = await possiblySoldCutoffs();
 
   const postings = await prisma.posting.findMany({
     where: {
       kind: PostingKind.UNIT,
-      ...(cutoff ? { lastSeenAt: { gte: cutoff } } : {}),
+      AND: [livePostingWhere(cutoffs)],
       currentSnapshot: { isNot: null },
       OR: [{ propertyId: null }, { property: { discarded: false } }],
     },
@@ -196,10 +207,15 @@ export async function loadDistrictInventory(): Promise<DistrictInventory[]> {
     },
   });
 
+  // Price/m² of sale properties, one value per property at its lowest price.
+  const perM2Rows = new Map<
+    string,
+    { postingId: string; propertyId: string | null; pricePen: number; perM2: number }[]
+  >();
+
   type Acc = {
     saleProps: Set<string>;
     rentProps: Set<string>;
-    salePerM2: number[];
   };
   const byDistrict = new Map<string, Acc>();
 
@@ -209,7 +225,6 @@ export async function loadDistrictInventory(): Promise<DistrictInventory[]> {
     const acc = byDistrict.get(posting.districtSlug) ?? {
       saleProps: new Set(),
       rentProps: new Set(),
-      salePerM2: [],
     };
     const key = posting.propertyId ?? `posting:${posting.id}`;
     if (posting.operation === Operation.SALE) {
@@ -217,7 +232,14 @@ export async function loadDistrictInventory(): Promise<DistrictInventory[]> {
       if (isUsableComparable(snap.qualityFlags) && snap.pricePen != null) {
         const area = snap.areaTotal ?? snap.areaCovered;
         if (area != null && Number(area) > 0) {
-          acc.salePerM2.push(Number(snap.pricePen) / Number(area));
+          const list = perM2Rows.get(posting.districtSlug) ?? [];
+          list.push({
+            postingId: posting.id,
+            propertyId: posting.propertyId,
+            pricePen: Number(snap.pricePen),
+            perM2: Number(snap.pricePen) / Number(area),
+          });
+          perM2Rows.set(posting.districtSlug, list);
         }
       }
     } else {
@@ -228,10 +250,11 @@ export async function loadDistrictInventory(): Promise<DistrictInventory[]> {
 
   return [...byDistrict.entries()]
     .map(([slug, acc]) => {
-      const saleN = acc.salePerM2.length;
-      const p25 = saleN ? quantile(acc.salePerM2, 0.25) : null;
-      const p50 = saleN ? median(acc.salePerM2) : null;
-      const p75 = saleN ? quantile(acc.salePerM2, 0.75) : null;
+      const salePerM2 = perPropertyPerM2(perM2Rows.get(slug) ?? []);
+      const saleN = salePerM2.length;
+      const p25 = saleN ? quantile(salePerM2, 0.25) : null;
+      const p50 = saleN ? median(salePerM2) : null;
+      const p75 = saleN ? quantile(salePerM2, 0.75) : null;
       const dispersion =
         p25 != null && p50 != null && p75 != null && p50 > 0 ? (p75 - p25) / p50 : null;
       return {
@@ -258,16 +281,18 @@ export async function loadDistrictInventory(): Promise<DistrictInventory[]> {
  * the coverage numbers of everything already bought there.
  */
 export async function loadConstructionPipeline(): Promise<ConstructionPipeline[]> {
-  const cutoff = await possiblySoldCutoff();
+  const cutoffs = await possiblySoldCutoffs();
 
   const projects = await prisma.posting.findMany({
     where: {
       kind: PostingKind.PROJECT,
       operation: Operation.SALE,
-      ...(cutoff ? { lastSeenAt: { gte: cutoff } } : {}),
+      AND: [livePostingWhere(cutoffs)],
       currentSnapshot: { isNot: null },
     },
     select: {
+      id: true,
+      projectId: true,
       districtSlug: true,
       currentSnapshot: {
         select: { developmentStage: true, unitsCount: true },
@@ -275,10 +300,25 @@ export async function loadConstructionPipeline(): Promise<ConstructionPipeline[]
     },
   });
 
+  // One Project on Proper and Nexo is one project, not two.
+  const collapsed = collapseProjects(
+    projects.flatMap((p) =>
+      p.currentSnapshot
+        ? [
+            {
+              postingId: p.id,
+              projectId: p.projectId,
+              districtSlug: p.districtSlug,
+              developmentStage: p.currentSnapshot.developmentStage,
+              unitsCount: p.currentSnapshot.unitsCount,
+            },
+          ]
+        : []
+    )
+  );
+
   const byDistrict = new Map<string, ConstructionPipeline>();
-  for (const project of projects) {
-    const snap = project.currentSnapshot;
-    if (!snap) continue;
+  for (const project of collapsed) {
     const row =
       byDistrict.get(project.districtSlug) ??
       ({
@@ -291,10 +331,10 @@ export async function loadConstructionPipeline(): Promise<ConstructionPipeline[]
         total: 0,
         unitsApprox: 0,
       } satisfies ConstructionPipeline);
-    const bucket = stageBucket(snap.developmentStage);
+    const bucket = stageBucket(project.developmentStage);
     row[bucket] += 1;
     row.total += 1;
-    row.unitsApprox += snap.unitsCount && snap.unitsCount > 0 ? snap.unitsCount : 1;
+    row.unitsApprox += project.unitsCount && project.unitsCount > 0 ? project.unitsCount : 1;
     byDistrict.set(project.districtSlug, row);
   }
 

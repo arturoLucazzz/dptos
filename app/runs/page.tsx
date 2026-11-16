@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import { ScrapeStatus } from "@/lib/generated/prisma/enums";
+import { runSourceSections } from "@/lib/run-sources";
 import { RunsClient } from "./runs-client";
 
 export const dynamic = "force-dynamic";
@@ -17,6 +18,7 @@ export default async function RunsPage() {
       gitSha: true,
       pagesFetched: true,
       districtCounts: true,
+      sources: true,
       skippedDistricts: true,
       errors: true,
       notes: true,
@@ -24,18 +26,9 @@ export default async function RunsPage() {
   });
 
   const serialized = runs.map((run) => {
-    const counts = (run.districtCounts ?? {}) as Record<string, Partial<Record<"SALE" | "RENT", number>>>;
-    let sale = 0;
-    let rent = 0;
-    const districts: { slug: string; sale: number; rent: number }[] = [];
-    for (const [slug, byOp] of Object.entries(counts)) {
-      const s = byOp.SALE ?? 0;
-      const r = byOp.RENT ?? 0;
-      sale += s;
-      rent += r;
-      districts.push({ slug, sale: s, rent: r });
-    }
-    districts.sort((a, b) => a.slug.localeCompare(b.slug));
+    const sources = runSourceSections(run.districtCounts, run.sources);
+    const sale = sources.reduce((sum, src) => sum + src.sale, 0);
+    const rent = sources.reduce((sum, src) => sum + src.rent, 0);
 
     const durationMs =
       run.finishedAt && run.startedAt
@@ -55,7 +48,7 @@ export default async function RunsPage() {
       notes: run.notes,
       sale,
       rent,
-      districts,
+      sources,
       durationMs,
     };
   });

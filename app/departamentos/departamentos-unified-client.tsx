@@ -23,8 +23,12 @@ import {
   departamentosSearchParams,
 } from "@/lib/departamentos-search-params";
 import { assumptionWarnings } from "@/lib/finance";
+import { SOURCE_IDS, SOURCE_LABELS } from "@/lib/listing-card";
+import { isSourceId } from "@/lib/official-price";
 import { parseNumericInput, sanitizeNumericInput } from "@/lib/numeric-input";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
+
+const SOURCE_OPTIONS: MultiSelectOption[] = SOURCE_IDS.map((id) => ({ label: SOURCE_LABELS[id], value: id }));
 
 interface DistrictOption {
   value: string;
@@ -193,6 +197,7 @@ export function DepartamentosUnifiedClient() {
     () =>
       departamentosApiQuery({
         districts: urlState.districts,
+        fuentes: urlState.fuentes,
         priceMin: urlState.priceMin,
         priceMax: urlState.priceMax,
         bedroomsMin: urlState.bedroomsMin,
@@ -209,7 +214,7 @@ export function DepartamentosUnifiedClient() {
     [urlState]
   );
 
-  const { data, error, isLoading, isValidating } = useSWR(
+  const { data, error, isLoading, isValidating, mutate } = useSWR(
     `/api/departamentos?${apiQuery}`,
     fetchDepartamentos,
     { keepPreviousData: true, revalidateOnFocus: false }
@@ -252,6 +257,18 @@ export function DepartamentosUnifiedClient() {
     },
     [setUrlState, urlState.order, urlState.sort]
   );
+
+  // The source filter goes straight to the URL: there is nothing to type, so no debounce.
+  const onSourcesChange = useCallback(
+    (values: string[]) => {
+      void setUrlState({ fuentes: values.filter(isSourceId), page: 1 });
+    },
+    [setUrlState]
+  );
+
+  const onReviewed = useCallback(() => {
+    void mutate();
+  }, [mutate]);
 
   const onPageChange = useCallback(
     (page: number) => {
@@ -298,6 +315,19 @@ export function DepartamentosUnifiedClient() {
                   maxCount={3}
                   variant="secondary"
                   className="h-11 min-w-70"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-sm font-medium text-muted-foreground">Fuente</label>
+                <MultiSelect
+                  options={SOURCE_OPTIONS}
+                  defaultValue={urlState.fuentes}
+                  onValueChange={onSourcesChange}
+                  placeholder="Todas las fuentes"
+                  maxCount={3}
+                  variant="secondary"
+                  className="h-11 min-w-56"
                 />
               </div>
 
@@ -360,6 +390,7 @@ export function DepartamentosUnifiedClient() {
           isValidating={isValidating && !isLoading}
           onSortChange={onSortChange}
           onPageChange={onPageChange}
+          onReviewed={onReviewed}
         />
       )}
     </div>
