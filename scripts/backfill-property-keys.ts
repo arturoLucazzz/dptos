@@ -26,7 +26,9 @@ async function main() {
   for (const row of rows) {
     const streetNorm = streetFromAddressNorm(row.addressNorm ?? '');
     if (streetNorm === '') continue;
-    await prisma.property.update({ where: { id: row.id }, data: { streetNorm } });
+    // Raw SQL on purpose: prisma.update would bump Property.updatedAt, and this
+    // backfill changes nothing the user edited.
+    await prisma.$executeRaw`UPDATE "Property" SET "streetNorm" = ${streetNorm} WHERE id = ${row.id}`;
     updated += 1;
   }
   console.log(`Updated ${updated} properties.`);
