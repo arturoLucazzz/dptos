@@ -98,8 +98,8 @@ La unión vive en `lib/dedupe.ts`. Un merge equivocado saca un aviso real de tod
 
 | Nivel | Qué pasa | Cuándo |
 |---|---|---|
-| HIGH | Se une solo | Copia entre portales Navent (mismo título, precio, área ±0.5 m² y dirección); misma puerta con ambas áreas y precios conocidos, mismos números en la dirección y sin dirección de tipo "al NNN" o cuadra; mismo edificio y mismo número de unidad con dormitorios, área y precio compatibles |
-| MEDIUM | Se marca para revisar | Mismo edificio o desarrolladora, mismos dormitorios, área ±2 m² y precio ±10% |
+| HIGH | Se une solo | Copia entre portales Navent (mismo título, precio, área ±0.5 m² y dirección); misma puerta según el matcher estricto (dirección con número, área ±2 m², precio ±5%, y si ambos tienen coordenadas, a menos de 150 m) con ambas áreas y precios conocidos, mismos números en la dirección y sin dirección de tipo "al NNN" o cuadra; mismo edificio y mismo número de unidad con dormitorios, área y precio compatibles |
+| MEDIUM | Se marca para revisar | Mismo edificio o desarrolladora, mismos dormitorios, área ±2 m², precio ±10% y, si ambos tienen coordenadas, a menos de 150 m |
 | LOW | Se marca para revisar | Misma calle, mismos dormitorios, área ±5 m² y precio ±10% |
 
 En la tabla de departamentos, los posibles duplicados se revisan con "es el mismo" o "no es el mismo". Un par rechazado no se vuelve a marcar. "No es el mismo" sobre una copia ya unida deshace un merge equivocado. Las decisiones quedan en `DuplicateDecision`; `scripts/export-duplicate-decisions.ts` las escribe en `lib/__fixtures__/duplicate-decisions.json`, y el test de dedupe reporta dónde las reglas discrepan de ellas.

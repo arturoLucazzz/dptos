@@ -11,8 +11,17 @@ import { SOURCE_IDS, type SourceId } from './listing-card';
 /** Run counts per source, district and operation: { urbania: { lince: { SALE: 281 } } }. */
 export type SourceDistrictCounts = Record<string, Record<string, Partial<Record<'SALE' | 'RENT', number>>>>;
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Whether stored run counts use the per-source shape. No district slug is a
+ * source id, so a top level with a source id is the new shape; without one it is
+ * the old `{ district: {...} }` shape.
+ */
+export function isPerSourceShape(counts: unknown): counts is Record<string, unknown> {
+  return isRecord(counts) && Object.keys(counts).some((key) => (SOURCE_IDS as readonly string[]).includes(key));
 }
 
 /**
@@ -30,7 +39,7 @@ export function previousCountFrom(
 ): number | null {
   if (!isRecord(counts)) return null;
 
-  const isNewShape = Object.keys(counts).some((key) => (SOURCE_IDS as readonly string[]).includes(key));
+  const isNewShape = isPerSourceShape(counts);
   const byDistrict = isNewShape ? counts[source] : source === 'urbania' ? counts : null;
   if (!isRecord(byDistrict)) return null;
 

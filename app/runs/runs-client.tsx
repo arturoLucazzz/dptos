@@ -3,16 +3,8 @@
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { SOURCE_LABELS, type SourceId } from "@/lib/listing-card";
-
-export interface RunSource {
-  id: string;
-  /** False when the run observed the source but did not record it (gated or incomplete). */
-  recorded: boolean;
-  sale: number;
-  rent: number;
-  districts: { slug: string; sale: number; rent: number }[];
-}
+import type { RunSourceSection } from "@/lib/run-sources";
+import { SOURCE_LABELS } from "@/lib/listing-card";
 
 export interface RunRow {
   id: string;
@@ -27,7 +19,7 @@ export interface RunRow {
   notes: string | null;
   sale: number;
   rent: number;
-  sources: RunSource[];
+  sources: RunSourceSection[];
   durationMs: number | null;
 }
 
@@ -104,7 +96,7 @@ export function RunsClient({ runs }: { runs: RunRow[] }) {
                   return (
                     <section key={source.id} className="space-y-2">
                       <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="font-medium">{SOURCE_LABELS[source.id as SourceId] ?? source.id}</h3>
+                        <h3 className="font-medium">{SOURCE_LABELS[source.id]}</h3>
                         <span className="text-muted-foreground">
                           {source.sale.toLocaleString("es-PE")} venta · {source.rent.toLocaleString("es-PE")} alquiler
                         </span>
