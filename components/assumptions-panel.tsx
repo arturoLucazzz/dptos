@@ -47,15 +47,15 @@ const FIELDS: FieldSpec[] = [
   },
   {
     key: "cashAvailablePen",
-    label: "Efectivo disponible (S/)",
+    label: "Efectivo disponible",
     suffix: "S/",
     tip: "Lo que tienes hoy. Primero paga los gastos de compra y el resto es la inicial. Déjalo vacío para usar la Inicial en %.",
     allowDecimal: false,
   },
   {
     key: "extraMonthlyPen",
-    label: "Amortización extra (S/ por mes)",
-    suffix: "S/",
+    label: "Amortización extra",
+    suffix: "S/ por mes",
     tip: "Lo que pagarías cada mes además de la cuota, para terminar antes el crédito.",
     allowDecimal: false,
   },

@@ -78,6 +78,16 @@ function prepaymentText(row: DepartamentosRow): string {
   return `Terminas ${years} años antes · ahorras ${formatPen(savings.interestSavedPen)}`;
 }
 
+const SORT_LABELS: Record<DepartamentosSortId, string> = {
+  monthlyGain: "ganas / pones",
+  pricePen: "precio",
+  coverage: "% cobertura",
+  aporte: "de bolsillo",
+  cuota: "cuota",
+  descuento: "% vs precio justo",
+  inicial100: "% inicial necesario",
+};
+
 function SortHeader({
   label,
   active,
@@ -486,7 +496,7 @@ export function DepartamentosTable({
             {" · "}
             página {page} de {pageCount}
             {" · "}
-            orden {sort} ({order === "desc" ? "↓" : "↑"})
+            orden {SORT_LABELS[sort]} ({order === "desc" ? "↓" : "↑"})
           </p>
           <div className="flex items-center gap-2">
             <Button
