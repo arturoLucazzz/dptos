@@ -40,6 +40,11 @@ interface UnitSpec {
   unitNumber?: string;
   publisherName?: string;
   raw?: unknown;
+  /** Exact position; defaults to the district center. */
+  lat?: number;
+  lon?: number;
+  /** Defaults to SALE. For RENT, pricePen is the monthly rent. */
+  operation?: Operation;
 }
 
 function districtOf(slug: string) {
@@ -54,7 +59,7 @@ function unit(spec: UnitSpec): ListingCard {
   return emptyCard(spec.source, {
     sourcePostingId,
     kind: 'UNIT',
-    operation: Operation.SALE,
+    operation: spec.operation ?? Operation.SALE,
     postingType: 'PROPERTY',
     realEstateType: 'Departamentos',
     url: `https://example.invalid/${spec.source}/${sourcePostingId}`,
@@ -75,8 +80,8 @@ function unit(spec: UnitSpec): ListingCard {
     districtName: district.name,
     districtSlug: district.slug,
     cityName: 'Lima',
-    latitude: district.lat,
-    longitude: district.lon,
+    latitude: spec.lat ?? district.lat,
+    longitude: spec.lon ?? district.lon,
     publisherId: `caso-${spec.id}`,
     publisherName: spec.publisherName ?? 'Inmobiliaria Caso',
     buildingName: spec.buildingName ?? null,
@@ -99,6 +104,31 @@ export function buildInvestorCases(): InvestorCase[] {
   };
 
   const hurriedPrices = [560_000, 535_000, 515_000, 495_000];
+
+  // About 150 m north of the seeded San Isidro square, inside Lince.
+  const nearSanIsidro = { lat: -12.0907, lon: -77.0362 };
+  // West of Lince, over 1 km from Parque Castilla and from San Isidro.
+  const farFromZones = { lat: -12.08, lon: -77.045 };
+  // A Miraflores pocket where 12 two-bedroom rents ask 25% over the district.
+  const pricyPocket = { lat: -12.118, lon: -77.033 };
+  const mirafloresRentPerM2 = DISTRICTS.find((d) => d.slug === 'miraflores')!.rentPerM2;
+  const pocketRents = Array.from({ length: 12 }, (_, i) => {
+    const areaM2 = 66 + (i % 5) * 2;
+    return unit({
+      source: 'urbania',
+      id: `alquiler-local-alto-renta-${i + 1}`,
+      district: 'miraflores',
+      operation: Operation.RENT,
+      pricePen: Math.round(mirafloresRentPerM2 * 1.25 * areaM2),
+      areaM2,
+      bedrooms: 2,
+      maintenancePen: null,
+      address: `Calle Schell ${310 + i * 12}`,
+      unitNumber: String(201 + i),
+      lat: pricyPocket.lat + ((i % 4) - 1.5) * 0.0008,
+      lon: pricyPocket.lon + (Math.floor(i / 4) - 1) * 0.0008,
+    });
+  });
 
   return [
     {
@@ -265,6 +295,66 @@ export function buildInvestorCases(): InvestorCase[] {
           maintenancePen: 800,
           address: 'Av. Camino Real 1020',
         }),
+      ],
+    },
+    {
+      id: 'lince-junto-a-san-isidro',
+      title: 'Lince junto a San Isidro',
+      screen: '/departamentos',
+      lookFor:
+        'Columna "Ubicación" alta. Al pasar el mouse: "Cerca de San Isidro (tu zona, 9/10), a 140 m". Mismo distrito que "Lince lejos de toda zona", mejor puntaje.',
+      cards: [
+        unit({
+          source: 'urbania',
+          id: 'lince-junto-a-san-isidro',
+          district: 'lince',
+          pricePen: 420_000,
+          areaM2: 70,
+          bedrooms: 2,
+          maintenancePen: 250,
+          address: 'Av. Arequipa 2810',
+          ...nearSanIsidro,
+        }),
+      ],
+    },
+    {
+      id: 'lince-lejos',
+      title: 'Lince lejos de toda zona',
+      screen: '/departamentos',
+      lookFor: 'Columna "Ubicación" más baja que "Lince junto a San Isidro". Sus razones no nombran ninguna de tus zonas.',
+      cards: [
+        unit({
+          source: 'urbania',
+          id: 'lince-lejos',
+          district: 'lince',
+          pricePen: 420_000,
+          areaM2: 70,
+          bedrooms: 2,
+          maintenancePen: 250,
+          address: 'Jr. Bernardo Alcedo 250',
+          ...farFromZones,
+        }),
+      ],
+    },
+    {
+      id: 'alquiler-local-alto',
+      title: 'Alquiler local sobre la mediana del distrito',
+      screen: '/departamentos',
+      lookFor:
+        'Debajo de "% cobertura": "Alquiler estimado S/ … (12 alquileres a menos de … m). Los mejores cercanos: S/ …". El alquiler sale más alto que la mediana de Miraflores, porque los alquileres de esa cuadra piden 25% más.',
+      cards: [
+        unit({
+          source: 'urbania',
+          id: 'alquiler-local-alto',
+          district: 'miraflores',
+          pricePen: 640_000,
+          areaM2: 75,
+          bedrooms: 2,
+          maintenancePen: 350,
+          address: 'Calle Schell 300',
+          ...pricyPocket,
+        }),
+        ...pocketRents,
       ],
     },
   ];

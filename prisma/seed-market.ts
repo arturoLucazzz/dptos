@@ -50,6 +50,7 @@ import { randomUUID } from 'node:crypto';
 const MS_PER_WEEK = 7 * 86_400_000;
 
 import { DISTRICTS } from './seed-districts';
+import { seedLocation } from './seed-location';
 
 const STREETS = [
   'Jr. Pedro Conde',
@@ -606,6 +607,7 @@ async function main() {
 
   await verify(units);
   await ingestInvestorCases();
+  await seedLocation(prisma);
 }
 
 /**
@@ -671,6 +673,9 @@ function printChecklist(cases: InvestorCase[]) {
     }
   }
   console.log('\n  Abre /departamentos?efectivo=200000&extra=500 para la ganga, y cambia a 80000 para verla pasar a "Pones".');
+  console.log('\n  /zonas');
+  console.log('    San Isidro (distrito, 9) y Parque Castilla (punto, 400 m, 9). Cambia una nota, guarda,');
+  console.log('    y mira cómo cambia la columna "Ubicación" en /departamentos?efectivo=200000&ubicacion=6.');
 }
 
 /**

@@ -7,6 +7,9 @@ import type { ListingCard } from '../lib/listing-card';
 import { validateManualListing } from '../lib/manual-listing';
 import { buildInvestorCases, type InvestorCase } from './seed-cases';
 import { DISTRICTS } from './seed-districts';
+import { seedPlaces, seedZoneShapes } from './seed-location';
+import { scoreAll, type ScoreSubject } from '../lib/location/score';
+import type { RentPoint } from '../lib/location/local-rent';
 
 const IDS = [
   'ganga-lince',
@@ -17,6 +20,9 @@ const IDS = [
   'en-planos',
   'aviso-facebook',
   'pierde-plata',
+  'lince-junto-a-san-isidro',
+  'lince-lejos',
+  'alquiler-local-alto',
 ];
 
 const cases = buildInvestorCases();
@@ -44,7 +50,7 @@ function financeOf(card: ListingCard, cashAvailablePen = 80_000) {
 }
 
 describe('buildInvestorCases', () => {
-  it('has the 8 cases, each once', () => {
+  it('has the 11 cases, each once', () => {
     assert.deepEqual(cases.map((c) => c.id).sort(), [...IDS].sort());
   });
 
@@ -99,5 +105,48 @@ describe('buildInvestorCases', () => {
     const card = byId('en-planos').cards[0]!;
     assert.equal(card.kind, 'PROJECT');
     assert.equal(card.priceIsFrom, true);
+  });
+});
+
+describe('location cases', () => {
+  const saleSubject = (id: string): ScoreSubject => {
+    const card = byId(id).cards.find((c) => c.operation === 'SALE')!;
+    return { propertyId: id, districtSlug: card.districtSlug!, lat: card.latitude, lon: card.longitude, bedrooms: card.bedrooms };
+  };
+  const rents: RentPoint[] = byId('alquiler-local-alto')
+    .cards.filter((c) => c.operation === 'RENT')
+    .map((c) => ({ lat: c.latitude!, lon: c.longitude!, perM2: c.priceAmount! / c.areaTotal!, bedrooms: c.bedrooms }));
+  const results = scoreAll({
+    subjects: ['lince-junto-a-san-isidro', 'lince-lejos', 'alquiler-local-alto'].map(saleSubject),
+    places: seedPlaces(),
+    zones: seedZoneShapes(),
+    districtStats: [],
+    rentActivity: [],
+    rents,
+  });
+  const result = (id: string) => results.find((r) => r.propertyId === id)!;
+
+  it('the location cases score as their titles say', () => {
+    const near = result('lince-junto-a-san-isidro');
+    const far = result('lince-lejos');
+    assert.equal(near.status, 'OK');
+    assert.ok(near.score! > far.score!, `${near.score} vs ${far.score}`);
+    assert.ok(near.reasons.some((r) => r.text.startsWith('Cerca de San Isidro (tu zona, 9/10)')), JSON.stringify(near.reasons));
+    assert.ok(!far.reasons.some((r) => r.text.includes('tu zona')), JSON.stringify(far.reasons));
+  });
+
+  it('the local-rent case gets a local rent above its district median', () => {
+    const local = result('alquiler-local-alto').localRent;
+    const miraflores = DISTRICTS.find((d) => d.slug === 'miraflores')!;
+    assert.ok(local, 'no local rent');
+    assert.ok(local.n >= 8);
+    assert.ok(local.middlePerM2 > miraflores.rentPerM2 * 1.15, `${local.middlePerM2}`);
+  });
+
+  it('the seed boundaries and zones make San Isidro a district zone and Parque Castilla a 400 m point', () => {
+    const zones = seedZoneShapes();
+    assert.equal(zones.find((z) => z.name === 'San Isidro')?.kind, 'DISTRICT');
+    const castilla = zones.find((z) => z.name === 'Parque Castilla');
+    assert.ok(castilla?.kind === 'CIRCLE' && castilla.radiusM === 400 && castilla.rating === 9);
   });
 });
