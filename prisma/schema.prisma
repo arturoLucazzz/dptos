@@ -373,6 +373,8 @@ model Assumptions {
 
   // ---- Financing defaults, all editable in the UI ----
   downPaymentPct Decimal @db.Decimal(5, 2)
+  /// Lowest down payment, as % of price, that banks usually accept. Drives a warning.
+  bankMinDownPaymentPct Decimal @default(20) @db.Decimal(5, 2)
   /// Rate of the loan itself. Splits the payment into interest and principal.
   tea            Decimal @db.Decimal(5, 2)
   /// Includes life and property insurance and fees, so it is the real cash outflow.

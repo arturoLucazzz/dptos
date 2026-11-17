@@ -20,6 +20,8 @@ export const DEFAULT_ASSUMPTIONS = {
   usdPen: 3.75,
 
   downPaymentPct: 10,
+  /** Lowest down payment banks usually accept for an investment purchase. */
+  bankMinDownPaymentPct: 20,
   /** Rate of the loan itself, which splits the payment into interest and principal. */
   tea: 8,
   /** Includes life and property insurance and fees, so it is the real outflow. */
@@ -55,22 +57,30 @@ export const DEFAULT_ASSUMPTIONS = {
   defaultArbitrios: 120,
 } as const;
 
-/** The four numbers the assumptions panel edits. */
+/** The numbers the assumptions panel edits. */
 export type PanelAssumptions = Pick<
   FinanceAssumptions,
-  'downPaymentPct' | 'tea' | 'tcea' | 'termYears'
->;
+  'downPaymentPct' | 'tea' | 'tcea' | 'termYears' | 'cashAvailablePen'
+> & {
+  /** Extra paid toward the loan each month, for the early-payment column. */
+  extraMonthlyPen: number;
+};
 
 export const DEFAULT_PANEL: PanelAssumptions = {
   downPaymentPct: DEFAULT_ASSUMPTIONS.downPaymentPct,
   tea: DEFAULT_ASSUMPTIONS.tea,
   tcea: DEFAULT_ASSUMPTIONS.tcea,
   termYears: DEFAULT_ASSUMPTIONS.termYears,
+  cashAvailablePen: null,
+  extraMonthlyPen: 0,
 };
 
 /** Cost + rental constants that do not change with the panel. */
 export type FixedAssumptions = CostAssumptions &
-  Pick<FinanceAssumptions, 'vacancyMonthsPerYear' | 'rentGrowthPct' | 'rentIncomeTaxPct'>;
+  Pick<
+    FinanceAssumptions,
+    'vacancyMonthsPerYear' | 'rentGrowthPct' | 'rentIncomeTaxPct' | 'bankMinDownPaymentPct'
+  >;
 
 export function fixedFromDefaults(
   over: Partial<FixedAssumptions> = {}
@@ -91,16 +101,25 @@ export function fixedFromDefaults(
     vacancyMonthsPerYear: DEFAULT_ASSUMPTIONS.vacancyMonthsPerYear,
     rentGrowthPct: DEFAULT_ASSUMPTIONS.rentGrowthPct,
     rentIncomeTaxPct: DEFAULT_ASSUMPTIONS.rentIncomeTaxPct,
+    bankMinDownPaymentPct: DEFAULT_ASSUMPTIONS.bankMinDownPaymentPct,
     ...over,
   };
 }
 
 export function financeFrom(
   panel: PanelAssumptions,
-  fixed: Pick<FinanceAssumptions, 'vacancyMonthsPerYear' | 'rentGrowthPct' | 'rentIncomeTaxPct'>
+  fixed: Pick<
+    FinanceAssumptions,
+    'vacancyMonthsPerYear' | 'rentGrowthPct' | 'rentIncomeTaxPct' | 'bankMinDownPaymentPct'
+  >
 ): FinanceAssumptions {
   return {
-    ...panel,
+    downPaymentPct: panel.downPaymentPct,
+    tea: panel.tea,
+    tcea: panel.tcea,
+    termYears: panel.termYears,
+    cashAvailablePen: panel.cashAvailablePen,
+    bankMinDownPaymentPct: fixed.bankMinDownPaymentPct,
     vacancyMonthsPerYear: fixed.vacancyMonthsPerYear,
     rentGrowthPct: fixed.rentGrowthPct,
     rentIncomeTaxPct: fixed.rentIncomeTaxPct,

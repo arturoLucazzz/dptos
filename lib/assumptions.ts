@@ -26,6 +26,7 @@ export interface Assumptions extends CostAssumptions {
   vacancyMonthsPerYear: number;
   rentGrowthPct: number;
   rentIncomeTaxPct: number;
+  bankMinDownPaymentPct: number;
   updatedAt: Date | null;
 }
 
@@ -64,6 +65,7 @@ export async function getAssumptions(): Promise<Assumptions> {
     vacancyMonthsPerYear: num(row.vacancyMonthsPerYear),
     rentGrowthPct: num(row.rentGrowthPct),
     rentIncomeTaxPct: num(row.rentIncomeTaxPct),
+    bankMinDownPaymentPct: num(row.bankMinDownPaymentPct),
     defaultMaintenancePerM2: num(row.defaultMaintenancePerM2),
     alcabalaRatePct: num(row.alcabalaRatePct),
     alcabalaExemptUit: num(row.alcabalaExemptUit),
@@ -101,6 +103,7 @@ export async function getFixedAssumptions(): Promise<FixedAssumptions> {
     vacancyMonthsPerYear: a.vacancyMonthsPerYear,
     rentGrowthPct: a.rentGrowthPct,
     rentIncomeTaxPct: a.rentIncomeTaxPct,
+    bankMinDownPaymentPct: a.bankMinDownPaymentPct,
   });
 }
 

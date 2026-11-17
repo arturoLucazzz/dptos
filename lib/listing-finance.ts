@@ -14,9 +14,15 @@ export function loanForListing(
   fixed: FixedAssumptions
 ): Loan | null {
   if (!(listing.pricePen > 0)) return null;
+  const purchase = purchaseCosts({
+    pricePen: listing.pricePen,
+    isFirstSaleFromDeveloper: listing.isFirstSaleFromDeveloper,
+    assumptions: fixed,
+  });
   return loanFor({
     pricePen: listing.pricePen,
     assumptions: financeFrom(panel, fixed),
+    purchaseCostsPen: purchase.totalPen,
   });
 }
 

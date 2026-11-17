@@ -27,6 +27,8 @@ export const departamentosSearchParams = {
   tea: parseAsFloat.withDefault(DEFAULT_PANEL.tea),
   tcea: parseAsFloat.withDefault(DEFAULT_PANEL.tcea),
   plazo: parseAsInteger.withDefault(DEFAULT_PANEL.termYears),
+  efectivo: parseAsFloat,
+  extra: parseAsFloat.withDefault(DEFAULT_PANEL.extraMonthlyPen),
   sort: parseAsStringLiteral(DEPARTAMENTOS_SORT_IDS).withDefault('coverage'),
   order: parseAsStringLiteral(['asc', 'desc'] as const).withDefault('desc'),
   page: parseAsInteger.withDefault(1),
@@ -45,6 +47,8 @@ export function departamentosApiQuery(state: {
   tea: number;
   tcea: number;
   plazo: number;
+  efectivo: number | null;
+  extra: number;
   sort: string;
   order: string;
   page: number;
@@ -61,6 +65,8 @@ export function departamentosApiQuery(state: {
   params.set('tea', String(state.tea));
   params.set('tcea', String(state.tcea));
   params.set('plazo', String(state.plazo));
+  if (state.efectivo != null) params.set('efectivo', String(state.efectivo));
+  if (state.extra > 0) params.set('extra', String(state.extra));
   params.set('sort', state.sort);
   params.set('order', state.order);
   params.set('page', String(state.page));

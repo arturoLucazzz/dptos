@@ -12,7 +12,13 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { MultiSelect, type MultiSelectOption } from "@/components/ui/multi-select";
-import { DEFAULT_PANEL, type FixedAssumptions, type PanelAssumptions } from "@/lib/assumption-defaults";
+import {
+  DEFAULT_PANEL,
+  financeFrom,
+  fixedFromDefaults,
+  type FixedAssumptions,
+  type PanelAssumptions,
+} from "@/lib/assumption-defaults";
 import type {
   DepartamentosQueryResult,
   DepartamentosSortId,
@@ -69,6 +75,8 @@ function panelToStrings(panel: PanelAssumptions): PanelDraftStrings {
     tea: String(panel.tea),
     tcea: String(panel.tcea),
     termYears: String(panel.termYears),
+    cashAvailablePen: optionalNumberString(panel.cashAvailablePen),
+    extraMonthlyPen: panel.extraMonthlyPen > 0 ? String(panel.extraMonthlyPen) : "",
   };
 }
 
@@ -79,6 +87,9 @@ function parsePanelDraft(panel: PanelDraftStrings): PanelAssumptions {
     tea: parseNumericInput(panel.tea) ?? DEFAULT_PANEL.tea,
     tcea: parseNumericInput(panel.tcea) ?? DEFAULT_PANEL.tcea,
     termYears: Math.round(parseNumericInput(panel.termYears) ?? DEFAULT_PANEL.termYears),
+    // Empty means "use the Inicial %", so empty is a value here, not mid-edit.
+    cashAvailablePen: parseNumericInput(panel.cashAvailablePen),
+    extraMonthlyPen: parseNumericInput(panel.extraMonthlyPen) ?? 0,
   };
 }
 
@@ -93,7 +104,9 @@ function draftEqualsUrl(a: DraftFilters, b: DraftFilters): boolean {
     a.panel.downPaymentPct === b.panel.downPaymentPct &&
     a.panel.tea === b.panel.tea &&
     a.panel.tcea === b.panel.tcea &&
-    a.panel.termYears === b.panel.termYears
+    a.panel.termYears === b.panel.termYears &&
+    a.panel.cashAvailablePen === b.panel.cashAvailablePen &&
+    a.panel.extraMonthlyPen === b.panel.extraMonthlyPen
   );
 }
 
@@ -115,6 +128,8 @@ export function DepartamentosUnifiedClient() {
       tea: urlState.tea,
       tcea: urlState.tcea,
       termYears: urlState.plazo,
+      cashAvailablePen: urlState.efectivo,
+      extraMonthlyPen: urlState.extra,
     }),
   }));
 
@@ -132,6 +147,8 @@ export function DepartamentosUnifiedClient() {
         tea: urlState.tea,
         tcea: urlState.tcea,
         termYears: urlState.plazo,
+        cashAvailablePen: urlState.efectivo,
+        extraMonthlyPen: urlState.extra,
       }),
     };
     // eslint-disable-next-line react-hooks/set-state-in-effect -- sync from URL navigation
@@ -147,6 +164,8 @@ export function DepartamentosUnifiedClient() {
     urlState.tea,
     urlState.tcea,
     urlState.plazo,
+    urlState.efectivo,
+    urlState.extra,
   ]);
 
   const debouncedDraft = useDebouncedValue(draft, 300);
@@ -174,6 +193,8 @@ export function DepartamentosUnifiedClient() {
         parseNumericInput(debouncedDraft.panel.termYears) != null
           ? Math.round(parseNumericInput(debouncedDraft.panel.termYears)!)
           : current.plazo,
+      efectivo: parseNumericInput(debouncedDraft.panel.cashAvailablePen),
+      extra: parseNumericInput(debouncedDraft.panel.extraMonthlyPen) ?? 0,
     };
 
     const filtersChanged =
@@ -186,7 +207,9 @@ export function DepartamentosUnifiedClient() {
       next.inicial !== current.inicial ||
       next.tea !== current.tea ||
       next.tcea !== current.tcea ||
-      next.plazo !== current.plazo;
+      next.plazo !== current.plazo ||
+      next.efectivo !== current.efectivo ||
+      next.extra !== current.extra;
 
     if (!filtersChanged) return;
 
@@ -207,6 +230,8 @@ export function DepartamentosUnifiedClient() {
         tea: urlState.tea,
         tcea: urlState.tcea,
         plazo: urlState.plazo,
+        efectivo: urlState.efectivo,
+        extra: urlState.extra,
         sort: urlState.sort,
         order: urlState.order,
         page: urlState.page,
@@ -227,13 +252,10 @@ export function DepartamentosUnifiedClient() {
 
   const warnings = useMemo(
     () =>
-      assumptionWarnings({
-        ...parsePanelDraft(draft.panel),
-        vacancyMonthsPerYear: 1,
-        rentGrowthPct: 3,
-        rentIncomeTaxPct: 5,
-      }),
-    [draft.panel]
+      assumptionWarnings(
+        financeFrom(parsePanelDraft(draft.panel), data?.fixedAssumptions ?? fixedFromDefaults())
+      ),
+    [draft.panel, data?.fixedAssumptions]
   );
 
   const setPanelField = useCallback(

@@ -56,10 +56,18 @@ export interface FinanceAssumptions {
   vacancyMonthsPerYear: number;
   rentGrowthPct: number;
   rentIncomeTaxPct: number;
+  /** Cash the investor has. When set, it pays the purchase costs, then the down payment. */
+  cashAvailablePen: number | null;
+  /** Lowest down payment, as % of price, that banks usually accept. */
+  bankMinDownPaymentPct: number;
 }
 
 export interface Loan {
   downPaymentPen: number;
+  /** Down payment as a share of the price. */
+  downPaymentPct: number;
+  /** Cash mode only: the cash does not even cover the purchase costs. */
+  outOfReach: boolean;
   loanPen: number;
   /** Real cash out each month, from the TCEA. */
   paymentPen: number;
@@ -67,14 +75,31 @@ export interface Loan {
   amortizingPaymentPen: number;
 }
 
-export function loanFor(input: { pricePen: number; assumptions: FinanceAssumptions }): Loan {
+export function loanFor(input: {
+  pricePen: number;
+  assumptions: FinanceAssumptions;
+  /** One-off costs the cash pays first, in cash mode. */
+  purchaseCostsPen?: number;
+}): Loan {
   const { pricePen, assumptions: a } = input;
   const price = Math.max(0, pricePen);
-  const downPaymentPen = price * (Math.min(Math.max(a.downPaymentPct, 0), 100) / 100);
+  let downPaymentPen: number;
+  let outOfReach = false;
+
+  if (a.cashAvailablePen != null) {
+    const costs = Math.max(0, input.purchaseCostsPen ?? 0);
+    const cash = Math.max(0, a.cashAvailablePen);
+    outOfReach = cash < costs;
+    downPaymentPen = Math.min(price, Math.max(0, cash - costs));
+  } else {
+    downPaymentPen = price * (Math.min(Math.max(a.downPaymentPct, 0), 100) / 100);
+  }
   const loanPen = price - downPaymentPen;
 
   return {
     downPaymentPen,
+    downPaymentPct: price > 0 ? (downPaymentPen / price) * 100 : 0,
+    outOfReach,
     loanPen,
     paymentPen: monthlyPayment({
       principalPen: loanPen,
@@ -222,6 +247,28 @@ export function crossoverYear(input: {
   return whole > a.termYears ? null : whole;
 }
 
+/**
+ * What the investor adds from their own pocket until rent overtakes the payment.
+ *
+ * Year by year, with net rent growing at the rent growth rate and the payment fixed,
+ * the same model as `crossoverYear`. Never past the end of the loan.
+ */
+export function totalAddedUntilCrossover(input: {
+  netRentPen: number;
+  paymentPen: number;
+  assumptions: FinanceAssumptions;
+}): number {
+  const { netRentPen, paymentPen, assumptions: a } = input;
+  const growth = 1 + Math.max(0, a.rentGrowthPct) / 100;
+  let total = 0;
+  for (let year = 1; year <= a.termYears; year++) {
+    const net = netRentPen * growth ** (year - 1);
+    if (net >= paymentPen) break;
+    total += 12 * (paymentPen - net);
+  }
+  return total;
+}
+
 export interface AmortizationYear {
   year: number;
   interestPen: number;
@@ -345,6 +392,13 @@ export function assumptionWarnings(a: FinanceAssumptions): AssumptionWarning[] {
     });
   }
 
+  if (a.cashAvailablePen == null && a.downPaymentPct < a.bankMinDownPaymentPct) {
+    warnings.push({
+      kind: 'DOWN_PAYMENT_BELOW_BANK_MINIMUM',
+      message: `La inicial está por debajo del mínimo que suelen pedir los bancos (${a.bankMinDownPaymentPct}%).`,
+    });
+  }
+
   return warnings;
 }
 
@@ -355,8 +409,15 @@ export interface ListingFinance extends Coverage {
   netYieldPct: number;
   downPaymentPctForFullCoverage: number | null;
   crossoverYear: number | null;
-  /** Down payment plus the one-off purchase costs. */
+  /** Down payment plus the one-off purchase costs: the cash on day one. */
   entryCostPen: number;
+  /** Net rent minus the real monthly payment. Negative means the investor adds money. */
+  monthlyGainPen: number;
+  /** Yearly gain over the cash on day one. Null when there is no gain to show. */
+  yearlyGainPctOnCash: number | null;
+  totalAddedUntilCrossoverPen: number;
+  /** Cash mode: the down payment the cash leaves is below what banks usually accept. */
+  belowBankMinimum: boolean;
 }
 
 /** Everything the table shows for one listing, in one pass. */
@@ -367,7 +428,11 @@ export function listingFinance(input: {
   purchaseCostsPen: number;
   assumptions: FinanceAssumptions;
 }): ListingFinance {
-  const loan = loanFor({ pricePen: input.pricePen, assumptions: input.assumptions });
+  const loan = loanFor({
+    pricePen: input.pricePen,
+    assumptions: input.assumptions,
+    purchaseCostsPen: input.purchaseCostsPen,
+  });
   const netRentPen = netMonthlyRent({
     grossRentPen: input.grossRentPen,
     monthlyCostsPen: input.monthlyCostsPen,
@@ -377,6 +442,8 @@ export function listingFinance(input: {
     netRentPen,
     paymentPen: loan.paymentPen,
   });
+  const entryCostPen = loan.downPaymentPen + Math.max(0, input.purchaseCostsPen);
+  const monthlyGainPen = netRentPen - loan.paymentPen;
 
   return {
     loan,
@@ -395,6 +462,18 @@ export function listingFinance(input: {
       paymentPen: loan.paymentPen,
       assumptions: input.assumptions,
     }),
-    entryCostPen: loan.downPaymentPen + Math.max(0, input.purchaseCostsPen),
+    entryCostPen,
+    monthlyGainPen,
+    yearlyGainPctOnCash:
+      monthlyGainPen > 0 && entryCostPen > 0 ? ((monthlyGainPen * 12) / entryCostPen) * 100 : null,
+    totalAddedUntilCrossoverPen: totalAddedUntilCrossover({
+      netRentPen,
+      paymentPen: loan.paymentPen,
+      assumptions: input.assumptions,
+    }),
+    belowBankMinimum:
+      input.assumptions.cashAvailablePen != null &&
+      loan.loanPen > 0 &&
+      loan.downPaymentPct < input.assumptions.bankMinDownPaymentPct,
   };
 }

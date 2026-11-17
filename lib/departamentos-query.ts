@@ -112,6 +112,8 @@ export function parseDepartamentosSearchParams(params: URLSearchParams): Departa
       tea: parseOptionalNumber(params.get('tea')) ?? DEFAULT_PANEL.tea,
       tcea: parseOptionalNumber(params.get('tcea')) ?? DEFAULT_PANEL.tcea,
       termYears: parseOptionalInt(params.get('plazo')) ?? DEFAULT_PANEL.termYears,
+      cashAvailablePen: parseOptionalNumber(params.get('efectivo')),
+      extraMonthlyPen: parseOptionalNumber(params.get('extra')) ?? DEFAULT_PANEL.extraMonthlyPen,
     },
     sort,
     order,
