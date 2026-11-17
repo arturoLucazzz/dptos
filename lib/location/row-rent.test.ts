@@ -38,3 +38,17 @@ test('rentForRow with no area cannot use the local rate and falls back', () => {
   assert.equal(r.rentIsLocal, false);
   assert.equal(r.rentSampleN, null);
 });
+
+test('rentLine names the nearby sample and the high end', async () => {
+  const { rentLine } = await import('./row-rent');
+  const { formatPen } = await import('../listing-finance');
+  assert.equal(
+    rentLine({ grossRentPen: 2_200, rentSampleN: 14, rentIsLocal: true, rentMaxDistanceM: 731, rentHighPen: 2_500 }),
+    `Alquiler estimado ${formatPen(2_200)} (14 alquileres a menos de 800 m). Los mejores cercanos: ${formatPen(2_500)}`,
+  );
+  assert.equal(
+    rentLine({ grossRentPen: 1_800, rentSampleN: 30, rentIsLocal: false, rentMaxDistanceM: null, rentHighPen: null }),
+    `Alquiler estimado ${formatPen(1_800)} (mediana del distrito)`,
+  );
+  assert.equal(rentLine({ grossRentPen: null, rentSampleN: null, rentIsLocal: false, rentMaxDistanceM: null, rentHighPen: null }), null);
+});

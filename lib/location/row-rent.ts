@@ -4,6 +4,7 @@
  */
 
 import type { RentEstimate } from '../rent';
+import { formatPen } from '../listing-finance';
 
 /** At this many nearby rents the local middle counts as solid. */
 export const LOCAL_HIGH_CONFIDENCE_N = 12;
@@ -41,4 +42,15 @@ export function rentForRow(input: {
     rentIsLocal: false,
     rentMaxDistanceM: null,
   };
+}
+
+/** The rent line under the coverage cell. Null when there is no rent at all. */
+export function rentLine(row: Pick<RowRent, 'grossRentPen' | 'rentSampleN' | 'rentIsLocal' | 'rentMaxDistanceM' | 'rentHighPen'>): string | null {
+  if (row.grossRentPen == null) return null;
+  if (row.rentIsLocal && row.rentMaxDistanceM != null) {
+    const within = Math.max(100, Math.ceil(row.rentMaxDistanceM / 100) * 100);
+    const high = row.rentHighPen != null ? `. Los mejores cercanos: ${formatPen(row.rentHighPen)}` : '';
+    return `Alquiler estimado ${formatPen(row.grossRentPen)} (${row.rentSampleN} alquileres a menos de ${within} m)${high}`;
+  }
+  return `Alquiler estimado ${formatPen(row.grossRentPen)} (mediana del distrito)`;
 }
