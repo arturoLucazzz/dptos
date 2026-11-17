@@ -33,6 +33,51 @@ interface DepartamentosTableProps {
   onReviewed: () => void;
 }
 
+/** Monthly gain in plain words, with the warnings an investor must see first. */
+function GainCell({ row }: { row: DepartamentosRow }) {
+  const { monthlyGainPen, yearlyGainPctOnCash, belowBankMinimum, outOfReach } = row;
+  return (
+    <div className="space-y-1 leading-tight">
+      {monthlyGainPen == null ? (
+        <span className="text-muted-foreground" title="Sin muestra de alquileres en el distrito">
+          —
+        </span>
+      ) : monthlyGainPen >= 0 ? (
+        <>
+          <div className="font-medium text-emerald-700">Ganas {formatPen(monthlyGainPen)}/mes</div>
+          {yearlyGainPctOnCash != null && (
+            <div className="text-xs text-muted-foreground">
+              {formatPct(yearlyGainPctOnCash)} al año sobre tu efectivo
+            </div>
+          )}
+        </>
+      ) : (
+        <div className="font-medium text-red-700">Pones {formatPen(-monthlyGainPen)}/mes</div>
+      )}
+      {outOfReach && (
+        <Badge variant="outline" className="border-red-400 text-red-800">
+          Fuera de alcance: tu efectivo no cubre los gastos de compra
+        </Badge>
+      )}
+      {belowBankMinimum && !outOfReach && (
+        <Badge variant="outline" className="border-amber-400 text-amber-800">
+          Inicial bajo el mínimo del banco
+        </Badge>
+      )}
+    </div>
+  );
+}
+
+function prepaymentText(row: DepartamentosRow): string {
+  const savings = row.prepayment?.shorterLoan;
+  if (!savings || savings.monthsSaved <= 0) return "—";
+  const years = (savings.monthsSaved / 12).toLocaleString("es-PE", {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  });
+  return `Terminas ${years} años antes · ahorras ${formatPen(savings.interestSavedPen)}`;
+}
+
 function SortHeader({
   label,
   active,
@@ -222,6 +267,7 @@ export function DepartamentosTable({
 }: DepartamentosTableProps) {
   const { isFavorite, toggleFavorite } = useFavorites();
   const pageCount = Math.max(1, Math.ceil(total / pageSize) || 1);
+  const hasPrepayment = data.some((r) => r.prepayment != null);
 
   const columns = useMemo<ColumnDef<DepartamentosRow>[]>(
     () => [
@@ -285,6 +331,47 @@ export function DepartamentosTable({
         header: "Dorm.",
         cell: ({ row }) => row.original.bedrooms ?? "—",
       },
+      {
+        id: "monthlyGain",
+        header: () => (
+          <SortHeader
+            label="Ganas / Pones"
+            active={sort === "monthlyGain"}
+            order={order}
+            onToggle={() => onSortChange("monthlyGain")}
+            tip="Alquiler neto (después de mantenimiento, meses vacíos e impuesto) menos la cuota con TCEA. Ganas = te sobra cada mes. Pones = lo pagas de tu bolsillo."
+          />
+        ),
+        cell: ({ row }) => <GainCell row={row.original} />,
+      },
+      {
+        id: "efectivoInicial",
+        header: "Efectivo inicial",
+        cell: ({ row }) => formatPen(row.original.entryCostPen),
+      },
+      {
+        id: "totalQuePones",
+        header: "Total que pones",
+        cell: ({ row }) => {
+          const { monthlyGainPen, totalAddedUntilCrossoverPen } = row.original;
+          if (monthlyGainPen == null) return "—";
+          if (monthlyGainPen >= 0) return formatPen(0);
+          return (
+            <span title="Suma de lo que pones cada mes hasta que el alquiler, que sube cada año, cubra la cuota.">
+              {formatPen(totalAddedUntilCrossoverPen)}
+            </span>
+          );
+        },
+      },
+      ...(hasPrepayment
+        ? ([
+            {
+              id: "amortizacion",
+              header: "Con amortización extra",
+              cell: ({ row }) => prepaymentText(row.original),
+            },
+          ] satisfies ColumnDef<DepartamentosRow>[])
+        : []),
       {
         id: "cuota",
         header: () => (
@@ -379,7 +466,7 @@ export function DepartamentosTable({
         cell: ({ row }) => formatPct(row.original.downPaymentPctForFullCoverage, 0),
       },
     ],
-    [isFavorite, toggleFavorite, sort, order, onSortChange, onReviewed]
+    [isFavorite, toggleFavorite, sort, order, onSortChange, onReviewed, hasPrepayment]
   );
 
   // eslint-disable-next-line react-hooks/incompatible-library -- expected with useReactTable

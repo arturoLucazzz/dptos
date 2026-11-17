@@ -9,10 +9,12 @@ import type { SourceId } from './listing-card';
 import type { ListingRow } from './listing-row';
 import { median } from './linalg';
 import { isSourceId } from './official-price';
+import { prepaymentSavings, type PrepaymentSavings } from './prepayment';
 
 export const DEPARTAMENTOS_PAGE_SIZE = 50;
 
 export const DEPARTAMENTOS_SORT_IDS = [
+  'monthlyGain',
   'pricePen',
   'coverage',
   'aporte',
@@ -44,6 +46,15 @@ export interface DepartamentosRow extends ListingRow {
   monthlyContributionPen: number | null;
   paymentPen: number | null;
   downPaymentPctForFullCoverage: number | null;
+  /** Net rent minus the payment. Negative means the investor adds money each month. */
+  monthlyGainPen: number | null;
+  yearlyGainPctOnCash: number | null;
+  /** Cash on day one: down payment plus purchase costs. */
+  entryCostPen: number | null;
+  totalAddedUntilCrossoverPen: number | null;
+  belowBankMinimum: boolean;
+  outOfReach: boolean;
+  prepayment: PrepaymentSavings | null;
 }
 
 export interface DepartamentosStats {
@@ -91,8 +102,8 @@ export function parseDepartamentosSearchParams(params: URLSearchParams): Departa
     .map((s) => s.trim())
     .filter(isSourceId);
 
-  const sortRaw = params.get('sort') ?? 'coverage';
-  const sort = isDepartamentosSortId(sortRaw) ? sortRaw : 'coverage';
+  const sortRaw = params.get('sort') ?? 'monthlyGain';
+  const sort = isDepartamentosSortId(sortRaw) ? sortRaw : 'monthlyGain';
   const orderRaw = params.get('order') ?? 'desc';
   const order = orderRaw === 'asc' ? 'asc' : 'desc';
 
@@ -123,6 +134,8 @@ export function parseDepartamentosSearchParams(params: URLSearchParams): Departa
 
 function sortValue(row: DepartamentosRow, sort: DepartamentosSortId): number {
   switch (sort) {
+    case 'monthlyGain':
+      return row.monthlyGainPen ?? Number.NEGATIVE_INFINITY;
     case 'pricePen':
       return row.pricePen;
     case 'coverage':
@@ -176,6 +189,20 @@ export function queryDepartamentos(
       monthlyContributionPen: finance?.monthlyContributionPen ?? null,
       paymentPen: loan?.paymentPen ?? null,
       downPaymentPctForFullCoverage: finance?.downPaymentPctForFullCoverage ?? null,
+      monthlyGainPen: finance?.monthlyGainPen ?? null,
+      yearlyGainPctOnCash: finance?.yearlyGainPctOnCash ?? null,
+      entryCostPen: finance?.entryCostPen ?? null,
+      totalAddedUntilCrossoverPen: finance?.totalAddedUntilCrossoverPen ?? null,
+      belowBankMinimum: finance?.belowBankMinimum ?? false,
+      outOfReach: loan?.outOfReach ?? false,
+      prepayment: loan
+        ? prepaymentSavings({
+            loanPen: loan.loanPen,
+            teaPct: input.panel.tea,
+            termYears: input.panel.termYears,
+            extraMonthlyPen: input.panel.extraMonthlyPen,
+          })
+        : null,
     };
   });
 

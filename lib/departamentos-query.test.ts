@@ -155,3 +155,55 @@ describe('parseDepartamentosSearchParams', () => {
     assert.deepEqual(parsed.sources, ['remax', 'urbania']);
   });
 });
+
+describe('queryDepartamentos investor numbers', () => {
+  const fixed = fixedFromDefaults();
+  const base = {
+    districts: [],
+    sources: [],
+    priceMin: null,
+    priceMax: null,
+    bedroomsMin: null,
+    bedroomsMax: null,
+    coverageMin: null,
+    order: 'desc' as const,
+    page: 1,
+  };
+  const listings = [
+    row({ postingId: 'cheap-rent', pricePen: 250_000, grossRentPen: 2_400 }),
+    row({ postingId: 'pricey', pricePen: 700_000, grossRentPen: 2_400 }),
+    row({ postingId: 'no-rent', pricePen: 200_000, grossRentPen: null }),
+  ];
+
+  it('sorts by monthly gain by default, highest first, rows without rent last', () => {
+    const params = parseDepartamentosSearchParams(new URLSearchParams());
+    assert.equal(params.sort, 'monthlyGain');
+    const result = queryDepartamentos(listings, fixed, { ...base, panel: DEFAULT_PANEL, sort: params.sort });
+    assert.deepEqual(result.rows.map((r) => r.postingId), ['cheap-rent', 'pricey', 'no-rent']);
+    const last = result.rows[2]!;
+    assert.equal(last.monthlyGainPen, null);
+    assert.equal(last.yearlyGainPctOnCash, null);
+    assert.equal(last.totalAddedUntilCrossoverPen, null);
+  });
+
+  it('puts all the cash in on day one when cash is below price plus costs', () => {
+    const panel = { ...DEFAULT_PANEL, cashAvailablePen: 80_000 };
+    const result = queryDepartamentos(listings, fixed, { ...base, panel, sort: 'monthlyGain' });
+    const row = result.rows.find((r) => r.postingId === 'pricey')!;
+    assert.ok(Math.abs(row.entryCostPen! - 80_000) < 0.01, `entry ${row.entryCostPen}`);
+  });
+
+  it('adds early-payment savings when an extra amount is set', () => {
+    const panel = { ...DEFAULT_PANEL, extraMonthlyPen: 500 };
+    const result = queryDepartamentos(listings, fixed, { ...base, panel, sort: 'monthlyGain' });
+    assert.ok(result.rows[0]!.prepayment!.shorterLoan.monthsSaved > 0);
+    const none = queryDepartamentos(listings, fixed, { ...base, panel: DEFAULT_PANEL, sort: 'monthlyGain' });
+    assert.equal(none.rows[0]!.prepayment, null);
+  });
+
+  it('reads efectivo and extra from the query string', () => {
+    const params = parseDepartamentosSearchParams(new URLSearchParams('efectivo=80000&extra=500'));
+    assert.equal(params.panel.cashAvailablePen, 80_000);
+    assert.equal(params.panel.extraMonthlyPen, 500);
+  });
+});

@@ -29,7 +29,7 @@ export const departamentosSearchParams = {
   plazo: parseAsInteger.withDefault(DEFAULT_PANEL.termYears),
   efectivo: parseAsFloat,
   extra: parseAsFloat.withDefault(DEFAULT_PANEL.extraMonthlyPen),
-  sort: parseAsStringLiteral(DEPARTAMENTOS_SORT_IDS).withDefault('coverage'),
+  sort: parseAsStringLiteral(DEPARTAMENTOS_SORT_IDS).withDefault('monthlyGain'),
   order: parseAsStringLiteral(['asc', 'desc'] as const).withDefault('desc'),
   page: parseAsInteger.withDefault(1),
 };
