@@ -104,8 +104,10 @@ async function crawlDistrictJson(opts: {
   retries: number;
   log: (message: string) => void;
   onBatch: (b: SourceBatch) => Promise<void>;
+  maxPages?: number;
 }): Promise<DistrictCrawl> {
   const { session, site, districtSlug, operation, wait, retries, log, onBatch } = opts;
+  const pageCap = opts.maxPages ?? Infinity;
   const baseUrl = NAVENT_BASE_URL[site];
   const result: SourceDistrictResult = { districtSlug, pagesFetched: 0, blocked: false, errors: [], claimedTotal: null };
   const emitted = new Set<string>();
@@ -180,8 +182,11 @@ async function crawlDistrictJson(opts: {
       if (parsed.totalPages == null) {
         return fail(new JsonPathError(`${districtSlug} page 1: no page count in the answer`, false));
       }
-      totalPages = parsed.totalPages;
-      log(`${site} ${districtSlug}: ${parsed.totalResults ?? '?'} results over ${totalPages} page(s) via JSON`);
+      totalPages = Math.min(parsed.totalPages, pageCap);
+      log(
+        `${site} ${districtSlug}: ${parsed.totalResults ?? '?'} results over ${parsed.totalPages} page(s) via JSON` +
+          (totalPages < parsed.totalPages ? `, reading ${totalPages}` : '')
+      );
     }
     // An empty page before the last one means the site stopped serving the
     // district (a cap on deep paging, for example), not that it ran out.
@@ -199,7 +204,8 @@ async function crawlDistrictJson(opts: {
   }
 
   log(`${site} ${districtSlug}: ${emitted.size} postings, ${result.pagesFetched} requests`);
-  const shortfall = isShortfall(emitted.size, result.claimedTotal);
+  // A capped crawl collects less than the claim on purpose.
+  const shortfall = opts.maxPages == null && isShortfall(emitted.size, result.claimedTotal);
   if (shortfall) {
     const message = `${districtSlug}: ${emitted.size} postings collected, ${result.claimedTotal} claimed`;
     log(`${site} ${districtSlug}: SHORT ${message}`);
@@ -231,7 +237,7 @@ export function naventAdapter(site: NaventSite, overrides: Partial<NaventAdapter
     id: site,
     operations: [Operation.SALE, Operation.RENT],
 
-    async crawl({ districts, operation, onBatch }) {
+    async crawl({ districts, operation, onBatch, maxPages }) {
       const deps = { ...defaultDeps(), ...overrides };
       const results: SourceDistrictResult[] = [];
       let incomplete = false;
@@ -241,7 +247,9 @@ export function naventAdapter(site: NaventSite, overrides: Partial<NaventAdapter
         session = await deps.createSession(NAVENT_BASE_URL[site]);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        if (site !== 'urbania') throw error;
+        // A capped crawl (scrape:check) must not turn into a full HTML crawl, and a
+        // pass from the fallback would hide that the JSON path broke.
+        if (site !== 'urbania' || maxPages != null) throw error;
         deps.log(`urbania: JSON session failed (${message}); crawling with the HTML crawler`);
         return deps.htmlCrawl({ districts, operation, onBatch });
       }
@@ -259,6 +267,7 @@ export function naventAdapter(site: NaventSite, overrides: Partial<NaventAdapter
               retries: deps.retries,
               log: deps.log,
               onBatch,
+              maxPages,
             });
           } catch (error) {
             // The browser died. The districts finished so far stand; the rest
@@ -279,7 +288,7 @@ export function naventAdapter(site: NaventSite, overrides: Partial<NaventAdapter
             results.push(crawl.result);
             continue;
           }
-          if (site !== 'urbania') {
+          if (site !== 'urbania' || maxPages != null) {
             // No HTML crawler to fall back on. Same rule as a short district.
             incomplete = true;
             results.push(crawl.result);

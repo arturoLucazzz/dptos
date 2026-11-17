@@ -272,3 +272,40 @@ describe('naventAdapter', () => {
     await assert.rejects(crawl(adapter, ['lince']), /has been closed/);
   });
 });
+
+describe('naventAdapter maxPages', () => {
+  it('fetches only the first results page when capped at 1, without an error', async () => {
+    const calls: string[] = [];
+    const session = fakeSession((_zone, page) => postingsPage([`p${page}a`, `p${page}b`], 6, 3), calls);
+    const adapter = naventAdapter('urbania', deps({ createSession: async () => session }));
+    const batches: SourceBatch[] = [];
+    const result = await adapter.crawl({
+      districts: ['lince'],
+      operation: Operation.SALE,
+      maxPages: 1,
+      onBatch: async (b) => void batches.push(b),
+    });
+    assert.deepEqual(calls.filter((c) => c.startsWith('post')), ['post 119493 p1']);
+    assert.equal(result.incomplete, false);
+    assert.deepEqual(result.districts[0]!.errors, []);
+    assert.equal(batches.flatMap((b) => b.cards).length, 2);
+  });
+});
+
+describe('naventAdapter maxPages without a fallback', () => {
+  it('fails the district instead of running the uncapped HTML crawler when the JSON path breaks', async () => {
+    const session = fakeSession(() => ({ nothing: true }));
+    const adapter = naventAdapter('urbania', deps({ createSession: async () => session }));
+    const result = await adapter.crawl({ districts: ['lince'], operation: Operation.SALE, maxPages: 1, onBatch: async () => {} });
+    assert.equal(result.incomplete, true);
+    assert.ok(result.districts[0]!.errors.length > 0);
+  });
+
+  it('throws instead of crawling HTML when the browser session cannot start', async () => {
+    const adapter = naventAdapter('urbania', deps({ createSession: async () => { throw new Error('no browser'); } }));
+    await assert.rejects(
+      adapter.crawl({ districts: ['lince'], operation: Operation.SALE, maxPages: 1, onBatch: async () => {} }),
+      /no browser/
+    );
+  });
+});

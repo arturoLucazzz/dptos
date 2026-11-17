@@ -96,7 +96,7 @@ export function properAdapter(overrides: Partial<ProperAdapterDeps> = {}): Sourc
     id: 'proper',
     operations: [Operation.SALE],
     wholeSite: true,
-    async crawl({ districts, operation, onBatch }): Promise<SourceCrawlResult> {
+    async crawl({ districts, operation, onBatch, maxPages }): Promise<SourceCrawlResult> {
       if (operation !== Operation.SALE) return { districts: [], skippedOutsideLima: 0, incomplete: false };
 
       // These two failing means nothing can be crawled: the source failed as a whole.
@@ -120,7 +120,21 @@ export function properAdapter(overrides: Partial<ProperAdapterDeps> = {}): Sourc
       let incomplete = false;
       let sharedPages = 2;
 
-      for (const { slug, distrito, immediate } of projects) {
+      // A capped crawl (scrape:check) reads the requested districts first, so one
+      // fetch is enough to see real cards.
+      const wanted = new Set(districts);
+      const ordered =
+        maxPages == null
+          ? projects
+          : [...projects]
+              .sort(
+                (a, b) =>
+                  Number(wanted.has(districtSlugFromName(b.distrito) ?? '')) -
+                  Number(wanted.has(districtSlugFromName(a.distrito) ?? ''))
+              )
+              .slice(0, maxPages);
+
+      for (const { slug, distrito, immediate } of ordered) {
         const listedSlug = districtSlugFromName(distrito);
         let cards: ListingCard[];
         try {

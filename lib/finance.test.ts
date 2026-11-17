@@ -20,6 +20,7 @@ import {
   monthlyPayment,
   netMonthlyRent,
   sensitivity,
+  totalAddedUntilCrossover,
   yieldPct,
   type FinanceAssumptions,
 } from './finance';
@@ -32,6 +33,8 @@ const BASE: FinanceAssumptions = {
   vacancyMonthsPerYear: 1,
   rentGrowthPct: 3,
   rentIncomeTaxPct: 5,
+  bankMinDownPaymentPct: 20,
+  cashAvailablePen: null,
 };
 
 describe('the worked example', () => {
@@ -328,5 +331,52 @@ describe('listingFinance', () => {
     assert.equal(result.coveragePct, 100);
     assert.equal(result.crossoverYear, 0);
     assert.equal(result.entryCostPen, 400_000 + 13_595);
+  });
+});
+
+describe('cash-first loan', () => {
+  const cash = { ...BASE, cashAvailablePen: 80_000 };
+  it('pays purchase costs first, then the down payment', () => {
+    const loan = loanFor({ pricePen: 400_000, assumptions: cash, purchaseCostsPen: 10_000 });
+    assert.equal(loan.downPaymentPen, 70_000);
+    assert.equal(loan.loanPen, 330_000);
+    assert.equal(loan.downPaymentPct, 17.5);
+    assert.equal(loan.outOfReach, false);
+  });
+  it('is out of reach when the cash does not cover the costs', () => {
+    const loan = loanFor({ pricePen: 400_000, assumptions: { ...cash, cashAvailablePen: 5_000 }, purchaseCostsPen: 10_000 });
+    assert.equal(loan.outOfReach, true);
+    assert.equal(loan.downPaymentPen, 0);
+  });
+  it('needs no loan when the cash covers price and costs', () => {
+    const loan = loanFor({ pricePen: 60_000, assumptions: cash, purchaseCostsPen: 5_000 });
+    assert.equal(loan.loanPen, 0);
+    assert.equal(loan.paymentPen, 0);
+  });
+});
+
+describe('totalAddedUntilCrossover', () => {
+  it('sums the yearly shortfall until rent overtakes the payment', () => {
+    const total = totalAddedUntilCrossover({ netRentPen: 2_000, paymentPen: 2_500, assumptions: { ...BASE, rentGrowthPct: 3, termYears: 20 } });
+    assert.ok(Math.abs(total - 26_583.93) < 0.01, `total was ${total}`);
+  });
+  it('is 0 when rent already covers the payment', () => {
+    assert.equal(totalAddedUntilCrossover({ netRentPen: 2_600, paymentPen: 2_500, assumptions: BASE }), 0);
+  });
+});
+
+describe('listingFinance monthly gain', () => {
+  it('never shows a % gain when the apartment costs money each month', () => {
+    const f = listingFinance({ pricePen: 400_000, grossRentPen: 1_200, monthlyCostsPen: 300, purchaseCostsPen: 10_000, assumptions: { ...BASE, cashAvailablePen: 80_000 } });
+    assert.ok(f.monthlyGainPen < 0);
+    assert.equal(f.yearlyGainPctOnCash, null);
+  });
+  it('gives the net rent as the gain when there is no loan', () => {
+    const f = listingFinance({ pricePen: 60_000, grossRentPen: 1_200, monthlyCostsPen: 200, purchaseCostsPen: 5_000, assumptions: { ...BASE, cashAvailablePen: 80_000 } });
+    assert.equal(f.monthlyGainPen, f.netRentPen);
+  });
+  it('flags a down payment below the bank minimum', () => {
+    const f = listingFinance({ pricePen: 400_000, grossRentPen: 1_800, monthlyCostsPen: 300, purchaseCostsPen: 10_000, assumptions: { ...BASE, cashAvailablePen: 50_000 } });
+    assert.equal(f.belowBankMinimum, true);
   });
 });

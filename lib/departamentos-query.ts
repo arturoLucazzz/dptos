@@ -9,10 +9,12 @@ import type { SourceId } from './listing-card';
 import type { ListingRow } from './listing-row';
 import { median } from './linalg';
 import { isSourceId } from './official-price';
+import { prepaymentLines, prepaymentSavings, type PrepaymentLines, type PrepaymentSavings } from './prepayment';
 
 export const DEPARTAMENTOS_PAGE_SIZE = 50;
 
 export const DEPARTAMENTOS_SORT_IDS = [
+  'monthlyGain',
   'pricePen',
   'coverage',
   'aporte',
@@ -44,6 +46,17 @@ export interface DepartamentosRow extends ListingRow {
   monthlyContributionPen: number | null;
   paymentPen: number | null;
   downPaymentPctForFullCoverage: number | null;
+  /** Net rent minus the payment. Negative means the investor adds money each month. */
+  monthlyGainPen: number | null;
+  yearlyGainPctOnCash: number | null;
+  /** Cash on day one: down payment plus purchase costs. */
+  entryCostPen: number | null;
+  totalAddedUntilCrossoverPen: number | null;
+  belowBankMinimum: boolean;
+  outOfReach: boolean;
+  prepayment: PrepaymentSavings | null;
+  /** Both early-payment results as table text. */
+  prepaymentLines: PrepaymentLines | null;
 }
 
 export interface DepartamentosStats {
@@ -91,8 +104,8 @@ export function parseDepartamentosSearchParams(params: URLSearchParams): Departa
     .map((s) => s.trim())
     .filter(isSourceId);
 
-  const sortRaw = params.get('sort') ?? 'coverage';
-  const sort = isDepartamentosSortId(sortRaw) ? sortRaw : 'coverage';
+  const sortRaw = params.get('sort') ?? 'monthlyGain';
+  const sort = isDepartamentosSortId(sortRaw) ? sortRaw : 'monthlyGain';
   const orderRaw = params.get('order') ?? 'desc';
   const order = orderRaw === 'asc' ? 'asc' : 'desc';
 
@@ -112,6 +125,8 @@ export function parseDepartamentosSearchParams(params: URLSearchParams): Departa
       tea: parseOptionalNumber(params.get('tea')) ?? DEFAULT_PANEL.tea,
       tcea: parseOptionalNumber(params.get('tcea')) ?? DEFAULT_PANEL.tcea,
       termYears: parseOptionalInt(params.get('plazo')) ?? DEFAULT_PANEL.termYears,
+      cashAvailablePen: parseOptionalNumber(params.get('efectivo')),
+      extraMonthlyPen: parseOptionalNumber(params.get('extra')) ?? DEFAULT_PANEL.extraMonthlyPen,
     },
     sort,
     order,
@@ -121,6 +136,8 @@ export function parseDepartamentosSearchParams(params: URLSearchParams): Departa
 
 function sortValue(row: DepartamentosRow, sort: DepartamentosSortId): number {
   switch (sort) {
+    case 'monthlyGain':
+      return row.monthlyGainPen ?? Number.NEGATIVE_INFINITY;
     case 'pricePen':
       return row.pricePen;
     case 'coverage':
@@ -168,12 +185,32 @@ export function queryDepartamentos(
   const withFinance: DepartamentosRow[] = list.map((listing) => {
     const finance = financeForListing(listing, input.panel, fixed);
     const loan = finance?.loan ?? loanForListing(listing, input.panel, fixed);
+    // Out of reach: the cash does not cover the purchase costs, so every money
+    // number would describe a purchase the investor cannot make.
+    const reachable = !loan?.outOfReach;
+    const prepayment =
+      loan && reachable
+        ? prepaymentSavings({
+            loanPen: loan.loanPen,
+            teaPct: input.panel.tea,
+            termYears: input.panel.termYears,
+            extraMonthlyPen: input.panel.extraMonthlyPen,
+          })
+        : null;
     return {
       ...listing,
       coveragePct: finance?.coveragePct ?? null,
       monthlyContributionPen: finance?.monthlyContributionPen ?? null,
       paymentPen: loan?.paymentPen ?? null,
       downPaymentPctForFullCoverage: finance?.downPaymentPctForFullCoverage ?? null,
+      monthlyGainPen: reachable ? (finance?.monthlyGainPen ?? null) : null,
+      yearlyGainPctOnCash: reachable ? (finance?.yearlyGainPctOnCash ?? null) : null,
+      entryCostPen: reachable ? (finance?.entryCostPen ?? null) : null,
+      totalAddedUntilCrossoverPen: reachable ? (finance?.totalAddedUntilCrossoverPen ?? null) : null,
+      belowBankMinimum: finance?.belowBankMinimum ?? false,
+      outOfReach: loan?.outOfReach ?? false,
+      prepayment,
+      prepaymentLines: loan ? prepaymentLines(prepayment, loan.amortizingPaymentPen) : null,
     };
   });
 

@@ -41,22 +41,15 @@ import {
 } from '../scraper/src/db/ingest';
 import type { UrbaniaCardRaw } from '../scraper/src/scrapers/urbania/types';
 import { fromUrbaniaCard } from '../lib/listing-card';
+import { assertSeedDatabase } from '../lib/seed-guard';
+import { validateManualListing } from '../lib/manual-listing';
+import type { ListingCard } from '../lib/listing-card';
+import { buildInvestorCases, type InvestorCase } from './seed-cases';
+import { randomUUID } from 'node:crypto';
 
 const MS_PER_WEEK = 7 * 86_400_000;
 
-/** The known market. Every price in the seed derives from these numbers. */
-const DISTRICTS = [
-  { slug: 'lince', name: 'Lince', salePerM2: 7_400, rentPerM2: 35, lat: -12.0865, lon: -77.0365 },
-  { slug: 'jesus-maria', name: 'Jesús María', salePerM2: 7_000, rentPerM2: 32, lat: -12.0742, lon: -77.0489 },
-  { slug: 'san-isidro', name: 'San Isidro', salePerM2: 9_200, rentPerM2: 38, lat: -12.0970, lon: -77.0360 },
-  { slug: 'pueblo-libre', name: 'Pueblo Libre', salePerM2: 6_500, rentPerM2: 28, lat: -12.0760, lon: -77.0620 },
-  { slug: 'magdalena', name: 'Magdalena', salePerM2: 6_750, rentPerM2: 30, lat: -12.0920, lon: -77.0700 },
-  { slug: 'surquillo', name: 'Surquillo', salePerM2: 7_100, rentPerM2: 35, lat: -12.1122, lon: -77.0175 },
-  { slug: 'miraflores', name: 'Miraflores', salePerM2: 8_700, rentPerM2: 36, lat: -12.1211, lon: -77.0296 },
-  { slug: 'san-borja', name: 'San Borja', salePerM2: 7_350, rentPerM2: 27, lat: -12.1080, lon: -76.9980 },
-  { slug: 'santiago-de-surco', name: 'Santiago de Surco', salePerM2: 6_800, rentPerM2: 27, lat: -12.1350, lon: -76.9930 },
-  { slug: 'san-miguel', name: 'San Miguel', salePerM2: 6_600, rentPerM2: 27, lat: -12.0776, lon: -77.0925 },
-] as const;
+import { DISTRICTS } from './seed-districts';
 
 const STREETS = [
   'Jr. Pedro Conde',
@@ -494,7 +487,18 @@ function isPresent(unit: Unit, week: number, isRepost: boolean): boolean {
 }
 
 async function main() {
+  // Before any query: --reset deletes listings, favorites and notes.
+  const database = assertSeedDatabase(process.env.DATABASE_URL);
+  console.log(`Seed database: ${database}`);
+
   const args = process.argv.slice(2);
+  const unitsArg = args.find((a) => a.startsWith('--units='))?.split('=')[1];
+  const [saleUnits, rentUnits] = unitsArg
+    ? unitsArg.split(',').map((n) => Number(n))
+    : [200, 100];
+  if (!(saleUnits > 0) || !(rentUnits > 0)) {
+    throw new Error('--units necesita dos números mayores que 0, ej. --units=200,100');
+  }
   const weeks = Number(args.find((a) => a.startsWith('--weeks='))?.split('=')[1] ?? 8);
   const reset = args.includes('--reset');
   /** The week the sanity gate is exercised, with one district nearly empty. */
@@ -504,14 +508,17 @@ async function main() {
   if (reset) {
     await prisma.posting.updateMany({ data: { currentSnapshotId: null } });
     await prisma.postingSnapshot.deleteMany();
+    await prisma.duplicateCandidate.deleteMany();
+    await prisma.duplicateDecision.deleteMany();
     await prisma.posting.deleteMany();
     await prisma.property.deleteMany();
+    await prisma.project.deleteMany();
     await prisma.scrapeRun.deleteMany();
-    console.log('Cleared listings, snapshots, properties and runs.');
+    console.log('Cleared listings, snapshots, duplicates, decisions, properties, projects and runs.');
   }
 
-  // 10 districts × 1000 sale + 500 rent → 10k ventas + 5k alquileres (+ junk).
-  const units = buildUnits({ weeks, saleUnitsPerDistrict: 1_000, rentUnitsPerDistrict: 500 });
+  // 10 districts × 200 sale + 100 rent by default (+ junk). --units=<sale>,<rent> overrides.
+  const units = buildUnits({ weeks, saleUnitsPerDistrict: saleUnits, rentUnitsPerDistrict: rentUnits });
   console.log(`${units.length} synthetic apartments across ${DISTRICTS.length} districts, ${weeks} weekly runs.`);
 
   const now = Date.now();
@@ -598,6 +605,72 @@ async function main() {
   }
 
   await verify(units);
+  await ingestInvestorCases();
+}
+
+/**
+ * The investor cases go into the market's own weekly runs, not into runs of their
+ * own. A new run recording Urbania for one district would count as a covering run
+ * and move the possibly-sold cutoff, marking real seeded listings as sold.
+ */
+async function ingestInvestorCases() {
+  const cases = buildInvestorCases();
+  const runs = await prisma.scrapeRun.findMany({
+    where: { notes: { startsWith: 'synthetic week' } },
+    orderBy: { startedAt: 'desc' },
+    select: { id: true, startedAt: true },
+  });
+  if (runs.length === 0) throw new Error('No synthetic runs to attach the investor cases to.');
+  const latest = runs[0];
+
+  const ingest = (run: { id: string; startedAt: Date }, card: ListingCard) =>
+    ingestCards({
+      runId: run.id,
+      source: card.source,
+      districtSlug: card.districtSlug!,
+      operation: card.operation ?? Operation.SALE,
+      cards: [card],
+      observedAt: run.startedAt,
+    });
+
+  for (const c of cases) {
+    const history = c.priceHistory ?? [];
+    if (history.length > runs.length) {
+      throw new Error(`${c.id}: ${history.length} prices but only ${runs.length} runs.`);
+    }
+    for (const card of c.cards) {
+      if (history.length > 0) {
+        // Oldest price on the oldest of the last N runs, the card price on the latest.
+        for (let i = 0; i < history.length; i++) {
+          const run = runs[history.length - 1 - i];
+          const price = history[i];
+          await ingest(run, { ...card, priceAmount: price, pricePenShown: price, priceFormatted: `S/ ${price}` });
+        }
+      } else {
+        await ingest(latest, card);
+      }
+    }
+    if (c.manual !== undefined) {
+      const result = validateManualListing(c.manual, () => randomUUID());
+      if (!result.ok) throw new Error(`${c.id}: manual input rejected: ${JSON.stringify(result.errors)}`);
+      for (const card of result.cards) await ingest(latest, card);
+    }
+  }
+
+  printChecklist(cases);
+}
+
+function printChecklist(cases: InvestorCase[]) {
+  console.log('\nChecklist de pantallas (abre cada pantalla y busca el caso):');
+  const screens = [...new Set(cases.map((c) => c.screen))];
+  for (const screen of screens) {
+    console.log(`\n  ${screen}`);
+    for (const c of cases.filter((x) => x.screen === screen)) {
+      console.log(`    [${c.id}] ${c.title}`);
+      console.log(`        ${c.lookFor}`);
+    }
+  }
+  console.log('\n  Abre /departamentos?efectivo=200000&extra=500 para la ganga, y cambia a 80000 para verla pasar a "Pones".');
 }
 
 /**

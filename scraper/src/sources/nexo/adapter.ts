@@ -71,7 +71,7 @@ export function nexoAdapter(overrides: Partial<NexoAdapterDeps> = {}): SourceAda
     id: 'nexo',
     operations: [Operation.SALE],
     wholeSite: true,
-    async crawl({ districts, operation, onBatch }): Promise<SourceCrawlResult> {
+    async crawl({ districts, operation, onBatch, maxPages: pageCap }): Promise<SourceCrawlResult> {
       if (operation !== Operation.SALE) return { districts: [], skippedOutsideLima: 0, incomplete: false };
 
       const results = new Map<string, SourceDistrictResult>();
@@ -142,6 +142,7 @@ export function nexoAdapter(overrides: Partial<NexoAdapterDeps> = {}): SourceAda
           await onBatch({ districtSlug, cards: districtCards });
         }
         url = nextPageUrl;
+        if (pageCap != null && pagesFetched >= pageCap) break;
       }
 
       if (dropped > 0) log(`nexo: ${dropped} projects without a slug were dropped`);

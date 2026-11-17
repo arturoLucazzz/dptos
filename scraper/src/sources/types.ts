@@ -55,5 +55,10 @@ export interface SourceAdapter {
     districts: string[];
     operation: Operation;
     onBatch: (b: SourceBatch) => Promise<void>;
+    /**
+     * Stop after this many pages (Navent result pages, Nexo list pages, Proper
+     * project fetches). For `scrape:check`. A capped crawl is not an error.
+     */
+    maxPages?: number;
   }): Promise<SourceCrawlResult>;
 }

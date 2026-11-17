@@ -7,6 +7,7 @@
     "build": "tsc -p tsconfig.scraper.json && next build",
     "dev": "next dev",
     "scrape": "tsx --env-file-if-exists=.env scraper/src/index.ts scrape",
+    "scrape:check": "tsx scraper/src/check.ts",
     "scrape:probe": "tsx --env-file-if-exists=.env scraper/src/probe.ts",
     "process": "tsx --env-file-if-exists=.env scraper/src/index.ts process",
     "replay": "tsx --env-file-if-exists=.env scraper/src/replay.ts",
@@ -25,7 +26,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p scraper/tsconfig.json && tsc --noEmit -p tsconfig.scraper.json",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "test": "node --import tsx --test \"lib/**/*.test.ts\" \"scraper/**/*.test.ts\"",
+    "test": "node --import tsx --test \"lib/**/*.test.ts\" \"scraper/**/*.test.ts\" \"prisma/**/*.test.ts\"",
     "start": "next start"
   },
   "dependencies": {
