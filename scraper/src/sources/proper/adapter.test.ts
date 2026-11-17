@@ -76,3 +76,23 @@ describe('properAdapter', () => {
     assert.deepEqual(result, { districts: [], skippedOutsideLima: 0, incomplete: false });
   });
 });
+
+describe('properAdapter maxPages', () => {
+  it('fetches one project when capped at 1, without marking the crawl incomplete', async () => {
+    const details: string[] = [];
+    const a = properAdapter({
+      wait: async () => {},
+      retries: 0,
+      log: () => {},
+      fetchText: async (url) => {
+        if (url.includes('/_next/data/')) details.push(url);
+        if (url === PROPER_LIST_URL) return LIST;
+        if (url.endsWith('/propiedades')) return fixture('propiedades.html');
+        return detail('lince');
+      },
+    });
+    const result = await a.crawl({ districts: ['lince'], operation: Operation.SALE, maxPages: 1, onBatch: async () => {} });
+    assert.equal(details.length, 1);
+    assert.equal(result.incomplete, false);
+  });
+});

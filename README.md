@@ -105,6 +105,17 @@ https://www.remax.pe/web/search/all/propertys/list/?type__in=departament&contrac
 
 Mientras tanto, los avisos de Remax entran por `/agregar`.
 
+### Probar una fuente
+
+```bash
+pnpm scrape:check all
+pnpm scrape:check urbania
+```
+
+El comando lee una página por fuente (Lince, venta) y no usa la base de datos. Muestra cuántos avisos leyó y qué parte trae precio, área, dormitorios, dirección y coordenadas. Si una parte cae más de 20 puntos frente a los fixtures guardados, la fuente da FAIL y el comando sale con código 1. Todo tarda menos de un minuto.
+
+Agrega `--save` para guardar los avisos leídos en `data/checks/<fuente>-<fecha>.json`.
+
 ## Duplicados entre fuentes
 
 La unión vive en `lib/dedupe.ts`. Un merge equivocado saca un aviso real de todas las estadísticas, así que solo se une automáticamente lo que otro departamento no puede compartir.
@@ -194,11 +205,12 @@ pnpm relabel:districts --apply
 | `pnpm scrape --districts=lince --operations=sale,rent` | Un subconjunto |
 | `pnpm scrape --sources=urbania,proper` | Solo esas fuentes (por defecto, todas las registradas) |
 | `pnpm scrape --accept-gate=urbania:lince` | Acepta una caída de la compuerta en esa corrida |
+| `pnpm scrape:check all` | Lee una página por fuente y da PASS o FAIL (no usa la base) |
 | `pnpm scrape:probe` | Reporte de calidad de parseo (no escribe) |
 | `pnpm replay --reset data/runs/*.ndjson` | Re-ingesta sin red. `--reset` borra propiedades, favoritos y notas: solo en una base de prueba |
 | `pnpm backfill:projects [--apply]` | Liga avisos de proyecto sin proyecto (sin `--apply` solo muestra cuántos) |
 | `pnpm relabel:districts [--apply]` | Pasa filas de `magdalena-del-mar` a `magdalena` (sin `--apply` solo muestra cuántas) |
-| `pnpm db:seed:market -- --weeks=8 --reset` | Mercado sintético (~10k ventas + 5k alquileres, 10 distritos) |
+| `DATABASE_URL=…/dptos_seed pnpm db:seed:market -- --weeks=8 --reset` | Mercado sintético (200 ventas + 100 alquileres por distrito) y 8 casos de inversionista en todas las fuentes. Al final imprime qué pantalla abrir para cada caso. Solo corre en una base que termina en `_seed` o `_dev` |
 | `pnpm test` | Tests del dominio y del scraper |
 | `pnpm typecheck` | `tsc` de la app y del scraper |
 | `pnpm lint` | ESLint (flat config, Next) |

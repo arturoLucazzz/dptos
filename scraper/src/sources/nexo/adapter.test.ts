@@ -75,3 +75,21 @@ describe('nexoAdapter', () => {
     assert.equal(result.incomplete, true);
   });
 });
+
+describe('nexoAdapter maxPages', () => {
+  it('reads one list page when capped at 1, without marking the crawl incomplete', async () => {
+    const fetched: string[] = [];
+    const a = nexoAdapter({
+      wait: async () => {},
+      retries: 0,
+      log: () => {},
+      fetchText: async (url) => {
+        fetched.push(url);
+        return PAGES[url]!;
+      },
+    });
+    const result = await a.crawl({ districts: ['lince'], operation: Operation.SALE, maxPages: 1, onBatch: async () => {} });
+    assert.deepEqual(fetched, ['https://nexoinmobiliario.pe/departamentos']);
+    assert.equal(result.incomplete, false);
+  });
+});
