@@ -20,6 +20,7 @@ import { prisma } from '@/lib/db';
 import type { Prisma } from '@/lib/generated/prisma/client';
 import { invalidateMarketCache } from '@/lib/market';
 import { refreshLocations } from '@/lib/location/refresh';
+import { runLocationRefresh } from './location-hook';
 import type { ListingCard, SourceId } from '@/lib/listing-card';
 import { WHOLE_SITE_SLICE, type GateVerdict, type SourceDistrictCounts } from '@/lib/sanity-gate';
 
@@ -354,12 +355,15 @@ async function runScrapers(args: string[]) {
       invalidateMarketCache();
       // After finishRun, so this run counts in the possibly-sold cutoffs. A failed
       // refresh keeps the old scores and never fails the scrape.
-      try {
-        const counts = await refreshLocations(prisma);
+      const counts = await runLocationRefresh(
+        () => refreshLocations(prisma),
+        async (message) => {
+          run.errors.push(message);
+          await prisma.scrapeRun.update({ where: { id: run.id }, data: { errors: run.errors as Prisma.InputJsonValue } });
+        },
+      );
+      if (counts) {
         console.log(`\nLocation: ${counts.scored} scored, ${counts.outsideLima} outside Lima, ${counts.noCoordinates} without coordinates`);
-      } catch (error) {
-        run.errors.push(`location refresh failed: ${error instanceof Error ? error.message : String(error)}`);
-        await prisma.scrapeRun.update({ where: { id: run.id }, data: { errors: run.errors as Prisma.InputJsonValue } });
       }
     }
     console.log(`\nRun ${run.id} finished: ${status}`);

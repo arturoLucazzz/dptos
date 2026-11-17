@@ -26,7 +26,9 @@ function zone(rating: number, radiusM = 400): ZoneShape {
   return { id: 'z', name: 'Parque Castilla', rating, kind: 'CIRCLE', ...castilla, radiusM };
 }
 
-const empty = { places: [] as PlacePoint[], zones: [] as ZoneShape[], districtStats: [] as DistrictStatInput[], rentActivity: [] as RentActivityPoint[], rents: [] as RentPoint[] };
+/** One place far from every subject: place data exists, every count is 0, every percentile 5. */
+const farPlace: PlacePoint = { lat: -12.5, lon: -76.7, category: 'food' };
+const empty = { places: [farPlace] as PlacePoint[], zones: [] as ZoneShape[], districtStats: [] as DistrictStatInput[], rentActivity: [] as RentActivityPoint[], rents: [] as RentPoint[] };
 
 test('percentileScore gives 5 to a lone value and splits ties', () => {
   assert.equal(percentileScore([3], 3), 5);
@@ -147,4 +149,33 @@ test('localRent is attached to OK results', () => {
   const [r] = scoreAll({ ...empty, subjects: [subject('a')], rents });
   assert.equal(r.localRent?.middlePerM2, 30);
   assert.equal(r.localRent?.n, 10);
+});
+
+test('with no places at all, the place part is left out and the reason says so', () => {
+  const results = scoreAll({
+    ...empty,
+    places: [],
+    subjects: [subject('a'), subject('b', { districtSlug: 'san-isidro' })],
+    districtStats: [
+      { slug: 'lince', incomePerCapitaPen: 1_000, complaintsPer10k: null },
+      { slug: 'san-isidro', incomePerCapitaPen: 2_000, complaintsPer10k: null },
+    ],
+  });
+  const a = results.find((r) => r.propertyId === 'a')!;
+  assert.equal(a.livability, null);
+  assert.equal(a.score, a.demand);
+  assert.ok(a.reasons.some((x) => x.text === 'Sin datos de lugares (corre pnpm location:places)'));
+  assert.ok(!a.reasons.some((x) => x.text.includes('restaurantes')));
+
+  // A zone still gives livability on its own.
+  const [z] = scoreAll({ ...empty, places: [], subjects: [subject('z')], zones: [zone(9)] });
+  assert.equal(z.livability, 9);
+  assert.equal(z.score, 9);
+});
+
+test('with neither places, zones, nor demand signals, there is no score', () => {
+  const [r] = scoreAll({ ...empty, places: [], subjects: [subject('a')] });
+  assert.equal(r.status, 'OK');
+  assert.equal(r.score, null);
+  assert.equal(r.livability, null);
 });

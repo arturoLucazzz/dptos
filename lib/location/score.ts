@@ -80,6 +80,7 @@ export function scoreAll(input: {
   const rents = new GridIndex(input.rents);
   const stats = new Map(input.districtStats.map((s) => [s.slug, s]));
   const anyLiveRent = input.rentActivity.some((a) => a.live);
+  const anyPlaces = input.places.length > 0;
 
   const raws: Raw[] = [];
   const results = new Map<string, LocationResult>();
@@ -119,11 +120,13 @@ export function scoreAll(input: {
 
   for (const r of raws) {
     const reasons: LocationReason[] = [];
-    const placePart = mean(PLACE_CATEGORIES.map((c) => percentileScore(categoryValues[c], r.counts[c])));
-    let livability = placePart;
+    // No Place rows at all (location:places never ran): every count would tie at 5,
+    // a plausible-looking number built on nothing, so the place part is left out.
+    const placePart = anyPlaces ? mean(PLACE_CATEGORIES.map((c) => percentileScore(categoryValues[c], r.counts[c]))) : null;
+    let livability: number | null = placePart;
     if (r.zone) {
       const w = ZONE_MAX_WEIGHT * r.zone.reach;
-      livability = w * r.zone.zone.rating + (1 - w) * placePart;
+      livability = placePart == null ? r.zone.zone.rating : w * r.zone.zone.rating + (1 - w) * placePart;
       const { name, rating } = r.zone.zone;
       const text =
         r.zone.distanceToEdgeM === 0
@@ -131,7 +134,11 @@ export function scoreAll(input: {
           : `Cerca de ${name} (tu zona, ${rating}/10), a ${Math.round(r.zone.distanceToEdgeM / 10) * 10} m`;
       reasons.push({ tone: zoneTone(rating), text });
     }
-    reasons.push({ tone: 'info', text: `${r.counts.food} restaurantes y ${r.counts.park} parques a menos de 500 m` });
+    reasons.push(
+      anyPlaces
+        ? { tone: 'info', text: `${r.counts.food} restaurantes y ${r.counts.park} parques a menos de 500 m` }
+        : { tone: 'info', text: 'Sin datos de lugares (corre pnpm location:places)' },
+    );
 
     const signals: number[] = [];
     // With no live rent listing anywhere, the count says nothing; leave it out.
@@ -163,12 +170,13 @@ export function scoreAll(input: {
     }
 
     const demand = signals.length > 0 ? mean(signals) : null;
-    const score = demand == null ? livability : 0.5 * livability + 0.5 * demand;
+    const score =
+      livability != null && demand != null ? 0.5 * livability + 0.5 * demand : (livability ?? demand);
     results.set(r.subject.propertyId, {
       propertyId: r.subject.propertyId,
       status: 'OK',
-      score: round1(score),
-      livability: round1(livability),
+      score: score == null ? null : round1(score),
+      livability: livability == null ? null : round1(livability),
       demand: demand == null ? null : round1(demand),
       reasons,
       localRent: r.localRent,
