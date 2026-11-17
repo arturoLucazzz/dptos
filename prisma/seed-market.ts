@@ -41,6 +41,7 @@ import {
 } from '../scraper/src/db/ingest';
 import type { UrbaniaCardRaw } from '../scraper/src/scrapers/urbania/types';
 import { fromUrbaniaCard } from '../lib/listing-card';
+import { assertSeedDatabase } from '../lib/seed-guard';
 
 const MS_PER_WEEK = 7 * 86_400_000;
 
@@ -494,7 +495,18 @@ function isPresent(unit: Unit, week: number, isRepost: boolean): boolean {
 }
 
 async function main() {
+  // Before any query: --reset deletes listings, favorites and notes.
+  const database = assertSeedDatabase(process.env.DATABASE_URL);
+  console.log(`Seed database: ${database}`);
+
   const args = process.argv.slice(2);
+  const unitsArg = args.find((a) => a.startsWith('--units='))?.split('=')[1];
+  const [saleUnits, rentUnits] = unitsArg
+    ? unitsArg.split(',').map((n) => Number(n))
+    : [200, 100];
+  if (!(saleUnits > 0) || !(rentUnits > 0)) {
+    throw new Error('--units necesita dos números mayores que 0, ej. --units=200,100');
+  }
   const weeks = Number(args.find((a) => a.startsWith('--weeks='))?.split('=')[1] ?? 8);
   const reset = args.includes('--reset');
   /** The week the sanity gate is exercised, with one district nearly empty. */
@@ -504,14 +516,17 @@ async function main() {
   if (reset) {
     await prisma.posting.updateMany({ data: { currentSnapshotId: null } });
     await prisma.postingSnapshot.deleteMany();
+    await prisma.duplicateCandidate.deleteMany();
+    await prisma.duplicateDecision.deleteMany();
     await prisma.posting.deleteMany();
     await prisma.property.deleteMany();
+    await prisma.project.deleteMany();
     await prisma.scrapeRun.deleteMany();
-    console.log('Cleared listings, snapshots, properties and runs.');
+    console.log('Cleared listings, snapshots, duplicates, decisions, properties, projects and runs.');
   }
 
-  // 10 districts × 1000 sale + 500 rent → 10k ventas + 5k alquileres (+ junk).
-  const units = buildUnits({ weeks, saleUnitsPerDistrict: 1_000, rentUnitsPerDistrict: 500 });
+  // 10 districts × 200 sale + 100 rent by default (+ junk). --units=<sale>,<rent> overrides.
+  const units = buildUnits({ weeks, saleUnitsPerDistrict: saleUnits, rentUnitsPerDistrict: rentUnits });
   console.log(`${units.length} synthetic apartments across ${DISTRICTS.length} districts, ${weeks} weekly runs.`);
 
   const now = Date.now();
