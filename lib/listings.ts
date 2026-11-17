@@ -18,6 +18,8 @@ import { countGoneProperties, countProperties } from './property-stats';
 import { livePostingWhere, notLivePostingWhere } from './possibly-sold';
 import { daysOnMarket, fitIdToDate, publishedAtFor, type IdDateAnchor } from './posting-age';
 import { estimateGrossRent } from './rent';
+import { rentForRow } from './location/row-rent';
+import type { LocationReason } from './location/score';
 import { isUsableComparable, pricePerM2OutlierMask } from './quality-flags';
 import { distinctPublisherCount, inventoryMonths, priceCutScore, totalCutFromPeak } from './price-cut';
 import type { FixedAssumptions } from './assumption-defaults';
@@ -218,6 +220,7 @@ export async function loadSaleListings(): Promise<ListingsPage> {
     if (posting.propertyId && official.has(posting.id)) propertyIds.add(posting.propertyId);
   }
   const duplicateFlags = await loadDuplicateFlags([...propertyIds]);
+  const locations = await loadLocations([...propertyIds]);
 
   const snapshotByPosting = new Map(candidates.map(({ posting, snapshot }) => [posting.id, snapshot]));
   const listings: ListingRow[] = [];
@@ -248,7 +251,7 @@ export async function loadSaleListings(): Promise<ListingsPage> {
           )
         : null;
 
-    const rent =
+    const districtRent =
       areaM2 != null
         ? estimateGrossRent(rentIndex, {
             districtSlug: posting.districtSlug,
@@ -256,6 +259,9 @@ export async function loadSaleListings(): Promise<ListingsPage> {
             bedrooms: snapshot.bedrooms,
           })
         : null;
+    const location = posting.propertyId ? locations.get(posting.propertyId) : undefined;
+    // Every money number reads grossRentPen, so the local rent reaches them all here.
+    const rent = rentForRow({ areaM2, local: location?.localRent ?? null, district: districtRent });
 
     const { publishedAt, estimated } = publishedAtFor({
       firstDateOnline: snapshot.firstDateOnline,
@@ -320,9 +326,12 @@ export async function loadSaleListings(): Promise<ListingsPage> {
       isFirstSaleFromDeveloper,
       maintenancePen:
         snapshot.maintenanceAmount == null ? null : Number(snapshot.maintenanceAmount),
-      grossRentPen: rent?.grossRentPen ?? null,
-      rentSampleN: rent?.n ?? null,
-      rentConfidence: rent?.confidence ?? null,
+      ...rent,
+      locationStatus: location?.status ?? null,
+      locationScore: location?.score ?? null,
+      locationLivability: location?.livability ?? null,
+      locationDemand: location?.demand ?? null,
+      locationReasons: location?.reasons ?? [],
       discountPct: fair?.discountPct ?? null,
       fairPricePen: fair?.expectedPen ?? null,
       fairPriceConfidence: fair?.confidence ?? null,
@@ -388,21 +397,56 @@ async function loadDuplicateFlags(propertyIds: string[]): Promise<Map<string, Du
   return flags;
 }
 
+interface StoredLocation {
+  status: 'OK' | 'OUTSIDE_LIMA' | 'NO_COORDINATES';
+  score: number | null;
+  livability: number | null;
+  demand: number | null;
+  reasons: LocationReason[];
+  localRent: { perM2: number; highPerM2: number; n: number; maxDistanceM: number } | null;
+}
+
+/** The stored location rows for these properties, in one query. */
+async function loadLocations(propertyIds: string[]): Promise<Map<string, StoredLocation>> {
+  if (propertyIds.length === 0) return new Map();
+  const rows = await prisma.propertyLocation.findMany({ where: { propertyId: { in: propertyIds } } });
+  const num = (d: Prisma.Decimal | null) => (d == null ? null : Number(d));
+  return new Map(
+    rows.map((r) => [
+      r.propertyId,
+      {
+        status: r.status,
+        score: num(r.score),
+        livability: num(r.livability),
+        demand: num(r.demand),
+        reasons: Array.isArray(r.reasons) ? (r.reasons as unknown as LocationReason[]) : [],
+        localRent:
+          r.localRentPerM2 != null && r.localRentHighPerM2 != null && r.localRentN != null && r.localRentMaxDistanceM != null
+            ? { perM2: Number(r.localRentPerM2), highPerM2: Number(r.localRentHighPerM2), n: r.localRentN, maxDistanceM: r.localRentMaxDistanceM }
+            : null,
+      },
+    ])
+  );
+}
+
 async function latestScrapeCacheKey(): Promise<string> {
   const run = await prisma.scrapeRun.findFirst({
     where: { status: { in: [ScrapeStatus.SUCCESS, ScrapeStatus.PARTIAL] } },
     orderBy: { startedAt: 'desc' },
     select: { id: true, finishedAt: true, startedAt: true },
   });
-  if (!run) return 'none';
-  return `${run.id}:${(run.finishedAt ?? run.startedAt).toISOString()}`;
+  // The location refresh runs after the scrape finishes, so its time is part of the key.
+  const location = await prisma.propertyLocation.findFirst({ orderBy: { computedAt: 'desc' }, select: { computedAt: true } });
+  const locationKey = location?.computedAt.toISOString() ?? 'no-location';
+  if (!run) return `none:${locationKey}`;
+  return `${run.id}:${(run.finishedAt ?? run.startedAt).toISOString()}:${locationKey}`;
 }
 
 const loadSaleListingsCached = unstable_cache(
   async (_scrapeKey: string) => loadSaleListings(),
   // The version part changes when the row shape does, so an entry cached by an
   // older build is not served with fields missing.
-  ['sale-listings', 'rows-v3-copy-posting-ids'],
+  ['sale-listings', 'rows-v4-location'],
   { revalidate: 3600, tags: ['sale-listings'] }
 );
 

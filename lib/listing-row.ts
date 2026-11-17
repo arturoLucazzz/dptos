@@ -12,6 +12,8 @@
  * price) speaks for it, and every copy of the same apartment is listed in `copies`.
  */
 
+import type { LocationReason } from './location/score';
+
 import type { SourceId } from './listing-card';
 import type { ListingCopy } from './official-price';
 
@@ -57,10 +59,22 @@ export interface ListingRow {
    */
   isFirstSaleFromDeveloper: boolean;
   maintenancePen: number | null;
-  /** Median rent for the district × bedrooms, or null when the sample is too thin. */
+  /** Local rent from nearby listings, else the district × bedrooms median; null with neither. */
   grossRentPen: number | null;
   rentSampleN: number | null;
   rentConfidence: 'high' | 'low' | null;
+  /** 75th percentile of nearby rents × area. Text only: the money numbers never use it. */
+  rentHighPen: number | null;
+  /** True when grossRentPen comes from nearby rent listings, false for the district median. */
+  rentIsLocal: boolean;
+  /** Distance to the farthest rent used, when the rent is local. */
+  rentMaxDistanceM: number | null;
+  /** Stored location score (0–10) and its parts; null status before the first refresh. */
+  locationStatus: 'OK' | 'OUTSIDE_LIMA' | 'NO_COORDINATES' | null;
+  locationScore: number | null;
+  locationLivability: number | null;
+  locationDemand: number | null;
+  locationReasons: LocationReason[];
   /** Positive means asking below the model. Null when the model cannot speak. */
   discountPct: number | null;
   fairPricePen: number | null;

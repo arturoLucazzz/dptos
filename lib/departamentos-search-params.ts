@@ -23,6 +23,8 @@ export const departamentosSearchParams = {
   bedroomsMin: parseAsInteger,
   bedroomsMax: parseAsInteger,
   coverageMin: parseAsFloat,
+  /** Minimum location score, 0–10. */
+  ubicacion: parseAsFloat,
   inicial: parseAsFloat.withDefault(DEFAULT_PANEL.downPaymentPct),
   tea: parseAsFloat.withDefault(DEFAULT_PANEL.tea),
   tcea: parseAsFloat.withDefault(DEFAULT_PANEL.tcea),
@@ -43,6 +45,7 @@ export function departamentosApiQuery(state: {
   bedroomsMin: number | null;
   bedroomsMax: number | null;
   coverageMin: number | null;
+  ubicacion: number | null;
   inicial: number;
   tea: number;
   tcea: number;
@@ -61,6 +64,7 @@ export function departamentosApiQuery(state: {
   if (state.bedroomsMin != null) params.set('bedroomsMin', String(state.bedroomsMin));
   if (state.bedroomsMax != null) params.set('bedroomsMax', String(state.bedroomsMax));
   if (state.coverageMin != null) params.set('coverageMin', String(state.coverageMin));
+  if (state.ubicacion != null) params.set('ubicacion', String(state.ubicacion));
   params.set('inicial', String(state.inicial));
   params.set('tea', String(state.tea));
   params.set('tcea', String(state.tcea));

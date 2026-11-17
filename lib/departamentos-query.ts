@@ -21,6 +21,7 @@ export const DEPARTAMENTOS_SORT_IDS = [
   'cuota',
   'descuento',
   'inicial100',
+  'location',
 ] as const;
 
 export type DepartamentosSortId = (typeof DEPARTAMENTOS_SORT_IDS)[number];
@@ -34,6 +35,8 @@ export interface DepartamentosQueryInput {
   bedroomsMin: number | null;
   bedroomsMax: number | null;
   coverageMin: number | null;
+  /** Keep rows with a location score at least this; rows with no score drop out. */
+  locationMin?: number | null;
   panel: PanelAssumptions;
   sort: DepartamentosSortId;
   order: 'asc' | 'desc';
@@ -120,6 +123,7 @@ export function parseDepartamentosSearchParams(params: URLSearchParams): Departa
     bedroomsMin: parseOptionalInt(params.get('bedroomsMin')),
     bedroomsMax: parseOptionalInt(params.get('bedroomsMax')),
     coverageMin: parseOptionalNumber(params.get('coverageMin')),
+    locationMin: parseOptionalNumber(params.get('ubicacion')),
     panel: {
       downPaymentPct: parseOptionalNumber(params.get('inicial')) ?? DEFAULT_PANEL.downPaymentPct,
       tea: parseOptionalNumber(params.get('tea')) ?? DEFAULT_PANEL.tea,
@@ -150,6 +154,8 @@ function sortValue(row: DepartamentosRow, sort: DepartamentosSortId): number {
       return row.discountPct ?? Number.NEGATIVE_INFINITY;
     case 'inicial100':
       return row.downPaymentPctForFullCoverage ?? Number.POSITIVE_INFINITY;
+    case 'location':
+      return row.locationScore ?? Number.NaN;
   }
 }
 
@@ -180,6 +186,9 @@ export function queryDepartamentos(
   }
   if (input.bedroomsMax != null) {
     list = list.filter((r) => r.bedrooms != null && r.bedrooms <= input.bedroomsMax!);
+  }
+  if (input.locationMin != null) {
+    list = list.filter((r) => r.locationScore != null && r.locationScore >= input.locationMin!);
   }
 
   const withFinance: DepartamentosRow[] = list.map((listing) => {
@@ -242,7 +251,9 @@ export function queryDepartamentos(
   const sorted = [...filtered].sort((a, b) => {
     const av = sortValue(a, input.sort);
     const bv = sortValue(b, input.sort);
-    if (av === bv) return a.postingId.localeCompare(b.postingId);
+    // NaN means "no value": last in both orders.
+    if (Number.isNaN(av) !== Number.isNaN(bv)) return Number.isNaN(av) ? 1 : -1;
+    if (av === bv || (Number.isNaN(av) && Number.isNaN(bv))) return a.postingId.localeCompare(b.postingId);
     return av < bv ? -dir : dir;
   });
 
