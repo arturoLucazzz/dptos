@@ -68,16 +68,6 @@ function GainCell({ row }: { row: DepartamentosRow }) {
   );
 }
 
-function prepaymentText(row: DepartamentosRow): string {
-  const savings = row.prepayment?.shorterLoan;
-  if (!savings || savings.monthsSaved <= 0) return "—";
-  const years = (savings.monthsSaved / 12).toLocaleString("es-PE", {
-    minimumFractionDigits: 1,
-    maximumFractionDigits: 1,
-  });
-  return `Terminas ${years} años antes · ahorras ${formatPen(savings.interestSavedPen)}`;
-}
-
 const SORT_LABELS: Record<DepartamentosSortId, string> = {
   monthlyGain: "ganas / pones",
   pricePen: "precio",
@@ -277,7 +267,7 @@ export function DepartamentosTable({
 }: DepartamentosTableProps) {
   const { isFavorite, toggleFavorite } = useFavorites();
   const pageCount = Math.max(1, Math.ceil(total / pageSize) || 1);
-  const hasPrepayment = data.some((r) => r.prepayment != null);
+  const hasPrepayment = data.some((r) => r.prepaymentLines != null);
 
   const columns = useMemo<ColumnDef<DepartamentosRow>[]>(
     () => [
@@ -378,7 +368,16 @@ export function DepartamentosTable({
             {
               id: "amortizacion",
               header: "Con amortización extra",
-              cell: ({ row }) => prepaymentText(row.original),
+              cell: ({ row }) => {
+                const lines = row.original.prepaymentLines;
+                if (!lines) return "—";
+                return (
+                  <div className="leading-tight">
+                    <div>{lines.shorterLoan}</div>
+                    <div className="text-xs text-muted-foreground">{lines.lowerPayment}</div>
+                  </div>
+                );
+              },
             },
           ] satisfies ColumnDef<DepartamentosRow>[])
         : []),

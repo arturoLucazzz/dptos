@@ -247,7 +247,9 @@ export function naventAdapter(site: NaventSite, overrides: Partial<NaventAdapter
         session = await deps.createSession(NAVENT_BASE_URL[site]);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        if (site !== 'urbania') throw error;
+        // A capped crawl (scrape:check) must not turn into a full HTML crawl, and a
+        // pass from the fallback would hide that the JSON path broke.
+        if (site !== 'urbania' || maxPages != null) throw error;
         deps.log(`urbania: JSON session failed (${message}); crawling with the HTML crawler`);
         return deps.htmlCrawl({ districts, operation, onBatch });
       }
@@ -286,7 +288,7 @@ export function naventAdapter(site: NaventSite, overrides: Partial<NaventAdapter
             results.push(crawl.result);
             continue;
           }
-          if (site !== 'urbania') {
+          if (site !== 'urbania' || maxPages != null) {
             // No HTML crawler to fall back on. Same rule as a short district.
             incomplete = true;
             results.push(crawl.result);

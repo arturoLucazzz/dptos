@@ -11,6 +11,7 @@
  */
 
 import { effectiveMonthlyRate } from './finance';
+import { formatPen } from './listing-finance';
 
 export interface PrepaymentSavings {
   shorterLoan: { monthsSaved: number; interestSavedPen: number };
@@ -77,5 +78,31 @@ export function prepaymentSavings(input: {
       paymentAfterOneYearPen: lower.paymentAfterOneYearPen,
       interestSavedPen: base.interestPen - lower.interestPen,
     },
+  };
+}
+
+export interface PrepaymentLines {
+  shorterLoan: string;
+  lowerPayment: string;
+}
+
+/**
+ * Both results in plain Spanish. The lower payment is told as the drop in the
+ * payment, because the table's Cuota column is the TCEA payment and this math runs
+ * on the TEA one: two different payments side by side would read as a mistake.
+ */
+export function prepaymentLines(
+  savings: PrepaymentSavings | null,
+  amortizingPaymentPen: number
+): PrepaymentLines | null {
+  if (!savings || savings.shorterLoan.monthsSaved <= 0) return null;
+  const years = (savings.shorterLoan.monthsSaved / 12).toLocaleString('es-PE', {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  });
+  const drop = Math.max(0, amortizingPaymentPen - savings.lowerPayment.paymentAfterOneYearPen);
+  return {
+    shorterLoan: `Terminas ${years} años antes · ahorras ${formatPen(savings.shorterLoan.interestSavedPen)}`,
+    lowerPayment: `O bajas tu cuota ${formatPen(drop)}/mes · ahorras ${formatPen(savings.lowerPayment.interestSavedPen)}`,
   };
 }

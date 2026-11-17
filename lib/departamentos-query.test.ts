@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { fixedFromDefaults, DEFAULT_PANEL } from './assumption-defaults';
 import { queryDepartamentos, parseDepartamentosSearchParams } from './departamentos-query';
+import { purchaseCosts } from './costs';
 import type { ListingRow } from './listing-row';
 
 function row(partial: Partial<ListingRow> & Pick<ListingRow, 'postingId' | 'pricePen'>): ListingRow {
@@ -205,5 +206,27 @@ describe('queryDepartamentos investor numbers', () => {
     const params = parseDepartamentosSearchParams(new URLSearchParams('efectivo=80000&extra=500'));
     assert.equal(params.panel.cashAvailablePen, 80_000);
     assert.equal(params.panel.extraMonthlyPen, 500);
+  });
+});
+
+describe('queryDepartamentos out of reach', () => {
+  it('shows no money numbers for a row the cash cannot reach, and ranks it after reachable rows', () => {
+    const fixed = fixedFromDefaults();
+    const cheap = row({ postingId: 'reachable', pricePen: 200_000, grossRentPen: 500 });
+    const pricey = row({ postingId: 'out-of-reach', pricePen: 900_000, grossRentPen: 9_000 });
+    const costOf = (pricePen: number) => purchaseCosts({ pricePen, isFirstSaleFromDeveloper: false, assumptions: fixed }).totalPen;
+    const cash = (costOf(200_000) + costOf(900_000)) / 2;
+    const result = queryDepartamentos([pricey, cheap], fixed, {
+      districts: [], sources: [], priceMin: null, priceMax: null, bedroomsMin: null, bedroomsMax: null, coverageMin: null,
+      panel: { ...DEFAULT_PANEL, cashAvailablePen: cash, extraMonthlyPen: 500 },
+      sort: 'monthlyGain', order: 'desc', page: 1,
+    });
+    assert.deepEqual(result.rows.map((r) => r.postingId), ['reachable', 'out-of-reach']);
+    const out = result.rows[1]!;
+    assert.equal(out.outOfReach, true);
+    assert.equal(out.monthlyGainPen, null);
+    assert.equal(out.entryCostPen, null);
+    assert.equal(out.totalAddedUntilCrossoverPen, null);
+    assert.equal(out.prepayment, null);
   });
 });

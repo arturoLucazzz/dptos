@@ -60,19 +60,24 @@ async function checkOne(source: SourceId, save: boolean): Promise<boolean> {
 
   const started = Date.now();
   const cards: ListingCard[] = [];
+  let crawlErrors: string[] = [];
   try {
-    await factory().crawl({
+    const crawl = await factory().crawl({
       districts: [DISTRICT],
       operation: Operation.SALE,
       maxPages: MAX_PAGES,
       onBatch: async (batch) => void cards.push(...batch.cards),
     });
+    // A capped crawl is never incomplete by design, so incomplete means a real error.
+    if (crawl.incomplete) crawlErrors = crawl.districts.flatMap((d) => d.errors);
+    if (crawl.incomplete && crawlErrors.length === 0) crawlErrors = ['la lectura quedó incompleta'];
   } catch (error) {
     console.log(`${source}: FAIL · ${error instanceof Error ? error.message : String(error)}`);
     return false;
   }
 
-  const result = checkSource({ cards, baseline: baseline() });
+  const checked = checkSource({ cards, baseline: baseline() });
+  const result = { pass: checked.pass && crawlErrors.length === 0, reasons: [...crawlErrors, ...checked.reasons] };
   const seconds = ((Date.now() - started) / 1000).toFixed(0);
   console.log(`${source}: ${cards.length} avisos en ${seconds} s · ${formatRates(fillRates(cards))} · ${result.pass ? 'PASS' : 'FAIL'}`);
   for (const reason of result.reasons) console.log(`  - ${reason}`);

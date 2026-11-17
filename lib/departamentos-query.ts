@@ -9,7 +9,7 @@ import type { SourceId } from './listing-card';
 import type { ListingRow } from './listing-row';
 import { median } from './linalg';
 import { isSourceId } from './official-price';
-import { prepaymentSavings, type PrepaymentSavings } from './prepayment';
+import { prepaymentLines, prepaymentSavings, type PrepaymentLines, type PrepaymentSavings } from './prepayment';
 
 export const DEPARTAMENTOS_PAGE_SIZE = 50;
 
@@ -55,6 +55,8 @@ export interface DepartamentosRow extends ListingRow {
   belowBankMinimum: boolean;
   outOfReach: boolean;
   prepayment: PrepaymentSavings | null;
+  /** Both early-payment results as table text. */
+  prepaymentLines: PrepaymentLines | null;
 }
 
 export interface DepartamentosStats {
@@ -183,26 +185,32 @@ export function queryDepartamentos(
   const withFinance: DepartamentosRow[] = list.map((listing) => {
     const finance = financeForListing(listing, input.panel, fixed);
     const loan = finance?.loan ?? loanForListing(listing, input.panel, fixed);
-    return {
-      ...listing,
-      coveragePct: finance?.coveragePct ?? null,
-      monthlyContributionPen: finance?.monthlyContributionPen ?? null,
-      paymentPen: loan?.paymentPen ?? null,
-      downPaymentPctForFullCoverage: finance?.downPaymentPctForFullCoverage ?? null,
-      monthlyGainPen: finance?.monthlyGainPen ?? null,
-      yearlyGainPctOnCash: finance?.yearlyGainPctOnCash ?? null,
-      entryCostPen: finance?.entryCostPen ?? null,
-      totalAddedUntilCrossoverPen: finance?.totalAddedUntilCrossoverPen ?? null,
-      belowBankMinimum: finance?.belowBankMinimum ?? false,
-      outOfReach: loan?.outOfReach ?? false,
-      prepayment: loan
+    // Out of reach: the cash does not cover the purchase costs, so every money
+    // number would describe a purchase the investor cannot make.
+    const reachable = !loan?.outOfReach;
+    const prepayment =
+      loan && reachable
         ? prepaymentSavings({
             loanPen: loan.loanPen,
             teaPct: input.panel.tea,
             termYears: input.panel.termYears,
             extraMonthlyPen: input.panel.extraMonthlyPen,
           })
-        : null,
+        : null;
+    return {
+      ...listing,
+      coveragePct: finance?.coveragePct ?? null,
+      monthlyContributionPen: finance?.monthlyContributionPen ?? null,
+      paymentPen: loan?.paymentPen ?? null,
+      downPaymentPctForFullCoverage: finance?.downPaymentPctForFullCoverage ?? null,
+      monthlyGainPen: reachable ? (finance?.monthlyGainPen ?? null) : null,
+      yearlyGainPctOnCash: reachable ? (finance?.yearlyGainPctOnCash ?? null) : null,
+      entryCostPen: reachable ? (finance?.entryCostPen ?? null) : null,
+      totalAddedUntilCrossoverPen: reachable ? (finance?.totalAddedUntilCrossoverPen ?? null) : null,
+      belowBankMinimum: finance?.belowBankMinimum ?? false,
+      outOfReach: loan?.outOfReach ?? false,
+      prepayment,
+      prepaymentLines: loan ? prepaymentLines(prepayment, loan.amortizingPaymentPen) : null,
     };
   });
 
