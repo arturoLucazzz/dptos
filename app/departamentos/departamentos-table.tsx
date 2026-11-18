@@ -15,6 +15,7 @@ import { useFavorites } from "@/app/providers";
 import { confirmDuplicate, markManualRemoved, rejectDuplicate, splitPosting, type ReviewResult } from "@/app/actions";
 import type { DepartamentosRow, DepartamentosSortId } from "@/lib/departamentos-query";
 import { formatPen, formatPct } from "@/lib/listing-finance";
+import { rentLine } from "@/lib/location/row-rent";
 import { SOURCE_LABELS } from "@/lib/listing-card";
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, Star } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -68,6 +69,22 @@ function GainCell({ row }: { row: DepartamentosRow }) {
   );
 }
 
+function LocationCell({ row }: { row: DepartamentosRow }) {
+  if (row.locationStatus === "OUTSIDE_LIMA") return <span className="text-xs text-muted-foreground">Fuera de Lima</span>;
+  if (row.locationStatus === "NO_COORDINATES") {
+    return <span className="text-xs text-muted-foreground">Sin ubicación exacta</span>;
+  }
+  if (row.locationScore == null) return <span className="text-muted-foreground">—</span>;
+  const title = row.locationReasons.map((r) => r.text).join("\n");
+  const tone =
+    row.locationScore >= 7 ? "text-emerald-700" : row.locationScore <= 4 ? "text-red-700" : "text-foreground";
+  return (
+    <span className={`cursor-help font-medium tabular-nums ${tone}`} title={title}>
+      {row.locationScore.toLocaleString("es-PE", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
+    </span>
+  );
+}
+
 const SORT_LABELS: Record<DepartamentosSortId, string> = {
   monthlyGain: "ganas / pones",
   pricePen: "precio",
@@ -76,6 +93,7 @@ const SORT_LABELS: Record<DepartamentosSortId, string> = {
   cuota: "cuota",
   descuento: "% vs precio justo",
   inicial100: "% inicial necesario",
+  location: "ubicación",
 };
 
 function SortHeader({
@@ -302,6 +320,19 @@ export function DepartamentosTable({
         cell: ({ row }) => row.original.districtName,
       },
       {
+        id: "location",
+        header: () => (
+          <SortHeader
+            label="Ubicación"
+            active={sort === "location"}
+            order={order}
+            onToggle={() => onSortChange("location")}
+            tip="Puntaje de 0 a 10: mitad calidad de la zona (tus zonas y lugares cercanos), mitad demanda de inquilinos. Pasa el mouse sobre el número para ver las razones."
+          />
+        ),
+        cell: ({ row }) => <LocationCell row={row.original} />,
+      },
+      {
         accessorKey: "pricePen",
         header: () => (
           <SortHeader
@@ -402,11 +433,12 @@ export function DepartamentosTable({
             active={sort === "coverage"}
             order={order}
             onToggle={() => onSortChange("coverage")}
-            tip="% de la cuota (TCEA) que cubre el alquiler neto estimado. Debajo se muestra el alquiler bruto promedio (mediana distrito × dormitorios) usado en el cálculo."
+            tip="% de la cuota (TCEA) que cubre el alquiler neto estimado. Debajo: el alquiler bruto usado en el cálculo, de los alquileres cercanos (o la mediana del distrito si hay pocos), y el nivel de los mejores cercanos solo como referencia."
           />
         ),
         cell: ({ row }) => {
           const { coveragePct, grossRentPen, rentSampleN, rentConfidence } = row.original;
+          const line = rentLine(row.original);
           if (coveragePct == null) {
             return (
               <span className="text-muted-foreground" title="Sin muestra de alquileres en el distrito">
@@ -422,9 +454,7 @@ export function DepartamentosTable({
               })`}
             >
               <div>{formatPct(coveragePct)}</div>
-              <div className="text-xs text-muted-foreground">
-                alquiler {formatPen(grossRentPen)}
-              </div>
+              <div className="max-w-56 text-xs text-muted-foreground">{line}</div>
             </div>
           );
         },

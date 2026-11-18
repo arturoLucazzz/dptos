@@ -4,7 +4,11 @@ dist/
 *.log
 .env
 .env*.local
-data/
+data/*
+!data/location/
+# Downloaded by pnpm location:places: large and refreshed monthly.
+data/location/places-lima.json
+data/location/boundaries-lima.json
 *.json
 !package.json
 !tsconfig.json

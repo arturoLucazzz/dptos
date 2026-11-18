@@ -45,6 +45,14 @@ function row(partial: Partial<ListingRow> & Pick<ListingRow, 'postingId' | 'pric
     priceMaxPen: partial.pricePen,
     url: null,
     duplicateFlags: [],
+    locationStatus: null,
+    locationScore: null,
+    locationLivability: null,
+    locationDemand: null,
+    locationReasons: [],
+    rentHighPen: null,
+    rentIsLocal: false,
+    rentMaxDistanceM: null,
     ...partial,
   };
 }
@@ -228,5 +236,49 @@ describe('queryDepartamentos out of reach', () => {
     assert.equal(out.entryCostPen, null);
     assert.equal(out.totalAddedUntilCrossoverPen, null);
     assert.equal(out.prepayment, null);
+  });
+});
+
+describe('queryDepartamentos location', () => {
+  const fixed = fixedFromDefaults();
+  const base = {
+    districts: [],
+    sources: [],
+    priceMin: null,
+    priceMax: null,
+    bedroomsMin: null,
+    bedroomsMax: null,
+    coverageMin: null,
+    panel: DEFAULT_PANEL,
+    page: 1,
+  };
+  const listings = [
+    row({ postingId: 'great', pricePen: 400_000, locationStatus: 'OK', locationScore: 8.2 }),
+    row({ postingId: 'edge', pricePen: 400_000, locationStatus: 'OK', locationScore: 7 }),
+    row({ postingId: 'meh', pricePen: 400_000, locationStatus: 'OK', locationScore: 5.1 }),
+    row({ postingId: 'unknown', pricePen: 400_000, locationStatus: 'NO_COORDINATES', locationScore: null }),
+  ];
+
+  it('ubicacion=7 keeps rows with score ≥ 7 and drops null scores', () => {
+    const params = parseDepartamentosSearchParams(new URLSearchParams('ubicacion=7'));
+    assert.equal(params.locationMin, 7);
+    const result = queryDepartamentos(listings, fixed, { ...base, locationMin: params.locationMin, sort: 'monthlyGain', order: 'desc' });
+    assert.deepEqual(result.rows.map((r) => r.postingId).sort(), ['edge', 'great']);
+  });
+
+  it('sort=location orders by score, nulls last in both orders', () => {
+    const params = parseDepartamentosSearchParams(new URLSearchParams('sort=location'));
+    assert.equal(params.sort, 'location');
+    const desc = queryDepartamentos(listings, fixed, { ...base, sort: 'location', order: 'desc' });
+    assert.deepEqual(desc.rows.map((r) => r.postingId), ['great', 'edge', 'meh', 'unknown']);
+    const asc = queryDepartamentos(listings, fixed, { ...base, sort: 'location', order: 'asc' });
+    assert.deepEqual(asc.rows.map((r) => r.postingId), ['meh', 'edge', 'great', 'unknown']);
+  });
+
+  it('the default sort is still monthlyGain and no location filter applies', () => {
+    const params = parseDepartamentosSearchParams(new URLSearchParams());
+    assert.equal(params.sort, 'monthlyGain');
+    assert.equal(params.locationMin, null);
+    assert.equal(queryDepartamentos(listings, fixed, { ...base, sort: params.sort, order: 'desc' }).total, 4);
   });
 });

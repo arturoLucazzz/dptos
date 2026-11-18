@@ -283,6 +283,8 @@ model Property {
   duplicatesAsA DuplicateCandidate[] @relation("DuplicateA")
   duplicatesAsB DuplicateCandidate[] @relation("DuplicateB")
 
+  location PropertyLocation?
+
   @@index([districtSlug])
   @@index([fingerprint])
   @@index([addressNorm])
@@ -413,4 +415,74 @@ model Assumptions {
   defaultArbitrios    Decimal @db.Decimal(10, 2)
 
   updatedAt DateTime @updatedAt
+}
+
+// ── Location score ─────────────────────────────────────────────────────────
+
+enum ZoneKind {
+  DISTRICT
+  CIRCLE
+}
+
+enum LocationStatus {
+  OK
+  OUTSIDE_LIMA
+  NO_COORDINATES
+}
+
+/// One OpenStreetMap place near which apartments score livability.
+model Place {
+  /// OpenStreetMap type and id, for example "node/123".
+  id        String  @id
+  category  String
+  name      String?
+  latitude  Decimal @db.Decimal(10, 7)
+  longitude Decimal @db.Decimal(10, 7)
+
+  @@index([category])
+}
+
+/// A zone the owner rates from 0 to 10: a whole district or a point with a radius.
+model Zone {
+  id           String   @id @default(cuid())
+  name         String
+  kind         ZoneKind
+  districtSlug String?
+  latitude     Decimal? @db.Decimal(10, 7)
+  longitude    Decimal? @db.Decimal(10, 7)
+  radiusM      Int?
+  rating       Int
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+/// Per-district numbers typed from INEI and police reports, with their source and date.
+model DistrictStat {
+  slug               String   @id
+  name               String
+  incomePerCapitaPen Decimal? @db.Decimal(10, 2)
+  incomeSource       String?
+  incomeDate         String?
+  complaintsPer10k   Decimal? @db.Decimal(10, 2)
+  complaintsSource   String?
+  complaintsDate     String?
+  /// District polygon rings from OpenStreetMap, [lon, lat] pairs.
+  boundary           Json?
+}
+
+/// The stored location score and local rent of one apartment, recomputed by the refresh step.
+model PropertyLocation {
+  propertyId            String         @id
+  property              Property       @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  status                LocationStatus
+  score                 Decimal?       @db.Decimal(3, 1)
+  livability            Decimal?       @db.Decimal(3, 1)
+  demand                Decimal?       @db.Decimal(3, 1)
+  reasons               Json
+  localRentPerM2        Decimal?       @db.Decimal(10, 2)
+  localRentHighPerM2    Decimal?       @db.Decimal(10, 2)
+  localRentN            Int?
+  localRentMaxDistanceM Int?
+  computedAt            DateTime
 }

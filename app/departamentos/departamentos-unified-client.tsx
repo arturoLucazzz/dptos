@@ -62,6 +62,7 @@ type DraftFilters = {
   bedroomsMin: string;
   bedroomsMax: string;
   coverageMin: string;
+  ubicacion: string;
   panel: PanelDraftStrings;
 };
 
@@ -101,6 +102,7 @@ function draftEqualsUrl(a: DraftFilters, b: DraftFilters): boolean {
     a.bedroomsMin === b.bedroomsMin &&
     a.bedroomsMax === b.bedroomsMax &&
     a.coverageMin === b.coverageMin &&
+    a.ubicacion === b.ubicacion &&
     a.panel.downPaymentPct === b.panel.downPaymentPct &&
     a.panel.tea === b.panel.tea &&
     a.panel.tcea === b.panel.tcea &&
@@ -123,6 +125,7 @@ export function DepartamentosUnifiedClient() {
     bedroomsMin: optionalNumberString(urlState.bedroomsMin),
     bedroomsMax: optionalNumberString(urlState.bedroomsMax),
     coverageMin: optionalNumberString(urlState.coverageMin),
+    ubicacion: optionalNumberString(urlState.ubicacion),
     panel: panelToStrings({
       downPaymentPct: urlState.inicial,
       tea: urlState.tea,
@@ -142,6 +145,7 @@ export function DepartamentosUnifiedClient() {
       bedroomsMin: optionalNumberString(urlState.bedroomsMin),
       bedroomsMax: optionalNumberString(urlState.bedroomsMax),
       coverageMin: optionalNumberString(urlState.coverageMin),
+      ubicacion: optionalNumberString(urlState.ubicacion),
       panel: panelToStrings({
         downPaymentPct: urlState.inicial,
         tea: urlState.tea,
@@ -160,6 +164,7 @@ export function DepartamentosUnifiedClient() {
     urlState.bedroomsMin,
     urlState.bedroomsMax,
     urlState.coverageMin,
+    urlState.ubicacion,
     urlState.inicial,
     urlState.tea,
     urlState.tcea,
@@ -184,6 +189,7 @@ export function DepartamentosUnifiedClient() {
       bedroomsMin: parseNumericInput(debouncedDraft.bedroomsMin),
       bedroomsMax: parseNumericInput(debouncedDraft.bedroomsMax),
       coverageMin: parseNumericInput(debouncedDraft.coverageMin),
+      ubicacion: parseNumericInput(debouncedDraft.ubicacion),
       // Keep previous URL value while the field is empty / mid-edit (e.g. "0.").
       inicial:
         parseNumericInput(debouncedDraft.panel.downPaymentPct) ?? current.inicial,
@@ -204,6 +210,7 @@ export function DepartamentosUnifiedClient() {
       next.bedroomsMin !== current.bedroomsMin ||
       next.bedroomsMax !== current.bedroomsMax ||
       next.coverageMin !== current.coverageMin ||
+      next.ubicacion !== current.ubicacion ||
       next.inicial !== current.inicial ||
       next.tea !== current.tea ||
       next.tcea !== current.tcea ||
@@ -226,6 +233,7 @@ export function DepartamentosUnifiedClient() {
         bedroomsMin: urlState.bedroomsMin,
         bedroomsMax: urlState.bedroomsMax,
         coverageMin: urlState.coverageMin,
+        ubicacion: urlState.ubicacion,
         inicial: urlState.inicial,
         tea: urlState.tea,
         tcea: urlState.tcea,
@@ -360,6 +368,7 @@ export function DepartamentosUnifiedClient() {
                   ["bedroomsMin", "Cuartos mín", "Ej. 2", false],
                   ["bedroomsMax", "Cuartos máx", "Ej. 4", false],
                   ["coverageMin", "% cobertura mín", "Ej. 40", true],
+                  ["ubicacion", "Ubicación mínima", "0 a 10", true],
                 ] as const
               ).map(([key, label, placeholder, allowDecimal]) => (
                 <div key={key} className="flex flex-col gap-1.5">

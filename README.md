@@ -130,6 +130,30 @@ En la tabla de departamentos, los posibles duplicados se revisan con "es el mism
 
 Precio oficial de un departamento = la copia viva más barata. Las filas con varias copias muestran "{n} fuentes · S/ ...k a S/ ...k", y las estadísticas cuentan cada propiedad una sola vez.
 
+## Ubicación
+
+Cada departamento en Lima tiene un puntaje de ubicación de 0 a 10, en la columna "Ubicación". La mitad es calidad de la zona y la otra mitad es demanda de inquilinos. Al pasar el mouse sobre el número se ven las razones.
+
+- Calidad de la zona: tus zonas y los lugares a menos de 500 m (restaurantes, parques, supermercados, farmacias y colegios, paraderos). Dentro de una zona, el 60% sale de tu nota. Cerca de ella, menos, hasta 500 m del borde.
+- Demanda: cuántos alquileres hay a menos de 1 km y qué tan rápido se van, más el ingreso por persona y las denuncias del distrito.
+- Cada parte es un percentil entre los departamentos que sigue la plataforma, así que 10 es el mejor lugar entre ellos.
+
+El alquiler estimado también sale de la ubicación. Usa los 15 alquileres más cercanos con los mismos dormitorios, a menos de 1 km. Con 8 o más, el cálculo usa la mediana por m². El percentil 75 se muestra solo como texto ("Los mejores cercanos"), nunca en los números de plata. Con menos de 8, se usa la mediana del distrito.
+
+Antes de que el alquiler local sirva, corre una corrida de alquileres: `pnpm scrape -- --operations=rent`.
+
+```bash
+# Lugares y límites de distrito desde OpenStreetMap (una sola consulta). Una vez al mes.
+pnpm location:places
+
+# Recalcula todos los puntajes. La corrida diaria lo hace sola al terminar.
+pnpm location:refresh
+```
+
+En `/zonas` marcas un distrito completo o un punto con radio (enlace de Google Maps o "lat, lon", radio de 400 m por defecto) y le pones nota de 0 a 10. Una zona mala, por ejemplo una vía ruidosa con nota 2, baja el puntaje de lo que tiene al lado. Guardar recalcula todo.
+
+Fuentes: OpenStreetMap por la API de Overpass, los alquileres de la plataforma, y `data/location/district-stats.csv` para ingreso (INEI) y denuncias (SIDPOL). Ese archivo se llena a mano, con la fuente y la fecha en cada fila. Una celda vacía quiere decir que no hay un número de una fuente gratuita, y el puntaje usa las otras señales.
+
 ## Estructura
 
 ```
