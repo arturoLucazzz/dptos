@@ -486,3 +486,20 @@ model PropertyLocation {
   localRentMaxDistanceM Int?
   computedAt            DateTime
 }
+
+/// One official statistic for a place (a Lima district slug or a zone in data/stats/places.csv).
+/// Mirrors the CSV files in data/stats/; pnpm stats:load replaces every row.
+model Statistic {
+  id        String   @id @default(cuid())
+  place     String
+  indicator String
+  value     Decimal  @db.Decimal(14, 4)
+  period    String
+  source    String
+  sourceRef String
+  file      String
+  loadedAt  DateTime
+
+  @@unique([place, indicator, period])
+  @@index([indicator])
+}
