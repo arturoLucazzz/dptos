@@ -1,6 +1,7 @@
 /**
  * The location score: half livability (owner zones plus nearby places), half tenant
- * demand (rent listings nearby, how fast they go, district income and complaints).
+ * demand (rent listings nearby, how fast they go, and district statistics: income strata,
+ * poverty, and police complaints).
  * Every part is a percentile among the tracked apartments, so 10 is the best tracked spot.
  */
 
@@ -9,11 +10,21 @@ import { isLimaDistrict } from './lima-districts';
 import { localRent, type LocalRent, type RentPoint } from './local-rent';
 import { pickZone, type ZoneShape } from './zones';
 import { mean, median } from '../linalg';
+import { periodYear } from '../stats/latest';
 
 export type PlaceCategory = 'food' | 'park' | 'shop' | 'services' | 'transit';
 export const PLACE_CATEGORIES: readonly PlaceCategory[] = ['food', 'park', 'shop', 'services', 'transit'];
 export type PlacePoint = LatLon & { category: PlaceCategory };
-export type DistrictStatInput = { slug: string; incomePerCapitaPen: number | null; complaintsPer10k: number | null };
+export type StatValue = { value: number; period: string };
+/** The latest district statistics the score reads, from the Statistic table. */
+export type DistrictStatInput = {
+  slug: string;
+  highIncomePct: StatValue | null;
+  povertyPct: StatValue | null;
+  complaintsPer10k: StatValue | null;
+};
+/** The Statistic indicators behind DistrictStatInput. */
+export const SCORE_INDICATORS = { highIncome: 'high_income_pct', poverty: 'poverty_pct', complaints: 'complaints_per_10k' } as const;
 /** daysOnline is set only for gone listings seen in the last 180 days. */
 export type RentActivityPoint = LatLon & { live: boolean; daysOnline: number | null };
 export type ScoreSubject = { propertyId: string; districtSlug: string; lat: number | null; lon: number | null; bedrooms: number | null };
@@ -56,8 +67,9 @@ interface Raw {
   zone: ReturnType<typeof pickZone>;
   liveRents: number;
   medianDays: number | null;
-  income: number | null;
-  complaints: number | null;
+  income: StatValue | null;
+  poverty: StatValue | null;
+  complaints: StatValue | null;
   localRent: LocalRent | null;
 }
 
@@ -106,7 +118,8 @@ export function scoreAll(input: {
       zone: pickZone(p, input.zones),
       liveRents: nearActivity.filter((a) => a.live).length,
       medianDays: goneDays.length >= MIN_GONE_FOR_SPEED ? median(goneDays) : null,
-      income: stat?.incomePerCapitaPen ?? null,
+      income: stat?.highIncomePct ?? null,
+      poverty: stat?.povertyPct ?? null,
       complaints: stat?.complaintsPer10k ?? null,
       localRent: localRent({ ...p, bedrooms: s.bedrooms }, rents),
     });
@@ -115,8 +128,9 @@ export function scoreAll(input: {
   const categoryValues = Object.fromEntries(PLACE_CATEGORIES.map((c) => [c, raws.map((r) => r.counts[c])])) as Record<PlaceCategory, number[]>;
   const liveValues = raws.map((r) => r.liveRents);
   const dayValues = raws.flatMap((r) => (r.medianDays == null ? [] : [r.medianDays]));
-  const incomeValues = raws.flatMap((r) => (r.income == null ? [] : [r.income]));
-  const complaintValues = raws.flatMap((r) => (r.complaints == null ? [] : [r.complaints]));
+  const incomeValues = raws.flatMap((r) => (r.income == null ? [] : [r.income.value]));
+  const povertyValues = raws.flatMap((r) => (r.poverty == null ? [] : [r.poverty.value]));
+  const complaintValues = raws.flatMap((r) => (r.complaints == null ? [] : [r.complaints.value]));
 
   for (const r of raws) {
     const reasons: LocationReason[] = [];
@@ -153,18 +167,28 @@ export function scoreAll(input: {
       reasons.push({ tone: 'info', text: 'Pocos alquileres cercanos para medir la demanda' });
     }
     if (r.income != null) {
-      const income = percentileScore(incomeValues, r.income);
+      const income = percentileScore(incomeValues, r.income.value);
       signals.push(income);
-      if (income >= HIGH) reasons.push({ tone: 'up', text: 'Ingreso por persona alto en el distrito (INEI)' });
-      else if (income <= LOW) reasons.push({ tone: 'down', text: 'Ingreso por persona bajo en el distrito (INEI)' });
+      const tone = income >= HIGH ? 'up' : income <= LOW ? 'down' : 'info';
+      reasons.push({ tone, text: `${Math.round(r.income.value)}% vive en manzanas de ingreso alto (INEI ${periodYear(r.income.period)})` });
     } else {
       reasons.push({ tone: 'info', text: 'Sin datos de ingresos para este distrito' });
     }
+    if (r.poverty != null) {
+      const lowPoverty = 10 - percentileScore(povertyValues, r.poverty.value);
+      signals.push(lowPoverty);
+      const year = periodYear(r.poverty.period);
+      if (lowPoverty >= HIGH) reasons.push({ tone: 'up', text: `Pobreza baja en el distrito (INEI ${year})` });
+      else if (lowPoverty <= LOW) reasons.push({ tone: 'down', text: `Pobreza alta en el distrito (INEI ${year})` });
+    } else {
+      reasons.push({ tone: 'info', text: 'Sin datos de pobreza para este distrito' });
+    }
     if (r.complaints != null) {
-      const safety = 10 - percentileScore(complaintValues, r.complaints);
+      const safety = 10 - percentileScore(complaintValues, r.complaints.value);
       signals.push(safety);
-      if (safety >= HIGH) reasons.push({ tone: 'up', text: 'Pocas denuncias en el distrito' });
-      else if (safety <= LOW) reasons.push({ tone: 'down', text: 'Muchas denuncias en el distrito' });
+      const year = periodYear(r.complaints.period);
+      if (safety >= HIGH) reasons.push({ tone: 'up', text: `Pocas denuncias en el distrito (SIDPOL ${year})` });
+      else if (safety <= LOW) reasons.push({ tone: 'down', text: `Muchas denuncias en el distrito (SIDPOL ${year})` });
     } else {
       reasons.push({ tone: 'info', text: 'Sin datos de delitos para este distrito' });
     }

@@ -135,7 +135,7 @@ Precio oficial de un departamento = la copia viva más barata. Las filas con var
 Cada departamento en Lima tiene un puntaje de ubicación de 0 a 10, en la columna "Ubicación". La mitad es calidad de la zona y la otra mitad es demanda de inquilinos. Al pasar el mouse sobre el número se ven las razones.
 
 - Calidad de la zona: tus zonas y los lugares a menos de 500 m (restaurantes, parques, supermercados, farmacias y colegios, paraderos). Dentro de una zona, el 60% sale de tu nota. Cerca de ella, menos, hasta 500 m del borde.
-- Demanda: cuántos alquileres hay a menos de 1 km y qué tan rápido se van, más el ingreso por persona y las denuncias del distrito.
+- Demanda: cuántos alquileres hay a menos de 1 km y qué tan rápido se van, más tres estadísticas del distrito: la parte de vecinos en manzanas de ingreso alto (INEI), la pobreza (INEI) y las denuncias por 10 mil habitantes (SIDPOL).
 - Cada parte es un percentil entre los departamentos que sigue la plataforma, así que 10 es el mejor lugar entre ellos.
 
 El alquiler estimado también sale de la ubicación. Usa los 15 alquileres más cercanos con los mismos dormitorios, a menos de 1 km. Con 8 o más, el cálculo usa la mediana por m². El percentil 75 se muestra solo como texto ("Los mejores cercanos"), nunca en los números de plata. Con menos de 8, se usa la mediana del distrito.
@@ -152,7 +152,22 @@ pnpm location:refresh
 
 En `/zonas` marcas un distrito completo o un punto con radio (enlace de Google Maps o "lat, lon", radio de 400 m por defecto) y le pones nota de 0 a 10. Una zona mala, por ejemplo una vía ruidosa con nota 2, baja el puntaje de lo que tiene al lado. Guardar recalcula todo.
 
-Fuentes: OpenStreetMap por la API de Overpass, los alquileres de la plataforma, y `data/location/district-stats.csv` para ingreso (INEI) y denuncias (SIDPOL). Ese archivo se llena a mano, con la fuente y la fecha en cada fila. Una celda vacía quiere decir que no hay un número de una fuente gratuita, y el puntaje usa las otras señales.
+Fuentes: OpenStreetMap por la API de Overpass, los alquileres de la plataforma, y las estadísticas de `data/stats/`.
+
+### Estadísticas de distrito
+
+Las estadísticas oficiales viven en `data/stats/`, un archivo CSV por fuente y periodo, por ejemplo `inei-estratos-2020.csv`. Cada fila es un lugar, un indicador, un valor, un periodo, la fuente y la página. Al lado de cada archivo, un `.md` dice de dónde salió y cómo se leyeron los números.
+
+- `indicators.csv` es el catálogo de indicadores. Un indicador nuevo (por ejemplo edad o género) es una línea aquí y un archivo de datos, sin cambiar código.
+- `places.csv` lista los lugares que no son distritos, por ejemplo las zonas de APEIM.
+- Para actualizar, agrega un archivo nuevo con el periodo nuevo. Se usa siempre el periodo más reciente de cada indicador, y los anteriores quedan guardados.
+
+```bash
+# Revisa los archivos, reemplaza la tabla Statistic y recalcula los puntajes.
+pnpm stats:load
+```
+
+El puntaje usa solo el ingreso alto, la pobreza y las denuncias. Antes de entrar al puntaje, un indicador debe dejar a San Isidro, Miraflores y San Borja en el mejor tercio de los 11 distritos de la app. El resto (población, NSE) es contexto.
 
 ## Estructura
 

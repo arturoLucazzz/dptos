@@ -55,24 +55,24 @@ test('score is the plain average of livability and demand, one decimal', () => {
     ...empty,
     subjects: [subject('poor', { districtSlug: 'lince' }), subject('rich', { districtSlug: 'san-isidro' })],
     districtStats: [
-      { slug: 'lince', incomePerCapitaPen: 1_000, complaintsPer10k: null },
-      { slug: 'san-isidro', incomePerCapitaPen: 2_000, complaintsPer10k: null },
+      { slug: 'lince', highIncomePct: { value: 20, period: '2020' }, povertyPct: null, complaintsPer10k: null },
+      { slug: 'san-isidro', highIncomePct: { value: 100, period: '2020' }, povertyPct: null, complaintsPer10k: null },
     ],
   });
   const rich = results.find((r) => r.propertyId === 'rich')!;
   assert.equal(rich.livability, 5);
   assert.equal(rich.demand, 7.5);
   assert.equal(rich.score, 6.3);
-  assert.ok(rich.reasons.some((x) => x.text === 'Ingreso por persona alto en el distrito (INEI)'));
+  assert.ok(rich.reasons.some((x) => x.text === '100% vive en manzanas de ingreso alto (INEI 2020)'));
   const poor = results.find((r) => r.propertyId === 'poor')!;
-  assert.ok(poor.reasons.some((x) => x.text === 'Ingreso por persona bajo en el distrito (INEI)' && x.tone === 'down'));
+  assert.ok(poor.reasons.some((x) => x.text === '20% vive en manzanas de ingreso alto (INEI 2020)' && x.tone === 'down'));
 });
 
 test('a missing district stat drops that signal and adds the reason', () => {
   const [r] = scoreAll({
     ...empty,
     subjects: [subject('a')],
-    districtStats: [{ slug: 'lince', incomePerCapitaPen: 1_500, complaintsPer10k: null }],
+    districtStats: [{ slug: 'lince', highIncomePct: { value: 50, period: '2020' }, povertyPct: null, complaintsPer10k: null }],
   });
   assert.equal(r.demand, 5);
   assert.ok(r.reasons.some((x) => x.text === 'Sin datos de delitos para este distrito' && x.tone === 'info'));
@@ -157,8 +157,8 @@ test('with no places at all, the place part is left out and the reason says so',
     places: [],
     subjects: [subject('a'), subject('b', { districtSlug: 'san-isidro' })],
     districtStats: [
-      { slug: 'lince', incomePerCapitaPen: 1_000, complaintsPer10k: null },
-      { slug: 'san-isidro', incomePerCapitaPen: 2_000, complaintsPer10k: null },
+      { slug: 'lince', highIncomePct: { value: 20, period: '2020' }, povertyPct: null, complaintsPer10k: null },
+      { slug: 'san-isidro', highIncomePct: { value: 100, period: '2020' }, povertyPct: null, complaintsPer10k: null },
     ],
   });
   const a = results.find((r) => r.propertyId === 'a')!;
@@ -178,4 +178,27 @@ test('with neither places, zones, nor demand signals, there is no score', () => 
   assert.equal(r.status, 'OK');
   assert.equal(r.score, null);
   assert.equal(r.livability, null);
+});
+
+test('income, poverty, and complaints each add a signal and a reason with the source year', () => {
+  const stats = [
+    { slug: 'lince', highIncomePct: { value: 19.9, period: '2020' }, povertyPct: { value: 6, period: '2018' }, complaintsPer10k: { value: 300, period: '2024-11..2025-10' } },
+    { slug: 'san-isidro', highIncomePct: { value: 100, period: '2020' }, povertyPct: { value: 1, period: '2018' }, complaintsPer10k: { value: 100, period: '2024-11..2025-10' } },
+  ];
+  const results = scoreAll({ ...empty, subjects: [subject('poor'), subject('rich', { districtSlug: 'san-isidro' })], districtStats: stats });
+  const rich = results.find((r) => r.propertyId === 'rich')!;
+  assert.equal(rich.demand, 7.5);
+  assert.ok(rich.reasons.some((x) => x.text === '100% vive en manzanas de ingreso alto (INEI 2020)' && x.tone === 'up'));
+  assert.ok(rich.reasons.some((x) => x.text === 'Pobreza baja en el distrito (INEI 2018)' && x.tone === 'up'));
+  assert.ok(rich.reasons.some((x) => x.text === 'Pocas denuncias en el distrito (SIDPOL 2025)' && x.tone === 'up'));
+  const poor = results.find((r) => r.propertyId === 'poor')!;
+  assert.ok(poor.reasons.some((x) => x.text === '20% vive en manzanas de ingreso alto (INEI 2020)' && x.tone === 'down'));
+});
+
+test('a district with no statistics drops those signals and does not crash', () => {
+  const [r] = scoreAll({ ...empty, subjects: [subject('a')], districtStats: [{ slug: 'lince', highIncomePct: null, povertyPct: null, complaintsPer10k: null }] });
+  assert.equal(r.demand, null);
+  assert.ok(r.reasons.some((x) => x.text === 'Sin datos de ingresos para este distrito'));
+  assert.ok(r.reasons.some((x) => x.text === 'Sin datos de pobreza para este distrito'));
+  assert.ok(r.reasons.some((x) => x.text === 'Sin datos de delitos para este distrito'));
 });

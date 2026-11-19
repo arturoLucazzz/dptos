@@ -1,25 +1,22 @@
 /**
- * The refresh step: load places, zones, district stats, and rent listings, score every
+ * The refresh step: load places, zones, district statistics, and rent listings, score every
  * tracked apartment, and replace the stored PropertyLocation rows in one transaction.
  * The scrape runs it at the end of each run; zone saves and `pnpm location:refresh` too.
  *
  * Takes the client as an argument so tests can import the pure parts without a database.
  */
 
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import type { Prisma, PrismaClient } from '../generated/prisma/client';
 import { Operation, PostingKind, ScrapeStatus, ZoneKind } from '../generated/prisma/enums';
 import { cutoffsFromRuns, livePostingWhere, notLivePostingWhere } from '../possibly-sold';
 import { isUsableComparable, pricePerM2OutlierMask } from '../quality-flags';
-import { parseDistrictStatsCsv } from './district-stats';
 import type { Ring } from './geo';
 import { LIMA_PROVINCE_DISTRICTS } from './lima-districts';
 import type { RentPoint } from './local-rent';
-import { scoreAll, type LocationResult, type PlaceCategory, type RentActivityPoint, type ScoreSubject } from './score';
+import { readLatestStats } from '../stats/store';
+import { SCORE_INDICATORS, scoreAll, type LocationResult, type PlaceCategory, type RentActivityPoint, type ScoreSubject } from './score';
 import type { ZoneShape } from './zones';
 
-export const DISTRICT_STATS_PATH = 'data/location/district-stats.csv';
 const GONE_WINDOW_DAYS = 180;
 const DAY_MS = 86_400_000;
 
@@ -114,10 +111,11 @@ export async function loadScoreInput(db: PrismaClient): Promise<ScoreInput> {
     rentActivity.push({ ...point, live: false, daysOnline: Math.max(0, (end.getTime() - g.firstSeenAt.getTime()) / DAY_MS) });
   }
 
-  const [placeRows, zoneRows, statRows] = await Promise.all([
+  const [placeRows, zoneRows, statRows, latest] = await Promise.all([
     db.place.findMany({ select: { category: true, latitude: true, longitude: true } }),
     db.zone.findMany(),
-    db.districtStat.findMany(),
+    db.districtStat.findMany({ select: { slug: true, boundary: true } }),
+    readLatestStats(db),
   ]);
   const boundaries = new Map(statRows.map((s) => [s.slug, s.boundary as Ring[] | null]));
   const zones: ZoneShape[] = [];
@@ -135,27 +133,22 @@ export async function loadScoreInput(db: PrismaClient): Promise<ScoreInput> {
     subjects,
     places: placeRows.map((p) => ({ category: p.category as PlaceCategory, lat: Number(p.latitude), lon: Number(p.longitude) })),
     zones,
-    districtStats: statRows.map((s) => ({ slug: s.slug, incomePerCapitaPen: num(s.incomePerCapitaPen), complaintsPer10k: num(s.complaintsPer10k) })),
+    districtStats: LIMA_PROVINCE_DISTRICTS.map(({ slug }) => {
+      const stats = latest.get(slug);
+      const pick = (indicator: string) => {
+        const s = stats?.get(indicator);
+        return s ? { value: s.value, period: s.period } : null;
+      };
+      return {
+        slug,
+        highIncomePct: pick(SCORE_INDICATORS.highIncome),
+        povertyPct: pick(SCORE_INDICATORS.poverty),
+        complaintsPer10k: pick(SCORE_INDICATORS.complaints),
+      };
+    }),
     rentActivity,
     rents,
   };
-}
-
-/** Upserts the typed numbers and their sources; keeps the boundary from location:places. */
-export async function syncDistrictStats(db: PrismaClient, csvText: string): Promise<void> {
-  const rows = parseDistrictStatsCsv(csvText);
-  const names = new Map<string, string>(LIMA_PROVINCE_DISTRICTS.map((d) => [d.slug, d.name]));
-  for (const r of rows) {
-    const data = {
-      incomePerCapitaPen: r.incomePerCapitaPen,
-      incomeSource: r.incomeSource,
-      incomeDate: r.incomeDate,
-      complaintsPer10k: r.complaintsPer10k,
-      complaintsSource: r.complaintsSource,
-      complaintsDate: r.complaintsDate,
-    };
-    await db.districtStat.upsert({ where: { slug: r.slug }, create: { slug: r.slug, name: names.get(r.slug) ?? r.slug, ...data }, update: data });
-  }
 }
 
 export function buildRows(results: LocationResult[], computedAt: Date): Prisma.PropertyLocationCreateManyInput[] {
@@ -175,7 +168,6 @@ export function buildRows(results: LocationResult[], computedAt: Date): Prisma.P
 }
 
 export async function refreshLocations(db: PrismaClient): Promise<{ scored: number; outsideLima: number; noCoordinates: number }> {
-  await syncDistrictStats(db, readFileSync(join(process.cwd(), DISTRICT_STATS_PATH), 'utf8'));
   const results = scoreAll(await loadScoreInput(db));
   const rows = buildRows(results, new Date());
   await db.$transaction(

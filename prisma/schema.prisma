@@ -461,12 +461,6 @@ model Zone {
 model DistrictStat {
   slug               String   @id
   name               String
-  incomePerCapitaPen Decimal? @db.Decimal(10, 2)
-  incomeSource       String?
-  incomeDate         String?
-  complaintsPer10k   Decimal? @db.Decimal(10, 2)
-  complaintsSource   String?
-  complaintsDate     String?
   /// District polygon rings from OpenStreetMap, [lon, lat] pairs.
   boundary           Json?
 }
