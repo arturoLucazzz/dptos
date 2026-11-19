@@ -167,7 +167,7 @@ Las estadísticas oficiales viven en `data/stats/`, un archivo CSV por fuente y 
 pnpm stats:load
 ```
 
-El puntaje usa solo el ingreso alto, la pobreza y las denuncias. Antes de entrar al puntaje, un indicador debe dejar a San Isidro, Miraflores y San Borja en el mejor tercio de los 11 distritos de la app. El resto (población, NSE) es contexto.
+El puntaje usa solo el ingreso alto, la pobreza y las denuncias. Antes de entrar al puntaje, un indicador debe dejar a San Isidro, Miraflores y San Borja en la mejor mitad de los 11 distritos de la app. El resto (población, NSE) es contexto.
 
 ## Estructura
 

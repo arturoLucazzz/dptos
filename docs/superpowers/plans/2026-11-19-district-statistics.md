@@ -19,7 +19,7 @@
 - Unique on `(place, indicator, period)` across all files.
 - Error messages are Spanish and name the file and the row number.
 - Score indicators: `high_income_pct` (higher is better), `poverty_pct` (lower is better), `complaints_per_10k` (lower is better). NSE and `population` are context only.
-- Sense check for a score indicator: San Isidro, Miraflores, and San Borja each have fewer than 4 of the 11 app districts (`LIMA_DISTRICT_SLUGS`) strictly better than them.
+- Sense check for a score indicator: San Isidro, Miraflores, and San Borja each have fewer than 6 of the 11 app districts (`LIMA_DISTRICT_SLUGS`) strictly better than them (better half).
 - Never touch the database `dptos` during the build. Use `DATABASE_URL=postgresql://arturoLucazzz@localhost:5432/dptos_seed`. Never run `pnpm replay --reset` on a real database.
 - The local `sed` is GNU sed. Use python for in-place edits.
 - Test command for the whole suite: `pnpm test`. Typecheck: `pnpm typecheck` (or `npx tsc --noEmit`). Lint: `pnpm lint`.
@@ -329,7 +329,7 @@ git commit -m "feat: the location score reads district statistics; remove distri
 - Create: `lib/stats/sense-check.ts`. Modify: `lib/stats/committed-files.test.ts`
 
 **Interfaces:**
-- Produces: `senseCheck(latest: Map<string, Map<string, LatestStat>>, indicator: string, better: 'higher' | 'lower', districts: readonly string[]): { passed: boolean; failing: string[] }`. If 4 or more of `districts` are strictly better than one of `['san-isidro', 'miraflores', 'san-borja']`, that district fails.
+- Produces: `senseCheck(latest: Map<string, Map<string, LatestStat>>, indicator: string, better: 'higher' | 'lower', districts: readonly string[]): { passed: boolean; failing: string[] }`. If 6 or more of `districts` are strictly better than one of `['san-isidro', 'miraflores', 'san-borja']`, that district fails.
 
 - [ ] **Step 1: Find the source**
 

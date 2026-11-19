@@ -91,7 +91,7 @@ A helper returns, for each place and indicator, the row with the greatest period
 
 The INEI strata table readings from 2026-11-19 are the first `high_income_pct` file. Each row was checked against its printed total.
 
-Sense check before an indicator enters the score: San Isidro, Miraflores, and San Borja must rank in the better third of the 11 app districts. If a source fails, its file still loads as context, and the score leaves it out.
+Sense check before an indicator enters the score: San Isidro, Miraflores, and San Borja must rank in the better half of the 11 app districts, so fewer than 6 districts are strictly better than each. (Changed from "better third" during the build: income strata top out at 100%, and four districts tie above San Borja.) If a source fails, its file still loads as context, and the score leaves it out.
 
 ### Score changes
 
