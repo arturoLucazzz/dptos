@@ -1,8 +1,8 @@
 /**
  * pnpm location:refresh
  *
- * Loads data/location/district-stats.csv and recomputes every apartment's location
- * score and local rent. The scrape runs the same step at the end of each run.
+ * Recomputes every apartment's location score and local rent from the stored places,
+ * zones, district statistics, and rent listings. The scrape runs the same step at the end of each run.
  */
 
 import { prisma } from '@/lib/db';

@@ -10,6 +10,7 @@ import type { PrismaClient } from '../lib/generated/prisma/client';
 import { ZoneKind } from '../lib/generated/prisma/enums';
 import type { Ring } from '../lib/location/geo';
 import { refreshLocations } from '../lib/location/refresh';
+import { loadStatistics, readStatFiles, STATS_DIR } from '../lib/stats/store';
 import { PLACE_CATEGORIES, type PlaceCategory, type PlacePoint } from '../lib/location/score';
 import type { ZoneShape } from '../lib/location/zones';
 import { DISTRICTS } from './seed-districts';
@@ -95,6 +96,8 @@ export async function seedLocation(db: PrismaClient): Promise<void> {
           : { name: z.name, kind: ZoneKind.CIRCLE, latitude: z.lat, longitude: z.lon, radiusM: z.radiusM, rating: z.rating, notes: z.notes },
     });
   }
+  // The same statistics files as the real database, so the seed shows the same reasons.
+  await loadStatistics(db, readStatFiles(STATS_DIR), new Date());
   const counts = await refreshLocations(db);
   console.log(`\nUbicación: ${places.length} lugares, ${SEED_ZONES.length} zonas, ${counts.scored} departamentos con puntaje.`);
 }

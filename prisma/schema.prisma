@@ -461,12 +461,6 @@ model Zone {
 model DistrictStat {
   slug               String   @id
   name               String
-  incomePerCapitaPen Decimal? @db.Decimal(10, 2)
-  incomeSource       String?
-  incomeDate         String?
-  complaintsPer10k   Decimal? @db.Decimal(10, 2)
-  complaintsSource   String?
-  complaintsDate     String?
   /// District polygon rings from OpenStreetMap, [lon, lat] pairs.
   boundary           Json?
 }
@@ -485,4 +479,21 @@ model PropertyLocation {
   localRentN            Int?
   localRentMaxDistanceM Int?
   computedAt            DateTime
+}
+
+/// One official statistic for a place (a Lima district slug or a zone in data/stats/places.csv).
+/// Mirrors the CSV files in data/stats/; pnpm stats:load replaces every row.
+model Statistic {
+  id        String   @id @default(cuid())
+  place     String
+  indicator String
+  value     Decimal  @db.Decimal(14, 4)
+  period    String
+  source    String
+  sourceRef String
+  file      String
+  loadedAt  DateTime
+
+  @@unique([place, indicator, period])
+  @@index([indicator])
 }

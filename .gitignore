@@ -6,6 +6,7 @@ dist/
 .env*.local
 data/*
 !data/location/
+!data/stats/
 # Downloaded by pnpm location:places: large and refreshed monthly.
 data/location/places-lima.json
 data/location/boundaries-lima.json

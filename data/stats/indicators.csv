@@ -1,0 +1,11 @@
+indicator,label,unit,description
+high_income_pct,Vecinos en estrato de ingreso alto,%,"Personas que viven en manzanas con ingreso per cápita del hogar de S/ 2,412.45 o más al mes (INEI)."
+poverty_pct,Pobreza monetaria,%,Personas en pobreza monetaria total en el distrito (INEI).
+complaints_per_10k,Denuncias por 10 mil habitantes,denuncias,"Denuncias registradas en SIDPOL en 12 meses, por cada 10 mil habitantes."
+population,Población,personas,Habitantes del distrito (INEI).
+nse_a_pct,Hogares NSE A,%,Hogares en el nivel socioeconómico A.
+nse_b_pct,Hogares NSE B,%,Hogares en el nivel socioeconómico B.
+nse_c_pct,Hogares NSE C,%,Hogares en el nivel socioeconómico C.
+nse_d_pct,Hogares NSE D,%,Hogares en el nivel socioeconómico D.
+nse_e_pct,Hogares NSE E,%,Hogares en el nivel socioeconómico E.
+zone_household_income_pen,Ingreso mensual promedio del hogar en la zona,S/ al mes,"Ingreso mensual promedio de un hogar de la zona, según Ipsos."

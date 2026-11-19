@@ -1,0 +1,7 @@
+place,kind,label,districts
+lima-metropolitana,metro,Lima Metropolitana (APEIM),lima;ancon;ate;barranco;brena;carabayllo;chaclacayo;chorrillos;cieneguilla;comas;el-agustino;independencia;jesus-maria;la-molina;la-victoria;lince;los-olivos;lurigancho;lurin;magdalena;pueblo-libre;miraflores;pachacamac;pucusana;puente-piedra;punta-hermosa;punta-negra;rimac;san-bartolo;san-borja;san-isidro;san-juan-de-lurigancho;san-juan-de-miraflores;san-luis;san-martin-de-porres;san-miguel;santa-anita;santa-maria-del-mar;santa-rosa;santiago-de-surco;surquillo;villa-el-salvador;villa-maria-del-triunfo
+ipsos-lima-norte,zone,Lima Norte (Ipsos),ancon;carabayllo;comas;independencia;los-olivos;puente-piedra;san-martin-de-porres;santa-rosa
+ipsos-lima-este,zone,Lima Este (Ipsos),ate;chaclacayo;cieneguilla;el-agustino;lurigancho;san-juan-de-lurigancho;santa-anita
+ipsos-lima-centro,zone,Lima Centro (Ipsos),brena;la-victoria;lima;rimac;san-luis
+ipsos-lima-oeste,zone,Lima Oeste (Ipsos),barranco;jesus-maria;la-molina;lince;magdalena;miraflores;pueblo-libre;san-borja;san-isidro;san-miguel;santiago-de-surco;surquillo
+ipsos-lima-sur,zone,Lima Sur (Ipsos),chorrillos;lurin;pachacamac;pucusana;punta-hermosa;punta-negra;san-bartolo;san-juan-de-miraflores;santa-maria-del-mar;villa-el-salvador;villa-maria-del-triunfo

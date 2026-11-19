@@ -10,6 +10,7 @@
     "scrape:check": "tsx scraper/src/check.ts",
     "location:places": "tsx --env-file-if-exists=.env scraper/src/location-places.ts",
     "location:refresh": "tsx --env-file-if-exists=.env scraper/src/location-refresh.ts",
+    "stats:load": "tsx --env-file-if-exists=.env scraper/src/stats-load.ts",
     "scrape:probe": "tsx --env-file-if-exists=.env scraper/src/probe.ts",
     "process": "tsx --env-file-if-exists=.env scraper/src/index.ts process",
     "replay": "tsx --env-file-if-exists=.env scraper/src/replay.ts",
