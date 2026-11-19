@@ -1,8 +1,12 @@
 import { test } from 'node:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import assert from 'node:assert/strict';
 import { readStatFiles, STATS_DIR } from './store';
 import { latestStats } from './latest';
 import { senseCheck } from './sense-check';
+import { parsePlaces } from './files';
+import { LIMA_PROVINCE_DISTRICTS } from '../location/lima-districts';
 import { LIMA_DISTRICT_SLUGS } from '../../scraper/src/config/districts';
 import { SCORE_INDICATORS, SCORE_LEFT_OUT } from '../location/score';
 
@@ -26,4 +30,25 @@ test('every score indicator passes the sense check', () => {
   assert.equal(count('poverty_pct'), 43);
   assert.equal(count('population'), 43);
   assert.equal(count('complaints_per_10k'), 41); // Lima and San Juan de Lurigancho overflow ("#####") in the SIDPOL table
+});
+
+test('the NSE levels of each place add up to about 100%', () => {
+  const rows = readStatFiles(STATS_DIR).filter((r) => r.indicator.startsWith('nse_'));
+  const byPlace = new Map<string, typeof rows>();
+  for (const r of rows) byPlace.set(`${r.place} ${r.period}`, [...(byPlace.get(`${r.place} ${r.period}`) ?? []), r]);
+  assert.ok(byPlace.size >= 1);
+  for (const [place, pr] of byPlace) {
+    assert.equal(pr.length, 5, place);
+    assert.ok(Math.abs(pr.reduce((s, r) => s + r.value, 0) - 100) <= 1, place);
+  }
+});
+
+test('the Ipsos zones cover each Lima district exactly once and have a household income', () => {
+  const zones = parsePlaces(readFileSync(join(process.cwd(), STATS_DIR, 'places.csv'), 'utf8')).filter((p) => p.place.startsWith('ipsos-'));
+  const districts = zones.flatMap((z) => z.districts);
+  assert.equal(districts.length, 43);
+  assert.deepEqual(new Set(districts), new Set(LIMA_PROVINCE_DISTRICTS.map((d) => d.slug)));
+  const latest = latestStats(readStatFiles(STATS_DIR));
+  for (const z of zones) assert.ok(latest.get(z.place)?.get('zone_household_income_pen'), z.place);
+  assert.equal(latest.get('ipsos-lima-oeste')!.get('zone_household_income_pen')!.value, 8258);
 });

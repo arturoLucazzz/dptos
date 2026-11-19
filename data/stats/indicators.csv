@@ -8,3 +8,4 @@ nse_b_pct,Hogares NSE B,%,Hogares en el nivel socioeconómico B.
 nse_c_pct,Hogares NSE C,%,Hogares en el nivel socioeconómico C.
 nse_d_pct,Hogares NSE D,%,Hogares en el nivel socioeconómico D.
 nse_e_pct,Hogares NSE E,%,Hogares en el nivel socioeconómico E.
+zone_household_income_pen,Ingreso mensual promedio del hogar en la zona,S/ al mes,"Ingreso mensual promedio de un hogar de la zona, según Ipsos."
