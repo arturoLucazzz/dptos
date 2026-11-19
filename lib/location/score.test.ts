@@ -202,3 +202,14 @@ test('a district with no statistics drops those signals and does not crash', () 
   assert.ok(r.reasons.some((x) => x.text === 'Sin datos de pobreza para este distrito'));
   assert.ok(r.reasons.some((x) => x.text === 'Sin datos de delitos para este distrito'));
 });
+
+test('an indicator left out of the score (undefined) adds no signal and no reason', () => {
+  const stats = [
+    { slug: 'lince', highIncomePct: { value: 20, period: '2020' }, povertyPct: null },
+    { slug: 'san-isidro', highIncomePct: { value: 100, period: '2020' }, povertyPct: null },
+  ];
+  const results = scoreAll({ ...empty, subjects: [subject('poor'), subject('rich', { districtSlug: 'san-isidro' })], districtStats: stats });
+  const rich = results.find((r) => r.propertyId === 'rich')!;
+  assert.equal(rich.demand, 7.5);
+  assert.ok(!rich.reasons.some((x) => x.text.includes('delitos') || x.text.includes('denuncias')), JSON.stringify(rich.reasons));
+});

@@ -14,7 +14,7 @@ import type { Ring } from './geo';
 import { LIMA_PROVINCE_DISTRICTS } from './lima-districts';
 import type { RentPoint } from './local-rent';
 import { readLatestStats } from '../stats/store';
-import { SCORE_INDICATORS, scoreAll, type LocationResult, type PlaceCategory, type RentActivityPoint, type ScoreSubject } from './score';
+import { SCORE_INDICATORS, SCORE_LEFT_OUT, scoreAll, type LocationResult, type PlaceCategory, type RentActivityPoint, type ScoreSubject } from './score';
 import type { ZoneShape } from './zones';
 
 const GONE_WINDOW_DAYS = 180;
@@ -139,11 +139,13 @@ export async function loadScoreInput(db: PrismaClient): Promise<ScoreInput> {
         const s = stats?.get(indicator);
         return s ? { value: s.value, period: s.period } : null;
       };
+      // An indicator in SCORE_LEFT_OUT stays undefined: no signal and no reason.
+      const use = (indicator: string) => (SCORE_LEFT_OUT.has(indicator) ? undefined : pick(indicator));
       return {
         slug,
-        highIncomePct: pick(SCORE_INDICATORS.highIncome),
-        povertyPct: pick(SCORE_INDICATORS.poverty),
-        complaintsPer10k: pick(SCORE_INDICATORS.complaints),
+        highIncomePct: use(SCORE_INDICATORS.highIncome),
+        povertyPct: use(SCORE_INDICATORS.poverty),
+        complaintsPer10k: use(SCORE_INDICATORS.complaints),
       };
     }),
     rentActivity,

@@ -16,15 +16,25 @@ export type PlaceCategory = 'food' | 'park' | 'shop' | 'services' | 'transit';
 export const PLACE_CATEGORIES: readonly PlaceCategory[] = ['food', 'park', 'shop', 'services', 'transit'];
 export type PlacePoint = LatLon & { category: PlaceCategory };
 export type StatValue = { value: number; period: string };
-/** The latest district statistics the score reads, from the Statistic table. */
+/**
+ * The latest district statistics the score reads, from the Statistic table.
+ * null: the indicator is used but this district has no value ("Sin datos ..." reason).
+ * undefined: the indicator is left out of the score (no signal, no reason).
+ */
 export type DistrictStatInput = {
   slug: string;
-  highIncomePct: StatValue | null;
-  povertyPct: StatValue | null;
-  complaintsPer10k: StatValue | null;
+  highIncomePct?: StatValue | null;
+  povertyPct?: StatValue | null;
+  complaintsPer10k?: StatValue | null;
 };
 /** The Statistic indicators behind DistrictStatInput. */
 export const SCORE_INDICATORS = { highIncome: 'high_income_pct', poverty: 'poverty_pct', complaints: 'complaints_per_10k' } as const;
+/**
+ * Indicators that failed the sense check (lib/stats/sense-check.ts) and stay context only.
+ * Complaints per resident rank San Isidro and Miraflores 9th and 10th of 11: shoppers and
+ * office workers file complaints there, so the count says little about living there.
+ */
+export const SCORE_LEFT_OUT: ReadonlySet<string> = new Set([SCORE_INDICATORS.complaints]);
 /** daysOnline is set only for gone listings seen in the last 180 days. */
 export type RentActivityPoint = LatLon & { live: boolean; daysOnline: number | null };
 export type ScoreSubject = { propertyId: string; districtSlug: string; lat: number | null; lon: number | null; bedrooms: number | null };
@@ -67,9 +77,9 @@ interface Raw {
   zone: ReturnType<typeof pickZone>;
   liveRents: number;
   medianDays: number | null;
-  income: StatValue | null;
-  poverty: StatValue | null;
-  complaints: StatValue | null;
+  income: StatValue | null | undefined;
+  poverty: StatValue | null | undefined;
+  complaints: StatValue | null | undefined;
   localRent: LocalRent | null;
 }
 
@@ -118,9 +128,9 @@ export function scoreAll(input: {
       zone: pickZone(p, input.zones),
       liveRents: nearActivity.filter((a) => a.live).length,
       medianDays: goneDays.length >= MIN_GONE_FOR_SPEED ? median(goneDays) : null,
-      income: stat?.highIncomePct ?? null,
-      poverty: stat?.povertyPct ?? null,
-      complaints: stat?.complaintsPer10k ?? null,
+      income: stat ? stat.highIncomePct : null,
+      poverty: stat ? stat.povertyPct : null,
+      complaints: stat ? stat.complaintsPer10k : null,
       localRent: localRent({ ...p, bedrooms: s.bedrooms }, rents),
     });
   }
@@ -166,7 +176,9 @@ export function scoreAll(input: {
     } else {
       reasons.push({ tone: 'info', text: 'Pocos alquileres cercanos para medir la demanda' });
     }
-    if (r.income != null) {
+    if (r.income === undefined) {
+      // Left out of the score.
+    } else if (r.income !== null) {
       const income = percentileScore(incomeValues, r.income.value);
       signals.push(income);
       const tone = income >= HIGH ? 'up' : income <= LOW ? 'down' : 'info';
@@ -174,7 +186,9 @@ export function scoreAll(input: {
     } else {
       reasons.push({ tone: 'info', text: 'Sin datos de ingresos para este distrito' });
     }
-    if (r.poverty != null) {
+    if (r.poverty === undefined) {
+      // Left out of the score.
+    } else if (r.poverty !== null) {
       const lowPoverty = 10 - percentileScore(povertyValues, r.poverty.value);
       signals.push(lowPoverty);
       const year = periodYear(r.poverty.period);
@@ -183,7 +197,9 @@ export function scoreAll(input: {
     } else {
       reasons.push({ tone: 'info', text: 'Sin datos de pobreza para este distrito' });
     }
-    if (r.complaints != null) {
+    if (r.complaints === undefined) {
+      // Left out of the score.
+    } else if (r.complaints !== null) {
       const safety = 10 - percentileScore(complaintValues, r.complaints.value);
       signals.push(safety);
       const year = periodYear(r.complaints.period);
