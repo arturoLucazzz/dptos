@@ -231,6 +231,10 @@ pnpm backfill:projects --apply
 # 5. Avisos viejos guardados como magdalena-del-mar pasan a magdalena. Primero sin --apply.
 pnpm relabel:districts
 pnpm relabel:districts --apply
+
+# 6. Estadísticas de distrito (ingreso, pobreza, denuncias, NSE). Sin este paso, la tabla
+#    Statistic queda vacía y cada aviso dice "Sin datos de ingresos" y "Sin datos de pobreza".
+pnpm stats:load
 ```
 
 **Nunca** corras `pnpm replay --reset` sobre la base real: borra todas las propiedades, y con ellas los favoritos, descartes y notas.

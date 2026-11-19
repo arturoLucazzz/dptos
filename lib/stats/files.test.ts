@@ -56,3 +56,18 @@ test('parseIndicators reads the catalog', () => {
   const [d] = parseIndicators('indicator,label,unit,description\npoverty_pct,Pobreza,%,"Pobreza monetaria total, INEI"\n');
   assert.deepEqual(d, { indicator: 'poverty_pct', label: 'Pobreza', unit: '%', description: 'Pobreza monetaria total, INEI' });
 });
+
+test('an unquoted decimal comma is rejected by the cell count, not stored as a wrong number', () => {
+  assert.throws(() => parseStatFile('a.csv', `${H}\nlince,poverty_pct,12,5,2020,INEI,p. 40\n`, ctx), {
+    message: 'Fila con 7 columnas en a.csv, fila 2 (deben ser 6). ¿Una coma decimal o de miles sin comillas? Usa punto decimal.',
+  });
+});
+
+test('a period that is not a year, a month, or a window is rejected', () => {
+  assert.throws(() => parseStatFile('a.csv', `${H}\nlince,poverty_pct,12,5,INEI,p. 40\n`, ctx), {
+    message: 'Periodo inválido en a.csv, fila 2: 5 (usa 2020, 2025-10 o 2024-11..2025-10)',
+  });
+  for (const period of ['2020', '2025-10', '2024-11..2025-10', '2024..2025']) {
+    assert.equal(parseStatFile('a.csv', `${H}\nlince,poverty_pct,1,${period},INEI,p\n`, ctx)[0].period, period);
+  }
+});

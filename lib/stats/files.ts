@@ -23,6 +23,8 @@ export type StatRow = {
 };
 
 const NUMBER = /^-?\d+(\.\d+)?$/;
+/** A year, a month, or a window between two of them: 2020, 2025-10, 2024-11..2025-10. */
+const PERIOD = /^\d{4}(-\d{2})?(\.\.\d{4}(-\d{2})?)?$/;
 
 /** Data rows with their file row number (the header is row 1). Throws on a wrong header. */
 function rowsOf(file: string, text: string, header: string): { cells: string[]; row: number }[] {
@@ -49,16 +51,22 @@ export function parsePlaces(text: string): PlaceDef[] {
 }
 
 export function parseStatFile(file: string, text: string, ctx: { indicators: Set<string>; places: Set<string> }): StatRow[] {
-  return rowsOf(file, text, STAT_HEADER).map(({ cells: [place, indicator, value, period, source, sourceRef], row }) => {
+  return rowsOf(file, text, STAT_HEADER).map(({ cells, row }) => {
+    // An unquoted decimal or thousands comma ("12,5") adds a cell and shifts every column after it.
+    if (cells.length !== 6) {
+      throw new Error(`Fila con ${cells.length} columnas en ${file}, fila ${row} (deben ser 6). ¿Una coma decimal o de miles sin comillas? Usa punto decimal.`);
+    }
+    const [place, indicator, value, period, source, sourceRef] = cells;
     if (!isLimaDistrict(place) && !ctx.places.has(place)) throw new Error(`Lugar desconocido en ${file}, fila ${row}: ${place}`);
     if (!ctx.indicators.has(indicator)) {
       throw new Error(`Indicador desconocido en ${file}, fila ${row}: ${indicator} (agrégalo a indicators.csv)`);
     }
-    if (!NUMBER.test(value ?? '')) {
-      throw new Error(`Número inválido en ${file}, fila ${row}: ${value ?? ''} (usa punto decimal y sin separador de miles)`);
+    if (!NUMBER.test(value)) {
+      throw new Error(`Número inválido en ${file}, fila ${row}: ${value} (usa punto decimal y sin separador de miles)`);
     }
+    if (!PERIOD.test(period)) throw new Error(`Periodo inválido en ${file}, fila ${row}: ${period} (usa 2020, 2025-10 o 2024-11..2025-10)`);
     if (!source) throw new Error(`Falta la fuente en ${file}, fila ${row}`);
-    return { place, indicator, value: Number(value), period, source, sourceRef: sourceRef ?? '', file };
+    return { place, indicator, value: Number(value), period, source, sourceRef, file };
   });
 }
 

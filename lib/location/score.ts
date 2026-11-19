@@ -139,7 +139,10 @@ export function scoreAll(input: {
   const liveValues = raws.map((r) => r.liveRents);
   const dayValues = raws.flatMap((r) => (r.medianDays == null ? [] : [r.medianDays]));
   const incomeValues = raws.flatMap((r) => (r.income == null ? [] : [r.income.value]));
-  const povertyValues = raws.flatMap((r) => (r.poverty == null ? [] : [r.poverty.value]));
+  // INEI gives poverty as a 95% range, and the ranges of nearby districts overlap
+  // (Jesús María 0.3-0.8, Pueblo Libre 0.4-1.2). Whole percents keep them tied.
+  const povertyOf = (p: StatValue) => Math.round(p.value);
+  const povertyValues = raws.flatMap((r) => (r.poverty == null ? [] : [povertyOf(r.poverty)]));
   const complaintValues = raws.flatMap((r) => (r.complaints == null ? [] : [r.complaints.value]));
 
   for (const r of raws) {
@@ -189,7 +192,7 @@ export function scoreAll(input: {
     if (r.poverty === undefined) {
       // Left out of the score.
     } else if (r.poverty !== null) {
-      const lowPoverty = 10 - percentileScore(povertyValues, r.poverty.value);
+      const lowPoverty = 10 - percentileScore(povertyValues, povertyOf(r.poverty));
       signals.push(lowPoverty);
       const year = periodYear(r.poverty.period);
       if (lowPoverty >= HIGH) reasons.push({ tone: 'up', text: `Pobreza baja en el distrito (INEI ${year})` });

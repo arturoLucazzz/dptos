@@ -213,3 +213,12 @@ test('an indicator left out of the score (undefined) adds no signal and no reaso
   assert.equal(rich.demand, 7.5);
   assert.ok(!rich.reasons.some((x) => x.text.includes('delitos') || x.text.includes('denuncias')), JSON.stringify(rich.reasons));
 });
+
+test('poverty is compared in whole percents, so districts INEI cannot tell apart tie', () => {
+  const stats = [
+    { slug: 'jesus-maria', povertyPct: { value: 0.55, period: '2018' } },
+    { slug: 'pueblo-libre', povertyPct: { value: 0.8, period: '2018' } },
+  ];
+  const results = scoreAll({ ...empty, subjects: [subject('jm', { districtSlug: 'jesus-maria' }), subject('pl', { districtSlug: 'pueblo-libre' })], districtStats: stats });
+  assert.equal(results[0].demand, results[1].demand);
+});
