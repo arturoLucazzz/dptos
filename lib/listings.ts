@@ -430,7 +430,7 @@ async function loadLocations(propertyIds: string[]): Promise<Map<string, StoredL
   );
 }
 
-async function latestScrapeCacheKey(): Promise<string> {
+export async function latestScrapeCacheKey(): Promise<string> {
   const run = await prisma.scrapeRun.findFirst({
     where: { status: { in: [ScrapeStatus.SUCCESS, ScrapeStatus.PARTIAL] } },
     orderBy: { startedAt: 'desc' },
@@ -471,6 +471,8 @@ export async function patchSaleListingFavorite(propertyId: string, favorite: boo
 /** Drop the memo; call it wherever a write changes what the rows show. */
 export function invalidateSaleListings(): void {
   memoHolder.__saleListingsMemo = undefined;
+  // The project rows come from the same scrape and the same writes.
+  (globalThis as { __projectRowsMemo?: unknown }).__projectRowsMemo = undefined;
 }
 
 /**
