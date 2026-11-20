@@ -16,6 +16,7 @@ export const HOME_ROW_KEYS = [
   'areaM2',
   'pricePen',
   'grossRentPen',
+  'paymentPen',
   'monthlyGainPen',
   'entryCostPen',
   'discountPct',

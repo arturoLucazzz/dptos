@@ -17,6 +17,7 @@ const FLOWS = [
   // On a desktop the map starts open: wait for its canvas and a moment for tiles and pins.
   { name: 'inversion-workspace', from: '/inversiones', link: 'main a[href^="/inversiones/"]', texts: ['Comparar'], desktopWait: 'canvas.maplibregl-canvas' },
 ];
+FLOWS.push({ name: 'inversion-comparar', from: '/inversiones', link: 'main a[href^="/inversiones/"]', then: '/comparar', texts: ['Comparar', 'Precio por m²', 'Rentabilidad bruta'] });
 const SIZES = [
   { name: 'desktop', width: 1440, height: 900 },
   { name: 'phone', width: 390, height: 844 },
@@ -61,6 +62,9 @@ for (const size of SIZES) {
       await page.locator(flow.link).first().click();
       await page.waitForURL((u) => u.pathname !== flow.from, { timeout: 60_000 });
       await page.waitForLoadState('networkidle', { timeout: 60_000 });
+      if (flow.then) {
+        await page.goto(page.url().replace(/\/$/, '') + flow.then, { waitUntil: 'networkidle', timeout: 60_000 });
+      }
       if (flow.desktopWait && size.name === 'desktop') {
         await page.waitForSelector(flow.desktopWait, { timeout: 60_000 });
         await page.waitForTimeout(4_000);
