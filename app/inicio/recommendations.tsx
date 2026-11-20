@@ -229,6 +229,7 @@ export function Recommendations({ initial }: { initial: Reco }) {
                               src={r.imageUrl}
                               alt=""
                               loading="lazy"
+              onError={(e) => { e.currentTarget.style.display = "none"; }}
                               className="size-full object-cover"
                             />
                           )}

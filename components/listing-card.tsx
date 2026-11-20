@@ -44,14 +44,14 @@ export function ListingCard({ row }: { row: HomeRow }) {
       tabIndex={row.url ? 0 : undefined}
       onClick={open}
       onKeyDown={(e) => {
-        if (e.key === "Enter") open();
+        if (e.key === "Enter" && e.target === e.currentTarget) open();
       }}
       className="group cursor-pointer overflow-hidden rounded-xl border border-border bg-card"
     >
       <div className="relative aspect-[4/3] bg-gradient-to-br from-muted to-secondary">
         {row.imageUrl && (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={row.imageUrl} alt="" loading="lazy" className="size-full object-cover" />
+          <img src={row.imageUrl} alt="" loading="lazy" onError={(e) => { e.currentTarget.style.display = "none"; }} className="size-full object-cover" />
         )}
         <div className="absolute left-2 top-2">
           <AddButton propertyId={row.propertyId} />

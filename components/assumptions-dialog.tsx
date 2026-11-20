@@ -20,6 +20,7 @@ import {
   assumptionsLabel,
   serializeAssumptions,
 } from "@/lib/assumptions-cookie";
+import { panelWarnings } from "@/lib/panel-warnings";
 import { parseNumericInput, sanitizeNumericInput } from "@/lib/numeric-input";
 import { ASSUMPTIONS_CHANGED_EVENT } from "@/hooks/use-assumptions-version";
 
@@ -76,6 +77,7 @@ export function AssumptionsDialog({ initial }: { initial: PanelAssumptions }) {
   }
 
   const cashChanged = values.cashAvailablePen !== DEFAULT_PANEL.cashAvailablePen;
+  const warnings = panelWarnings(values);
   const extraChanged = values.extraMonthlyPen !== DEFAULT_PANEL.extraMonthlyPen;
 
   return (
@@ -163,6 +165,14 @@ export function AssumptionsDialog({ initial }: { initial: PanelAssumptions }) {
               }}
             />
           </div>
+
+          {warnings.length > 0 && (
+            <ul className="space-y-1 text-xs text-loss" role="status">
+              {warnings.map((w) => (
+                <li key={w.kind}>{w.message}</li>
+              ))}
+            </ul>
+          )}
         </div>
 
         <DialogFooter>

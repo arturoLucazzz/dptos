@@ -26,7 +26,7 @@ export function ContinueCard({ favorites }: { favorites: { id: string; imageUrl:
                   <span key={t.id} className="size-9 overflow-hidden rounded-full border-2 border-card bg-gradient-to-br from-muted to-secondary">
                     {t.imageUrl && (
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img src={t.imageUrl} alt="" className="size-full object-cover" />
+                      <img src={t.imageUrl} alt="" onError={(e) => { e.currentTarget.style.display = "none"; }} className="size-full object-cover" />
                     )}
                   </span>
                 ))}
