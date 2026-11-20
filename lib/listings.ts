@@ -451,6 +451,21 @@ const memoHolder = globalThis as unknown as {
   __saleListingsMemo?: { key: string; at: number; value: Promise<ListingsPage> };
 };
 
+/** Changes when the row shape does, so a dev reload never serves rows of an older shape. */
+const SHAPE_VERSION = 'rows-v4-location';
+
+/** Flip one favorite in the memoized rows, so a toggle does not drop the whole universe. */
+export async function patchSaleListingFavorite(propertyId: string, favorite: boolean): Promise<void> {
+  const memo = memoHolder.__saleListingsMemo;
+  if (!memo) return;
+  try {
+    const page = await memo.value;
+    for (const row of page.listings) if (row.propertyId === propertyId) row.favorite = favorite;
+  } catch {
+    // A failed load is dropped by its own handler.
+  }
+}
+
 /** Drop the memo; call it wherever a write changes what the rows show. */
 export function invalidateSaleListings(): void {
   memoHolder.__saleListingsMemo = undefined;
@@ -461,7 +476,7 @@ export function invalidateSaleListings(): void {
  * re-fit fair-price and rent models on every keystroke.
  */
 export async function getCachedSaleListings(): Promise<ListingsPage> {
-  const key = await latestScrapeCacheKey();
+  const key = `${SHAPE_VERSION}:${await latestScrapeCacheKey()}`;
   const memo = memoHolder.__saleListingsMemo;
   if (memo && memo.key === key && Date.now() - memo.at < MEMO_TTL_MS) return memo.value;
 

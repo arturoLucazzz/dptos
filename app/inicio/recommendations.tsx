@@ -4,8 +4,21 @@ import { useState, useSyncExternalStore } from "react";
 import { LayoutGrid, Table2 } from "lucide-react";
 import { AddButton, ListingCard, pen } from "@/components/listing-card";
 import { ScoreBadge } from "@/components/score-badge";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { moneyLine, recommend, RECO_TABS, type RecoMode } from "@/lib/home";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { moneyLine, RECO_TABS, type RecoMode } from "@/lib/home";
 import type { HomeRow } from "@/lib/home-rows";
 
 const FIRST = 16;
@@ -33,7 +46,11 @@ function readPref(key: string): string | null {
 
 /** A remembered choice; the server and the first paint see the default. */
 function usePref(key: string): string | null {
-  return useSyncExternalStore(subscribe, () => readPref(key), () => null);
+  return useSyncExternalStore(
+    subscribe,
+    () => readPref(key),
+    () => null,
+  );
 }
 
 function remember(key: string, value: string) {
@@ -45,158 +62,253 @@ function remember(key: string, value: string) {
   window.dispatchEvent(new Event(PREF_EVENT));
 }
 
-export function Recommendations({ rows }: { rows: HomeRow[] }) {
+type Reco = { rows: HomeRow[]; hasMore: boolean };
+
+const HEAD_HINTS: Record<string, string> = {
+  "Alquiler est.":
+    "Alquiler estimado por mes para un departamento de este tamaño en la zona",
+  Ganancia:
+    "Alquiler menos la cuota del banco y los gastos, por mes, con tus supuestos",
+  Rentabilidad: "Alquiler de un año dividido entre el precio",
+  "Efectivo día 1": "Inicial más gastos de compra",
+  Ubicación: "Puntaje de ubicación de 0 a 10",
+};
+
+function Head({ label }: { label: string }) {
+  const hint = HEAD_HINTS[label];
+  return (
+    <TableHead>
+      {hint ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="cursor-help underline decoration-dotted underline-offset-4">
+              {label}
+            </span>
+          </TooltipTrigger>
+          <TooltipContent>{hint}</TooltipContent>
+        </Tooltip>
+      ) : (
+        label
+      )}
+    </TableHead>
+  );
+}
+
+/** The server sends one page of the first tab; the rest is fetched as the person asks. */
+export function Recommendations({ initial }: { initial: Reco }) {
   const [mode, setMode] = useState<RecoMode>("gain");
-  const [shown, setShown] = useState(FIRST);
+  const [data, setData] = useState<Reco>(initial);
+  const [loading, setLoading] = useState(false);
+  const [failed, setFailed] = useState(false);
   const storedView = usePref(VIEW_KEY);
   const view: View = storedView === "table" ? "table" : "cards";
   const storedCols = Number(usePref(COLS_KEY));
   const cols = COLS.includes(storedCols) ? storedCols : 4;
 
-  const { rows: list, hasMore } = recommend(rows, mode, shown);
+  async function load(nextMode: RecoMode, n: number) {
+    setLoading(true);
+    setFailed(false);
+    try {
+      const res = await fetch(
+        `/api/inicio/recomendados?mode=${nextMode}&n=${n}`,
+      );
+      if (!res.ok) throw new Error(String(res.status));
+      setData((await res.json()) as Reco);
+      setMode(nextMode);
+    } catch {
+      setFailed(true);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const list = data.rows;
+  const hasMore = data.hasMore;
 
   return (
-    <section className="space-y-3">
-      <h2 className="text-lg font-semibold">Recomendados</h2>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap gap-1.5">
-          {RECO_TABS.map((t) => (
-            <button
-              key={t.mode}
-              type="button"
-              onClick={() => {
-                setMode(t.mode);
-                setShown(FIRST);
-              }}
-              className={`rounded-full border px-3 py-1 text-sm ${
-                mode === t.mode ? "border-primary bg-primary text-primary-foreground" : "border-border text-muted-foreground hover:bg-accent"
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
+    <TooltipProvider>
+      <section className="space-y-3">
+        <h2 className="text-lg font-semibold">Recomendados</h2>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap gap-1.5">
+            {RECO_TABS.map((t) => (
+              <button
+                key={t.mode}
+                type="button"
+                onClick={() => {
+                  if (t.mode !== mode) void load(t.mode, FIRST);
+                }}
+                className={`rounded-full border px-3 py-1 text-sm ${
+                  mode === t.mode
+                    ? "border-primary bg-primary text-primary-foreground"
+                    : "border-border text-muted-foreground hover:bg-accent"
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-2">
+            {view === "cards" && (
+              <div
+                className="hidden items-center gap-1 sm:flex"
+                aria-label="Columnas"
+              >
+                {COLS.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    aria-pressed={cols === c}
+                    onClick={() => {
+                      remember(COLS_KEY, String(c));
+                    }}
+                    className={`size-7 rounded-md border text-xs ${cols === c ? "border-primary text-foreground" : "border-border text-muted-foreground"}`}
+                  >
+                    {c}
+                  </button>
+                ))}
+              </div>
+            )}
+            {(
+              [
+                ["cards", LayoutGrid, "Tarjetas"],
+                ["table", Table2, "Tabla"],
+              ] as const
+            ).map(([v, Icon, label]) => (
+              <button
+                key={v}
+                type="button"
+                aria-label={label}
+                aria-pressed={view === v}
+                onClick={() => {
+                  remember(VIEW_KEY, v);
+                }}
+                className={`inline-flex size-8 items-center justify-center rounded-md border ${view === v ? "border-primary text-foreground" : "border-border text-muted-foreground"}`}
+              >
+                <Icon className="size-4" />
+              </button>
+            ))}
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          {view === "cards" && (
-            <div className="hidden items-center gap-1 sm:flex" aria-label="Columnas">
-              {COLS.map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  aria-pressed={cols === c}
-                  onClick={() => {
-                    remember(COLS_KEY, String(c));
-                  }}
-                  className={`size-7 rounded-md border text-xs ${cols === c ? "border-primary text-foreground" : "border-border text-muted-foreground"}`}
-                >
-                  {c}
-                </button>
-              ))}
-            </div>
-          )}
-          {([["cards", LayoutGrid, "Tarjetas"], ["table", Table2, "Tabla"]] as const).map(([v, Icon, label]) => (
-            <button
-              key={v}
-              type="button"
-              aria-label={label}
-              aria-pressed={view === v}
-              onClick={() => {
-                remember(VIEW_KEY, v);
-              }}
-              className={`inline-flex size-8 items-center justify-center rounded-md border ${view === v ? "border-primary text-foreground" : "border-border text-muted-foreground"}`}
-            >
-              <Icon className="size-4" />
-            </button>
-          ))}
-        </div>
-      </div>
 
-      {view === "cards" ? (
-        <div
-          className="grid grid-cols-1 gap-3 sm:[grid-template-columns:repeat(var(--cols),minmax(0,1fr))]"
-          style={{ ["--cols" as string]: cols }}
-        >
-          {list.map((r) => (
-            <ListingCard key={r.postingId} row={r} />
-          ))}
-        </div>
-      ) : (
-        <div className="rounded-xl border border-border bg-card">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead />
-                <TableHead>Departamento</TableHead>
-                <TableHead>Precio</TableHead>
-                <TableHead>Alquiler est.</TableHead>
-                <TableHead>Ganancia</TableHead>
-                <TableHead>Rentabilidad</TableHead>
-                <TableHead>Efectivo día 1</TableHead>
-                <TableHead>Ubicación</TableHead>
-                <TableHead />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {list.map((r) => {
-                const money = moneyLine(r.monthlyGainPen);
-                return (
-                  <TableRow key={r.postingId}>
-                    <TableCell>
-                      <div className="size-10 overflow-hidden rounded-md bg-gradient-to-br from-muted to-secondary">
-                        {r.imageUrl && (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={r.imageUrl} alt="" loading="lazy" className="size-full object-cover" />
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      {r.url ? (
-                        <a href={r.url} target="_blank" rel="noopener noreferrer" className="hover:underline">
-                          {r.districtName}
-                        </a>
-                      ) : (
-                        r.districtName
-                      )}
-                      <div className="text-xs text-muted-foreground">
-                        {r.bedrooms ?? "-"} dorm · {r.areaM2 ?? "-"} m²
-                      </div>
-                    </TableCell>
-                    <TableCell>{pen(r.pricePen)}</TableCell>
-                    <TableCell>{r.grossRentPen == null ? "-" : pen(r.grossRentPen)}</TableCell>
-                    <TableCell className={money ? (money.tone === "gain" ? "text-gain" : "text-loss") : ""}>
-                      {money ? money.text : "-"}
-                    </TableCell>
-                    <TableCell>
-                      {r.grossRentPen != null && r.pricePen > 0
-                        ? `${(((r.grossRentPen * 12) / r.pricePen) * 100).toFixed(1)} %`
-                        : "-"}
-                    </TableCell>
-                    <TableCell>{r.entryCostPen == null ? "-" : pen(r.entryCostPen)}</TableCell>
-                    <TableCell>
-                      <ScoreBadge score={r.locationScore} reasons={r.locationReasons} />
-                    </TableCell>
-                    <TableCell className="group">
-                      <AddButton propertyId={r.propertyId} always />
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </div>
-      )}
-
-      {hasMore && (
-        <div className="flex justify-center">
-          <button
-            type="button"
-            onClick={() => setShown((n) => n + STEP)}
-            className="rounded-md border border-border px-4 py-1.5 text-sm hover:bg-accent"
+        {view === "cards" ? (
+          <div
+            className="grid grid-cols-1 gap-3 sm:[grid-template-columns:repeat(var(--cols),minmax(0,1fr))]"
+            style={{ ["--cols" as string]: cols }}
           >
-            Ver más
-          </button>
-        </div>
-      )}
-    </section>
+            {list.map((r) => (
+              <ListingCard key={r.postingId} row={r} />
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-xl border border-border bg-card">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead />
+                  <Head label="Departamento" />
+                  <Head label="Precio" />
+                  <Head label="Alquiler est." />
+                  <Head label="Ganancia" />
+                  <Head label="Rentabilidad" />
+                  <Head label="Efectivo día 1" />
+                  <Head label="Ubicación" />
+                  <TableHead />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {list.map((r) => {
+                  const money = moneyLine(r.monthlyGainPen);
+                  return (
+                    <TableRow key={r.postingId}>
+                      <TableCell>
+                        <div className="size-10 overflow-hidden rounded-md bg-gradient-to-br from-muted to-secondary">
+                          {r.imageUrl && (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={r.imageUrl}
+                              alt=""
+                              loading="lazy"
+                              className="size-full object-cover"
+                            />
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        {r.url ? (
+                          <a
+                            href={r.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="hover:underline"
+                          >
+                            {r.districtName}
+                          </a>
+                        ) : (
+                          r.districtName
+                        )}
+                        <div className="text-xs text-muted-foreground">
+                          {r.bedrooms ?? "-"} dorm · {r.areaM2 ?? "-"} m²
+                        </div>
+                      </TableCell>
+                      <TableCell>{pen(r.pricePen)}</TableCell>
+                      <TableCell>
+                        {r.grossRentPen == null ? "-" : pen(r.grossRentPen)}
+                      </TableCell>
+                      <TableCell
+                        className={
+                          money
+                            ? money.tone === "gain"
+                              ? "text-gain"
+                              : "text-loss"
+                            : ""
+                        }
+                      >
+                        {money ? money.text : "-"}
+                      </TableCell>
+                      <TableCell>
+                        {r.grossRentPen != null && r.pricePen > 0
+                          ? `${(((r.grossRentPen * 12) / r.pricePen) * 100).toFixed(1)} %`
+                          : "-"}
+                      </TableCell>
+                      <TableCell>
+                        {r.entryCostPen == null ? "-" : pen(r.entryCostPen)}
+                      </TableCell>
+                      <TableCell>
+                        <ScoreBadge
+                          score={r.locationScore}
+                          reasons={r.locationReasons}
+                        />
+                      </TableCell>
+                      <TableCell className="group">
+                        <AddButton propertyId={r.propertyId} always />
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+
+        {failed && (
+          <p className="text-center text-sm text-loss">
+            No se pudieron cargar los recomendados.
+          </p>
+        )}
+        {hasMore && (
+          <div className="flex justify-center">
+            <button
+              type="button"
+              disabled={loading}
+              onClick={() => void load(mode, list.length + STEP)}
+              className="rounded-md border border-border px-4 py-1.5 text-sm hover:bg-accent"
+            >
+              Ver más
+            </button>
+          </div>
+        )}
+      </section>
+    </TooltipProvider>
   );
 }

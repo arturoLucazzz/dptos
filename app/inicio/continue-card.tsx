@@ -5,9 +5,11 @@ import { useFavorites } from "@/app/providers";
 import { Button } from "@/components/ui/button";
 
 /** Until step 2 adds inversiones, the favorites stand in for them. */
-export function ContinueCard({ thumbs }: { thumbs: { id: string; imageUrl: string | null }[] }) {
+export function ContinueCard({ favorites }: { favorites: { id: string; imageUrl: string | null }[] }) {
   const { favoriteIds } = useFavorites();
-  const n = favoriteIds.size;
+  // Count and thumbnails come from the same list, so they always agree.
+  const thumbs = favorites.filter((f) => favoriteIds.has(f.id));
+  const n = thumbs.length;
   return (
     <div className="grid grid-cols-1 gap-3 md:grid-cols-[2fr_1fr]">
       <div className="rounded-xl border border-border bg-card p-4">
