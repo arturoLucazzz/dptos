@@ -33,7 +33,7 @@ export function buildCompareTable(picks: PickView[]): { label: string; cells: { 
     const target = present.length === 0 ? null : def.wins === 'lower' ? Math.min(...present) : Math.max(...present);
     return {
       label: def.label,
-      cells: values.map((v) => ({ text: v == null ? '-' : def.format(v), best: v != null && v === target })),
+      cells: values.map((v) => ({ text: v == null ? '-' : def.format(v), best: present.length >= 2 && v != null && v === target })),
     };
   });
 }
@@ -50,6 +50,22 @@ export function excelFileName(name: string): string {
     .trim();
   return `${clean || 'inversion'}.xlsx`;
 }
+
+const MONEY_FMT = '"S/" #,##0';
+/** Number format per Excel column, by header. Rentabilidad keeps the percent number (7.2), shown as 7.2%. */
+export const EXCEL_NUM_FMT: Record<string, string> = {
+  Precio: MONEY_FMT,
+  'Precio por m²': MONEY_FMT,
+  Área: '0 "m²"',
+  'Alquiler estimado': MONEY_FMT,
+  'Cuota del banco': MONEY_FMT,
+  'Ganancia mensual': MONEY_FMT,
+  'Rentabilidad bruta': '0.0"%"',
+  'Efectivo día 1': MONEY_FMT,
+  Ubicación: '0.0',
+};
+
+export const EXCEL_WIDTHS: Record<string, number> = { Propiedad: 28, Distrito: 16, Nota: 36, Enlace: 50 };
 
 export function buildExcelRows(picks: PickView[]): (string | number | null)[][] {
   const header = ['Propiedad', 'Distrito', ...COMPARE_ROWS.map((r) => r.label), 'Nota', 'Enlace'];

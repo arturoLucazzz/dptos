@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { HomeRow } from '../home-rows';
 import { GONE_TITLE, type PickView } from './pick-view';
-import { buildCompareTable, buildExcelRows, excelFileName } from './compare';
+import { EXCEL_NUM_FMT, buildCompareTable, buildExcelRows, excelFileName } from './compare';
 
 function unit(id: string, price: number, gain: number | null, over: Partial<HomeRow> = {}, note: string | null = null): PickView {
   const row = {
@@ -28,7 +28,7 @@ test('lowest price and highest gain win among three picks', () => {
 });
 
 test('a gone pick shows "-" everywhere and never wins', () => {
-  const t = buildCompareTable([gone(), unit('a', 300000, 100)]);
+  const t = buildCompareTable([gone(), unit('a', 300000, 100), unit('b', 350000, 50)]);
   for (const r of t) {
     assert.equal(r.cells[0].text, '-');
     assert.equal(r.cells[0].best, false);
@@ -63,4 +63,16 @@ test('buildExcelRows has a header, the link last, and the gone title', () => {
   assert.equal(rows[1][rows[1].length - 2], 'bonito');
   assert.equal(rows[2][0], 'Ya no está publicado');
   assert.equal(rows[2][rows[2].length - 1], null);
+});
+
+test('a row with a single value marks nothing', () => {
+  const t = buildCompareTable([unit('a', 300000, 100)]);
+  assert.ok(t.every((r) => r.cells.every((c) => !c.best)));
+});
+
+test('every compare column has a number format', () => {
+  const header = buildExcelRows([unit('a', 1, 1)])[0] as string[];
+  for (const h of ['Precio', 'Precio por m²', 'Área', 'Alquiler estimado', 'Cuota del banco', 'Ganancia mensual', 'Rentabilidad bruta', 'Efectivo día 1', 'Ubicación']) {
+    assert.ok(header.includes(h) && EXCEL_NUM_FMT[h], h);
+  }
 });
