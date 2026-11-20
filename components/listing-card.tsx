@@ -23,7 +23,7 @@ export function AddButton({ added, onAdd, always = false }: { added: boolean; on
         onAdd();
       }}
       className={`inline-flex size-7 items-center justify-center rounded-full bg-background/80 text-foreground shadow backdrop-blur hover:bg-primary hover:text-primary-foreground focus-visible:opacity-100 ${
-        always ? "" : "opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100"
+        always ? "" : "opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 max-lg:opacity-100"
       } ${added ? "!opacity-100 bg-primary text-primary-foreground" : ""}`}
     >
       {added ? <Check className="size-4" /> : <Plus className="size-4" />}

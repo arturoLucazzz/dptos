@@ -87,7 +87,7 @@ export function PickPanel({
 }) {
   const n = picks.length;
   return (
-    <div className="flex max-h-[calc(100vh-6rem)] flex-col rounded-xl border border-border bg-card">
+    <div className="flex max-h-[75vh] lg:max-h-[calc(100vh-6rem)] flex-col rounded-xl border border-border bg-card">
       <div className="border-b border-border p-3">
         <Input
           // The key resets the field when the saved name comes back different (trimmed or empty).

@@ -2,6 +2,8 @@
 
 import { useRef, useState, useSyncExternalStore } from "react";
 import dynamic from "next/dynamic";
+import { DndContext, DragOverlay, MouseSensor, TouchSensor, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
+import { ChevronUp, X } from "lucide-react";
 import { ListingCard } from "@/components/listing-card";
 import { ProjectCard } from "@/components/project-card";
 import type { InvestmentFilters } from "@/lib/investments/filters";
@@ -53,6 +55,40 @@ function cardKey(c: CardRow): string {
   return c.type === "unit" ? `u:${c.row.postingId}` : `p:${c.row.projectId}`;
 }
 
+/** A card the user can pick up. The listeners sit on the wrapper, so the link, the add button and the badge keep their own clicks. */
+function DraggableCard({ dragId, children }: { dragId: string; children: React.ReactNode }) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: dragId });
+  return (
+    <div
+      ref={setNodeRef}
+      {...attributes}
+      {...listeners}
+      // The wrapper is not a tab stop or a button: the card inside already has its own controls.
+      tabIndex={undefined}
+      role={undefined}
+      aria-roledescription={undefined}
+      className={`touch-manipulation ${isDragging ? "opacity-40" : ""}`}
+    >
+      {children}
+    </div>
+  );
+}
+
+/** A drop area for the pick panel. While a card is dragged it shows the hint. */
+function DropZone({ dropId, dragging, className, children }: { dropId: string; dragging: boolean; className?: string; children: React.ReactNode }) {
+  const { setNodeRef, isOver } = useDroppable({ id: dropId });
+  return (
+    <div ref={setNodeRef} className={`relative ${className ?? ""} ${dragging && isOver ? "rounded-xl ring-2 ring-primary" : ""}`}>
+      {children}
+      {dragging && (
+        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-xl border-2 border-dashed border-primary/60 bg-background/80 p-2 text-center text-sm font-medium">
+          Suelta aquí para agregar
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function Workspace({
   investment,
   initialFilters,
@@ -88,6 +124,13 @@ export function Workspace({
   const mapOpen = mapChoice ?? isDesktop;
   const [pointsToken, setPointsToken] = useState(0);
   const [savedZones, setSavedZones] = useState(zones);
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } })
+  );
 
   const fetchCards = async (next: InvestmentFilters, nextPage: number) => {
     const mine = ++requestId.current;
@@ -150,6 +193,11 @@ export function Workspace({
       if (!isTemp(existing.id)) void remove(existing.id);
       return;
     }
+    await add(c);
+  };
+
+  /** The one add path: the + button, the map popup and a drop all come here. */
+  const add = async (c: CardRow) => {
     if (c.type === "unit" && !c.row.propertyId) return;
     const target = c.type === "unit" ? { propertyId: c.row.propertyId as string } : { projectId: c.row.projectId };
     // Flip the + at once with a temporary item; the server item replaces it.
@@ -235,6 +283,22 @@ export function Workspace({
     }
   };
 
+  const onDragEnd = (e: DragEndEvent) => {
+    setDragId(null);
+    if (!e.over) return;
+    const c = cards.rows.find((r) => cardKey(r) === e.active.id);
+    if (!c) return;
+    // A drop never removes: a card already in the inversión only shows a note.
+    if (itemFor(c)) {
+      setNotice("Ya está en la inversión");
+      window.setTimeout(() => setNotice(null), 2500);
+      return;
+    }
+    void add(c);
+  };
+
+  const dragged = dragId ? cards.rows.find((r) => cardKey(r) === dragId) : undefined;
+
   const rename = async (value: string) => {
     setSaveError(false);
     try {
@@ -260,7 +324,13 @@ export function Workspace({
   const noun = filters.kind === "projects" ? (cards.total === 1 ? "proyecto" : "proyectos") : cards.total === 1 ? "departamento" : "departamentos";
 
   return (
-    <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
+    <DndContext
+      sensors={sensors}
+      onDragStart={(e) => setDragId(String(e.active.id))}
+      onDragEnd={onDragEnd}
+      onDragCancel={() => setDragId(null)}
+    >
+    <div className="flex flex-col gap-6 pb-16 lg:flex-row lg:items-start lg:pb-0">
       <div className="min-w-0 flex-1 space-y-4">
         <div className="space-y-2">
           <FilterChips filters={filters} districtOptions={districtOptions} onChange={change} />
@@ -305,9 +375,13 @@ export function Workspace({
         <div className={`grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 ${loading && page === 1 ? "opacity-60" : ""}`}>
           {cards.rows.map((c) =>
             c.type === "unit" ? (
-              <ListingCard key={cardKey(c)} row={c.row} added={itemFor(c) != null} onAdd={() => void toggle(c)} />
+              <DraggableCard key={cardKey(c)} dragId={cardKey(c)}>
+                <ListingCard row={c.row} added={itemFor(c) != null} onAdd={() => void toggle(c)} />
+              </DraggableCard>
             ) : (
-              <ProjectCard key={cardKey(c)} row={c.row} added={itemFor(c) != null} onAdd={() => void toggle(c)} />
+              <DraggableCard key={cardKey(c)} dragId={cardKey(c)}>
+                <ProjectCard row={c.row} added={itemFor(c) != null} onAdd={() => void toggle(c)} />
+              </DraggableCard>
             )
           )}
         </div>
@@ -330,21 +404,58 @@ export function Workspace({
         )}
       </div>
 
-      <aside className="w-full lg:sticky lg:top-20 lg:w-80 lg:shrink-0">
-        <PickPanel
-          id={id}
-          name={name}
-          picks={picks}
-          rowKey={(itemId) => {
-            const item = items.find((i) => i.id === itemId);
-            return item ? targetKey(item) : itemId;
-          }}
-          saveError={saveError}
-          onRename={(v) => void rename(v)}
-          onRemove={(itemId) => void remove(itemId)}
-          onNote={(itemId, v) => void note(itemId, v)}
-        />
+      {/* Phone: a backdrop behind the open sheet. */}
+      {sheetOpen && <div className="fixed inset-0 z-30 bg-black/50 lg:hidden" onClick={() => setSheetOpen(false)} aria-hidden />}
+      <aside
+        className={`${sheetOpen ? "" : "max-lg:hidden"} max-lg:fixed max-lg:inset-x-0 max-lg:bottom-0 max-lg:z-40 lg:sticky lg:top-20 lg:w-80 lg:shrink-0`}
+      >
+        <DropZone dropId="panel" dragging={dragId != null} className="max-lg:rounded-t-2xl max-lg:bg-background">
+          <button
+            type="button"
+            onClick={() => setSheetOpen(false)}
+            aria-label="Cerrar"
+            className="absolute right-2 top-2 z-20 inline-flex size-7 items-center justify-center rounded-full bg-background/80 text-muted-foreground hover:bg-accent lg:hidden"
+          >
+            <X className="size-4" />
+          </button>
+          {notice && (
+            <p role="status" className="absolute inset-x-3 top-2 z-20 rounded-md bg-primary px-3 py-1.5 text-center text-xs font-medium text-primary-foreground">
+              {notice}
+            </p>
+          )}
+          <PickPanel
+            id={id}
+            name={name}
+            picks={picks}
+            rowKey={(itemId) => {
+              const item = items.find((i) => i.id === itemId);
+              return item ? targetKey(item) : itemId;
+            }}
+            saveError={saveError}
+            onRename={(v) => void rename(v)}
+            onRemove={(itemId) => void remove(itemId)}
+            onNote={(itemId, v) => void note(itemId, v)}
+          />
+        </DropZone>
       </aside>
+
+      {/* Phone: the bar that opens the sheet; it takes drops too. */}
+      <div className="fixed inset-x-0 bottom-0 z-20 border-t border-border bg-background lg:hidden">
+        <DropZone dropId="bar" dragging={dragId != null}>
+          <button type="button" onClick={() => setSheetOpen(true)} className="flex h-14 w-full items-center justify-between px-4 text-sm font-medium">
+            <span>{picks.length === 1 ? "1 elegido" : `${picks.length} elegidos`}</span>
+            <ChevronUp className="size-4" />
+          </button>
+        </DropZone>
+      </div>
     </div>
+    <DragOverlay>
+      {dragged ? (
+        <div className="w-max rounded-lg border border-border bg-card px-3 py-2 text-sm font-semibold shadow-lg">
+          {dragged.type === "unit" ? `S/ ${Math.round(dragged.row.pricePen).toLocaleString("es-PE")}` : dragged.row.name}
+        </div>
+      ) : null}
+    </DragOverlay>
+    </DndContext>
   );
 }

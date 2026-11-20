@@ -15,7 +15,7 @@ const PAGES = [
 // Steps that click through from a page: open it, click the link, expect the texts on the next page.
 const FLOWS = [
   // On a desktop the map starts open: wait for its canvas and a moment for tiles and pins.
-  { name: 'inversion-workspace', from: '/inversiones', link: 'main a[href^="/inversiones/"]', texts: ['Comparar'], desktopWait: 'canvas.maplibregl-canvas' },
+  { name: 'inversion-workspace', from: '/inversiones', link: 'main a[href^="/inversiones/"]', texts: ['elegido'], desktopWait: 'canvas.maplibregl-canvas' },
 ];
 FLOWS.push({ name: 'inversion-comparar', from: '/inversiones', link: 'main a[href^="/inversiones/"]', then: '/comparar', texts: ['Comparar', 'Precio por m²', 'Rentabilidad bruta'] });
 const SIZES = [
