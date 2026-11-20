@@ -7,7 +7,7 @@ import { mkdirSync } from 'node:fs';
 const [baseUrl = 'http://localhost:3100', outDir = '/tmp/dptos-smoke'] = process.argv.slice(2);
 
 const PAGES = [
-  { path: '/', texts: ['Inicio', 'Mis inversiones', 'Mercado', 'Supuestos: TEA', 'Recomendados'] },
+  { path: '/', texts: ['Inicio', 'Continuar', 'Mis inversiones', 'Mercado', 'Supuestos: TEA', 'Recomendados'] },
   { path: '/departamentos', texts: ['Supuestos: TEA'] },
   { path: '/departamentos?tea=7&inicial=20', texts: ['Supuestos: TEA', 'supuestos del enlace'] },
   { path: '/inversiones', texts: ['Mis inversiones', '+ Nueva inversión'] },
