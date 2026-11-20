@@ -17,6 +17,7 @@ import type {
 import {
   departamentosApiQuery,
   departamentosSearchParams,
+  urlOverrideNote,
 } from "@/lib/departamentos-search-params";
 import { SOURCE_IDS, SOURCE_LABELS } from "@/lib/listing-card";
 import { isSourceId } from "@/lib/official-price";
@@ -154,6 +155,12 @@ export function DepartamentosUnifiedClient() {
         bedroomsMax: urlState.bedroomsMax,
         coverageMin: urlState.coverageMin,
         ubicacion: urlState.ubicacion,
+        inicial: urlState.inicial,
+        tea: urlState.tea,
+        tcea: urlState.tcea,
+        plazo: urlState.plazo,
+        efectivo: urlState.efectivo,
+        extra: urlState.extra,
         sort: urlState.sort,
         order: urlState.order,
         page: urlState.page,
@@ -216,6 +223,9 @@ export function DepartamentosUnifiedClient() {
           {stats ? `${stats.total.toLocaleString("es-PE")} avisos filtrados` : "Cargando…"}
           {scrapedAt ? ` · actualizado ${new Date(scrapedAt).toLocaleString("es-PE")}` : ""}
         </p>
+        {urlOverrideNote(urlState) && (
+          <p className="mt-2 text-sm text-primary">{urlOverrideNote(urlState)}</p>
+        )}
         {error && (
           <p className="mt-2 text-sm text-red-700">
             {error instanceof Error ? error.message : String(error)}

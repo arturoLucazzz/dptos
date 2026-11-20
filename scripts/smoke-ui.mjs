@@ -9,6 +9,7 @@ const [baseUrl = 'http://localhost:3100', outDir = '/tmp/dptos-smoke'] = process
 const PAGES = [
   { path: '/', texts: ['Inicio', 'Mis inversiones', 'Mercado', 'Supuestos: TEA', 'Recomendados'] },
   { path: '/departamentos', texts: ['Supuestos: TEA'] },
+  { path: '/departamentos?tea=7&inicial=20', texts: ['Supuestos: TEA', 'supuestos del enlace'] },
 ];
 const SIZES = [
   { name: 'desktop', width: 1440, height: 900 },
@@ -37,7 +38,7 @@ for (const size of SIZES) {
     } catch (e) {
       failures.push(`${label}: ${e.message}`);
     }
-    const file = `${outDir}/${path === '/' ? 'inicio' : path.slice(1).replace(/\//g, '-')}-${size.name}.png`;
+    const file = `${outDir}/${path === '/' ? 'inicio' : path.slice(1).replace(/[^a-z0-9]+/gi, '-')}-${size.name}.png`;
     await page.screenshot({ path: file, fullPage: false }).catch(() => {});
     await context.close();
   }
