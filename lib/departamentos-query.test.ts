@@ -53,6 +53,8 @@ function row(partial: Partial<ListingRow> & Pick<ListingRow, 'postingId' | 'pric
     rentHighPen: null,
     rentIsLocal: false,
     rentMaxDistanceM: null,
+    lat: null,
+    lon: null,
     ...partial,
   };
 }
@@ -280,5 +282,72 @@ describe('queryDepartamentos location', () => {
     assert.equal(params.sort, 'monthlyGain');
     assert.equal(params.locationMin, null);
     assert.equal(queryDepartamentos(listings, fixed, { ...base, sort: params.sort, order: 'desc' }).total, 4);
+  });
+
+  describe('workspace sorts and area', () => {
+    const base = {
+      districts: [],
+      sources: [],
+      priceMin: null,
+      priceMax: null,
+      bedroomsMin: null,
+      bedroomsMax: null,
+      coverageMin: null,
+      panel: DEFAULT_PANEL,
+      page: 1,
+    };
+    const ids = (r: { rows: { postingId: string }[] }) => r.rows.map((x) => x.postingId);
+
+    it('grossYield sorts by yearly rent over price, no rent last in both orders', () => {
+      const rows = [
+        row({ postingId: 'low', pricePen: 500_000, grossRentPen: 2000 }),
+        row({ postingId: 'none', pricePen: 300_000, grossRentPen: null }),
+        row({ postingId: 'high', pricePen: 300_000, grossRentPen: 2000 }),
+      ];
+      assert.deepEqual(ids(queryDepartamentos(rows, fixed, { ...base, sort: 'grossYield', order: 'desc' })), ['high', 'low', 'none']);
+      assert.deepEqual(ids(queryDepartamentos(rows, fixed, { ...base, sort: 'grossYield', order: 'asc' })), ['low', 'high', 'none']);
+    });
+
+    it('pricePerM2 sorts by price over area, no area last', () => {
+      const rows = [
+        row({ postingId: 'big', pricePen: 600_000, areaM2: 100 }),
+        row({ postingId: 'none', pricePen: 100_000, areaM2: null }),
+        row({ postingId: 'small', pricePen: 400_000, areaM2: 100 }),
+      ];
+      assert.deepEqual(ids(queryDepartamentos(rows, fixed, { ...base, sort: 'pricePerM2', order: 'asc' })), ['small', 'big', 'none']);
+      assert.deepEqual(ids(queryDepartamentos(rows, fixed, { ...base, sort: 'pricePerM2', order: 'desc' })), ['big', 'small', 'none']);
+    });
+
+    it('newest sorts by days published ascending, nulls last', () => {
+      const rows = [
+        row({ postingId: 'old', pricePen: 400_000, daysPublished: 90 }),
+        row({ postingId: 'none', pricePen: 400_000, daysPublished: null }),
+        row({ postingId: 'new', pricePen: 400_000, daysPublished: 2 }),
+      ];
+      assert.deepEqual(ids(queryDepartamentos(rows, fixed, { ...base, sort: 'newest', order: 'asc' })), ['new', 'old', 'none']);
+    });
+
+    it('cashReturn and entryCost sort without throwing', () => {
+      const rows = [row({ postingId: 'a', pricePen: 400_000 }), row({ postingId: 'b', pricePen: 600_000 })];
+      assert.equal(queryDepartamentos(rows, fixed, { ...base, sort: 'cashReturn', order: 'desc' }).total, 2);
+      assert.equal(queryDepartamentos(rows, fixed, { ...base, sort: 'entryCost', order: 'asc' }).total, 2);
+    });
+
+    it('area keeps rows inside the ring and drops outside and without coordinates', () => {
+      const square: [number, number][] = [[-77.1, -12.2], [-76.9, -12.2], [-76.9, -12.0], [-77.1, -12.0], [-77.1, -12.2]];
+      const rows = [
+        row({ postingId: 'in', pricePen: 400_000, lat: -12.1, lon: -77.0 }),
+        row({ postingId: 'out', pricePen: 400_000, lat: -11.0, lon: -77.0 }),
+        row({ postingId: 'nocoord', pricePen: 400_000, lat: null, lon: null }),
+      ];
+      const r = queryDepartamentos(rows, fixed, { ...base, sort: 'pricePen', order: 'asc', area: square });
+      assert.deepEqual(ids(r), ['in']);
+      assert.equal(r.total, 1);
+    });
+
+    it('without an area keeps rows with no coordinates', () => {
+      const rows = [row({ postingId: 'nocoord', pricePen: 400_000, lat: null, lon: null })];
+      assert.equal(queryDepartamentos(rows, fixed, { ...base, sort: 'pricePen', order: 'asc' }).total, 1);
+    });
   });
 });

@@ -18,8 +18,14 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { grossYieldPct } from "@/lib/gross-yield";
 import { moneyLine, RECO_TABS, type RecoMode } from "@/lib/home";
 import type { HomeRow } from "@/lib/home-rows";
+
+function yieldText(rent: number | null, price: number): string {
+  const y = grossYieldPct(rent, price);
+  return y == null ? "-" : `${y.toFixed(1)} %`;
+}
 
 const FIRST = 16;
 const STEP = 8;
@@ -268,9 +274,7 @@ export function Recommendations({ initial }: { initial: Reco }) {
                         {money ? money.text : "-"}
                       </TableCell>
                       <TableCell>
-                        {r.grossRentPen != null && r.pricePen > 0
-                          ? `${(((r.grossRentPen * 12) / r.pricePen) * 100).toFixed(1)} %`
-                          : "-"}
+                        {yieldText(r.grossRentPen, r.pricePen)}
                       </TableCell>
                       <TableCell>
                         {r.entryCostPen == null ? "-" : pen(r.entryCostPen)}

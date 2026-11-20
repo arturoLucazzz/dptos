@@ -7,7 +7,9 @@ import { DEFAULT_PANEL, type FixedAssumptions, type PanelAssumptions } from './a
 import { financeForListing, loanForListing } from './listing-finance';
 import type { SourceId } from './listing-card';
 import type { ListingRow } from './listing-row';
+import { grossYieldPct } from './gross-yield';
 import { median } from './linalg';
+import { pointInPolygon, type Ring } from './location/geo';
 import { isSourceId } from './official-price';
 import { prepaymentLines, prepaymentSavings, type PrepaymentLines, type PrepaymentSavings } from './prepayment';
 
@@ -22,6 +24,11 @@ export const DEPARTAMENTOS_SORT_IDS = [
   'descuento',
   'inicial100',
   'location',
+  'grossYield',
+  'cashReturn',
+  'pricePerM2',
+  'entryCost',
+  'newest',
 ] as const;
 
 export type DepartamentosSortId = (typeof DEPARTAMENTOS_SORT_IDS)[number];
@@ -37,6 +44,8 @@ export interface DepartamentosQueryInput {
   coverageMin: number | null;
   /** Keep rows with a location score at least this; rows with no score drop out. */
   locationMin?: number | null;
+  /** Keep only rows with coordinates inside this polygon. Null or absent keeps all. */
+  area?: Ring | null;
   panel: PanelAssumptions;
   sort: DepartamentosSortId;
   order: 'asc' | 'desc';
@@ -159,6 +168,16 @@ function sortValue(row: DepartamentosRow, sort: DepartamentosSortId): number {
       return row.downPaymentPctForFullCoverage ?? Number.POSITIVE_INFINITY;
     case 'location':
       return row.locationScore ?? Number.NaN;
+    case 'grossYield':
+      return grossYieldPct(row.grossRentPen, row.pricePen) ?? Number.NaN;
+    case 'cashReturn':
+      return row.yearlyGainPctOnCash ?? Number.NaN;
+    case 'pricePerM2':
+      return row.areaM2 != null && row.areaM2 > 0 ? row.pricePen / row.areaM2 : Number.NaN;
+    case 'entryCost':
+      return row.entryCostPen ?? Number.NaN;
+    case 'newest':
+      return row.daysPublished ?? Number.NaN;
   }
 }
 
@@ -192,6 +211,10 @@ export function queryDepartamentos(
   }
   if (input.locationMin != null) {
     list = list.filter((r) => r.locationScore != null && r.locationScore >= input.locationMin!);
+  }
+  if (input.area) {
+    const rings = [input.area];
+    list = list.filter((r) => r.lat != null && r.lon != null && pointInPolygon({ lat: r.lat, lon: r.lon }, rings));
   }
 
   const withFinance: DepartamentosRow[] = list.map((listing) => {

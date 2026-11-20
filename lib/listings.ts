@@ -88,7 +88,7 @@ export async function loadSaleListings(): Promise<ListingsPage> {
       propertyId: true,
       firstSeenAt: true,
       lastSeenAt: true,
-      property: { select: { favorite: true, discarded: true } },
+      property: { select: { favorite: true, discarded: true, latitude: true, longitude: true } },
       currentSnapshot: {
         select: {
           pricePen: true,
@@ -345,6 +345,8 @@ export async function loadSaleListings(): Promise<ListingsPage> {
       address: snapshot.address,
       title: snapshot.title,
       imageUrl: snapshot.imageUrl,
+      lat: posting.property?.latitude == null ? null : Number(posting.property.latitude),
+      lon: posting.property?.longitude == null ? null : Number(posting.property.longitude),
       favorite: posting.property?.favorite ?? false,
       discarded: posting.property?.discarded ?? false,
     });
@@ -452,7 +454,7 @@ const memoHolder = globalThis as unknown as {
 };
 
 /** Changes when the row shape does, so a dev reload never serves rows of an older shape. */
-const SHAPE_VERSION = 'rows-v4-location';
+const SHAPE_VERSION = 'rows-v5-coordinates';
 
 /** Flip one favorite in the memoized rows, so a toggle does not drop the whole universe. */
 export async function patchSaleListingFavorite(propertyId: string, favorite: boolean): Promise<void> {
