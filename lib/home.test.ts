@@ -59,3 +59,7 @@ test('moneyLine', () => {
   assert.deepEqual(moneyLine(-80), { text: 'Pones S/ 80/mes', tone: 'loss' });
   assert.equal(moneyLine(null), null);
 });
+
+test('moneyLine rounds a tiny loss to zero without a minus sign', () => {
+  assert.deepEqual(moneyLine(-0.4), { text: 'Ganas S/ 0/mes', tone: 'gain' });
+});

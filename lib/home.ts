@@ -72,7 +72,7 @@ export function recommend(
 
 export function moneyLine(gainPen: number | null): { text: string; tone: 'gain' | 'loss' } | null {
   if (gainPen == null) return null;
-  const whole = Math.round(gainPen);
+  const whole = Math.round(gainPen) || 0; // || 0 turns -0 into 0
   if (whole >= 0) return { text: `Ganas S/ ${whole.toLocaleString('es-PE')}/mes`, tone: 'gain' };
   return { text: `Pones S/ ${Math.abs(whole).toLocaleString('es-PE')}/mes`, tone: 'loss' };
 }
