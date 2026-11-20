@@ -2,6 +2,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { revalidatePath, revalidateTag } from 'next/cache';
+import { invalidateSaleListings } from '@/lib/listings';
 import { ingestCards, startRun, finishRun } from '../../scraper/src/db/ingest';
 import { rawFromFormEntries, validateManualListing } from '@/lib/manual-listing';
 import { ScrapeMode, ScrapeStatus } from '@/lib/generated/prisma/enums';
@@ -49,6 +50,7 @@ export async function createManualListing(raw: unknown): Promise<ManualResult> {
   });
 
   revalidateTag('sale-listings', { expire: 0 });
+  invalidateSaleListings();
   revalidatePath('/departamentos');
   return { ok: true };
 }

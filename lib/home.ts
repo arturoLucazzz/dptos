@@ -37,8 +37,14 @@ export const RECO_TABS: { mode: RecoMode; label: string }[] = [
   { mode: 'new', label: 'Nuevos' },
 ];
 
+/** The row fields `recommend` reads. */
+export type RecoRow = Pick<
+  DepartamentosRow,
+  'postingId' | 'pricePen' | 'grossRentPen' | 'discountPct' | 'locationScore' | 'daysPublished' | 'monthlyGainPen'
+>;
+
 /** Sort value where bigger is better, or null when the row has none. */
-function sortValue(row: DepartamentosRow, mode: RecoMode): number | null {
+function sortValue(row: RecoRow, mode: RecoMode): number | null {
   switch (mode) {
     case 'gain':
       return row.monthlyGainPen;
@@ -55,11 +61,11 @@ function sortValue(row: DepartamentosRow, mode: RecoMode): number | null {
   }
 }
 
-export function recommend(
-  rows: DepartamentosRow[],
+export function recommend<T extends RecoRow>(
+  rows: T[],
   mode: RecoMode,
   n: number,
-): { rows: DepartamentosRow[]; hasMore: boolean } {
+): { rows: T[]; hasMore: boolean } {
   const keyed = rows.map((row) => ({ row, key: sortValue(row, mode) }));
   keyed.sort((a, b) => {
     if (a.key == null && b.key != null) return 1;

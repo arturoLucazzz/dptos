@@ -6,7 +6,6 @@
  * made the old JSON pipeline count a S/ 1 listing as a sale the next run.
  */
 
-import { unstable_cache } from 'next/cache';
 import { getFixedAssumptions } from './assumptions';
 import { prisma } from './db';
 import type { Prisma } from './generated/prisma/client';
@@ -442,19 +441,36 @@ async function latestScrapeCacheKey(): Promise<string> {
   return `${run.id}:${(run.finishedAt ?? run.startedAt).toISOString()}:${locationKey}`;
 }
 
-const loadSaleListingsCached = unstable_cache(
-  async (_scrapeKey: string) => loadSaleListings(),
-  // The version part changes when the row shape does, so an entry cached by an
-  // older build is not served with fields missing.
-  ['sale-listings', 'rows-v4-location'],
-  { revalidate: 3600, tags: ['sale-listings'] }
-);
+/**
+ * In-process memo, not `unstable_cache`: the enriched universe is several MB and the
+ * Next.js data cache refuses items over 2 MB (it logged an unhandled rejection and
+ * recomputed on every request). Kept on globalThis so server actions and pages share it.
+ */
+const MEMO_TTL_MS = 3600 * 1000;
+const memoHolder = globalThis as unknown as {
+  __saleListingsMemo?: { key: string; at: number; value: Promise<ListingsPage> };
+};
+
+/** Drop the memo; call it wherever a write changes what the rows show. */
+export function invalidateSaleListings(): void {
+  memoHolder.__saleListingsMemo = undefined;
+}
 
 /**
  * Enriched sale universe cached per scrape run so filter/finance requests do not
  * re-fit fair-price and rent models on every keystroke.
  */
 export async function getCachedSaleListings(): Promise<ListingsPage> {
-  const scrapeKey = await latestScrapeCacheKey();
-  return loadSaleListingsCached(scrapeKey);
+  const key = await latestScrapeCacheKey();
+  const memo = memoHolder.__saleListingsMemo;
+  if (memo && memo.key === key && Date.now() - memo.at < MEMO_TTL_MS) return memo.value;
+
+  const value = loadSaleListings();
+  const entry = { key, at: Date.now(), value };
+  memoHolder.__saleListingsMemo = entry;
+  // A failed load must not be remembered as an answer.
+  value.catch(() => {
+    if (memoHolder.__saleListingsMemo === entry) memoHolder.__saleListingsMemo = undefined;
+  });
+  return value;
 }

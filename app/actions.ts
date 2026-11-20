@@ -14,6 +14,7 @@
  */
 
 import { revalidatePath, revalidateTag } from 'next/cache';
+import { invalidateSaleListings } from '@/lib/listings';
 import { prisma } from '@/lib/db';
 import {
   confirmDuplicate as confirmDuplicateInDb,
@@ -29,6 +30,7 @@ import {
  */
 function refreshListings() {
   revalidateTag('sale-listings', { expire: 0 });
+  invalidateSaleListings();
   revalidatePath('/departamentos');
   revalidatePath('/favoritos');
 }

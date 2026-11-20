@@ -6,6 +6,7 @@
  */
 
 import { revalidatePath, revalidateTag } from 'next/cache';
+import { invalidateSaleListings } from '@/lib/listings';
 import { prisma } from '@/lib/db';
 import { ZoneKind } from '@/lib/generated/prisma/enums';
 import { refreshLocations } from '@/lib/location/refresh';
@@ -25,6 +26,7 @@ async function recompute(): Promise<string | null> {
     return 'La zona se guardó, pero no se pudo recalcular la ubicación. Corre pnpm location:refresh.';
   } finally {
     revalidateTag('sale-listings', { expire: 0 });
+    invalidateSaleListings();
     revalidatePath('/departamentos');
     revalidatePath('/favoritos');
     revalidatePath('/zonas');
