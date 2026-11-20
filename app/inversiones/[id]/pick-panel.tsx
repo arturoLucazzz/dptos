@@ -69,6 +69,7 @@ export function PickPanel({
   id,
   name,
   picks,
+  saveError,
   onRename,
   onRemove,
   onNote,
@@ -76,6 +77,7 @@ export function PickPanel({
   id: string;
   name: string;
   picks: PickView[];
+  saveError: boolean;
   onRename: (name: string) => void;
   onRemove: (itemId: string) => void;
   onNote: (itemId: string, note: string) => void;
@@ -113,6 +115,11 @@ export function PickPanel({
           </ul>
         )}
       </div>
+      {saveError && (
+        <p role="alert" className="px-3 pb-2 text-xs text-loss">
+          No se pudo guardar.
+        </p>
+      )}
       <div className="flex items-center gap-2 border-t border-border p-3">
         <Link
           href={`/inversiones/${id}/comparar`}

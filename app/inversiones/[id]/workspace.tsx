@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useRef, useState } from "react";
 import { ListingCard } from "@/components/listing-card";
 import { ProjectCard } from "@/components/project-card";
 import type { InvestmentFilters } from "@/lib/investments/filters";
@@ -13,6 +13,14 @@ import { PROJECT_SORT_IDS, SortChips } from "./sort-chips";
 import { PickPanel } from "./pick-panel";
 
 type Item = { id: string; propertyId: string | null; projectId: string | null };
+
+const TEMP = "temp:";
+const isTemp = (itemId: string) => itemId.startsWith(TEMP);
+
+function insertAt<T>(list: T[], index: number, value: T): T[] {
+  const at = Math.min(Math.max(0, index), list.length);
+  return [...list.slice(0, at), value, ...list.slice(at)];
+}
 
 function cardKey(c: CardRow): string {
   return c.type === "unit" ? `u:${c.row.postingId}` : `p:${c.row.projectId}`;
@@ -40,7 +48,8 @@ export function Workspace({
   const [failed, setFailed] = useState(false);
   const [items, setItems] = useState<Item[]>(investment.items);
   const [picks, setPicks] = useState<PickView[]>(initialPicks);
-  const [, startTransition] = useTransition();
+  const [saveError, setSaveError] = useState(false);
+  const tempCounter = useRef(0);
   // Each request takes a number; only the newest one may write the cards.
   const requestId = useRef(0);
 
@@ -82,53 +91,92 @@ export function Workspace({
       ? items.find((i) => i.propertyId != null && i.propertyId === c.row.propertyId)
       : items.find((i) => i.projectId === c.row.projectId);
 
-  const toggle = (c: CardRow) => {
+  // A failed save shows a short message; the screen stays usable and matches the database.
+  const failSave = () => setSaveError(true);
+
+  const toggle = async (c: CardRow) => {
     const existing = itemFor(c);
     if (existing) {
-      remove(existing.id);
+      if (!isTemp(existing.id)) void remove(existing.id);
       return;
     }
     if (c.type === "unit" && !c.row.propertyId) return;
     const target = c.type === "unit" ? { propertyId: c.row.propertyId as string } : { projectId: c.row.projectId };
-    startTransition(async () => {
-      const item = await addPick(id, target);
-      setItems((list) => (list.some((i) => i.id === item.id) ? list : [...list, item]));
-      setPicks((list) =>
-        list.some((p) => p.itemId === item.id)
-          ? list
-          : [
-              ...list,
-              // The card row has every field the panel shows.
-              toPickView(
-                item,
-                c.type === "unit" ? (c.row as unknown as DepartamentosRow) : null,
-                c.type === "project" ? c.row : null,
-                { districtName: c.row.districtName }
-              ),
-            ]
+    // Flip the + at once with a temporary item; the server item replaces it.
+    const temp: Item = {
+      id: `${TEMP}${++tempCounter.current}`,
+      propertyId: c.type === "unit" ? c.row.propertyId : null,
+      projectId: c.type === "project" ? c.row.projectId : null,
+    };
+    const view = (item: Item & { note: string | null }) =>
+      // The card row has every field the panel shows.
+      toPickView(
+        item,
+        c.type === "unit" ? (c.row as unknown as DepartamentosRow) : null,
+        c.type === "project" ? c.row : null,
+        { districtName: c.row.districtName }
       );
-    });
+    setSaveError(false);
+    setItems((list) => [...list, temp]);
+    setPicks((list) => [...list, view({ ...temp, note: null })]);
+    try {
+      const item = await addPick(id, target);
+      // A repeat add returns the existing item: keep one row for it.
+      setItems((list) => {
+        const rest = list.filter((i) => i.id !== temp.id && i.id !== item.id);
+        return [...rest, item];
+      });
+      setPicks((list) => {
+        const known = list.find((p) => p.itemId === item.id);
+        const rest = list.filter((p) => p.itemId !== temp.id && p.itemId !== item.id);
+        return [...rest, known ?? view(item)];
+      });
+    } catch {
+      setItems((list) => list.filter((i) => i.id !== temp.id));
+      setPicks((list) => list.filter((p) => p.itemId !== temp.id));
+      failSave();
+    }
   };
 
-  const remove = (itemId: string) => {
+  const remove = async (itemId: string) => {
+    if (isTemp(itemId)) return;
+    const itemAt = items.findIndex((i) => i.id === itemId);
+    const pickAt = picks.findIndex((p) => p.itemId === itemId);
+    const item = items[itemAt];
+    const pick = picks[pickAt];
+    setSaveError(false);
     setItems((list) => list.filter((i) => i.id !== itemId));
     setPicks((list) => list.filter((p) => p.itemId !== itemId));
-    startTransition(async () => {
+    try {
       await removePick(itemId);
-    });
+    } catch {
+      // Put the pick back where it was, keeping any change made meanwhile.
+      if (item) setItems((list) => (list.some((i) => i.id === itemId) ? list : insertAt(list, itemAt, item)));
+      if (pick) setPicks((list) => (list.some((p) => p.itemId === itemId) ? list : insertAt(list, pickAt, pick)));
+      failSave();
+    }
   };
 
-  const note = (itemId: string, value: string) =>
-    startTransition(async () => {
+  const note = async (itemId: string, value: string) => {
+    if (isTemp(itemId)) return;
+    setSaveError(false);
+    try {
       const saved = await setPickNote(itemId, value);
       setPicks((list) => list.map((p) => (p.itemId === itemId ? { ...p, note: saved.note } : p)));
-    });
+    } catch {
+      failSave();
+    }
+  };
 
-  const rename = (value: string) =>
-    startTransition(async () => {
+  const rename = async (value: string) => {
+    setSaveError(false);
+    try {
       const saved = await renameInvestment(id, value);
       setName(saved.name);
-    });
+    } catch {
+      failSave();
+    }
+  };
 
   const noun = filters.kind === "projects" ? (cards.total === 1 ? "proyecto" : "proyectos") : cards.total === 1 ? "departamento" : "departamentos";
 
@@ -150,9 +198,9 @@ export function Workspace({
         <div className={`grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 ${loading && page === 1 ? "opacity-60" : ""}`}>
           {cards.rows.map((c) =>
             c.type === "unit" ? (
-              <ListingCard key={cardKey(c)} row={c.row} added={itemFor(c) != null} onAdd={() => toggle(c)} />
+              <ListingCard key={cardKey(c)} row={c.row} added={itemFor(c) != null} onAdd={() => void toggle(c)} />
             ) : (
-              <ProjectCard key={cardKey(c)} row={c.row} added={itemFor(c) != null} onAdd={() => toggle(c)} />
+              <ProjectCard key={cardKey(c)} row={c.row} added={itemFor(c) != null} onAdd={() => void toggle(c)} />
             )
           )}
         </div>
@@ -176,7 +224,15 @@ export function Workspace({
       </div>
 
       <aside className="w-full lg:sticky lg:top-20 lg:w-80 lg:shrink-0">
-        <PickPanel id={id} name={name} picks={picks} onRename={rename} onRemove={remove} onNote={note} />
+        <PickPanel
+          id={id}
+          name={name}
+          picks={picks}
+          saveError={saveError}
+          onRename={(v) => void rename(v)}
+          onRemove={(itemId) => void remove(itemId)}
+          onNote={(itemId, v) => void note(itemId, v)}
+        />
       </aside>
     </div>
   );

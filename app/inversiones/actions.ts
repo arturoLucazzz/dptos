@@ -1,18 +1,17 @@
 'use server';
 
 /**
- * Server actions for investments: each calls the store, then refreshes the pages that show them.
+ * Server actions for investments: each calls the store and nothing more.
+ *
+ * No revalidatePath here on purpose. A revalidation inside an action makes Next send back
+ * a fresh render of the current page, and the workspace page is expensive (touch, cards,
+ * picks). The list and the workspace keep their own state, and every page that shows
+ * inversiones is force-dynamic, so the next navigation reads fresh data anyway.
  */
 
-import { revalidatePath } from 'next/cache';
 import type { InvestmentFilters } from '@/lib/investments/filters';
 import * as store from '@/lib/investments/store';
 import type { PickTarget } from '@/lib/investments/store';
-
-function refresh(): void {
-  revalidatePath('/');
-  revalidatePath('/inversiones');
-}
 
 export async function listInvestments() {
   return store.listInvestments();
@@ -27,49 +26,33 @@ export async function lastOpenedInvestment() {
 }
 
 export async function createInvestment(name?: string) {
-  const result = await store.createInvestment(name);
-  refresh();
-  return result;
+  return store.createInvestment(name);
 }
 
 export async function renameInvestment(id: string, name: string) {
-  const result = await store.renameInvestment(id, name);
-  refresh();
-  return result;
+  return store.renameInvestment(id, name);
 }
 
 export async function deleteInvestment(id: string) {
-  const result = await store.deleteInvestment(id);
-  refresh();
-  return result;
+  return store.deleteInvestment(id);
 }
 
 export async function touchInvestment(id: string) {
-  const result = await store.touchInvestment(id);
-  refresh();
-  return result;
+  return store.touchInvestment(id);
 }
 
 export async function saveInvestmentFilters(id: string, filters: InvestmentFilters) {
-  const result = await store.saveInvestmentFilters(id, filters);
-  refresh();
-  return result;
+  return store.saveInvestmentFilters(id, filters);
 }
 
 export async function addPick(id: string, target: PickTarget) {
-  const result = await store.addPick(id, target);
-  refresh();
-  return result;
+  return store.addPick(id, target);
 }
 
 export async function removePick(itemId: string) {
-  const result = await store.removePick(itemId);
-  refresh();
-  return result;
+  return store.removePick(itemId);
 }
 
 export async function setPickNote(itemId: string, note: string) {
-  const result = await store.setPickNote(itemId, note);
-  refresh();
-  return result;
+  return store.setPickNote(itemId, note);
 }

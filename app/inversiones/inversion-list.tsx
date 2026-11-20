@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Pencil, Trash2 } from "lucide-react";
@@ -29,20 +29,16 @@ function InversionRow({
   onDelete,
 }: {
   inv: InversionSummary;
-  onRename: (name: string) => void;
+  onRename: (name: string) => Promise<void>;
   onDelete: () => void;
 }) {
   const [editing, setEditing] = useState(false);
-  const [, startTransition] = useTransition();
   const name = inv.name;
 
   const save = (value: string) => {
     setEditing(false);
     if (value.trim() === "" || value === name) return;
-    startTransition(async () => {
-      const saved = await renameInvestment(inv.id, value);
-      onRename(saved.name);
-    });
+    void onRename(value);
   };
 
   return (
@@ -102,26 +98,56 @@ export function InversionList({ investments }: { investments: InversionSummary[]
   const router = useRouter();
   const [list, setList] = useState(investments);
   const [confirm, setConfirm] = useState<InversionSummary | null>(null);
-  const [pending, startTransition] = useTransition();
+  const [pending, setPending] = useState(false);
+  const [saveError, setSaveError] = useState(false);
+
+  // Each call catches its own error: a failure shows a short message, never an error screen.
+  const run = async (work: () => Promise<void>) => {
+    setPending(true);
+    setSaveError(false);
+    try {
+      await work();
+    } catch {
+      setSaveError(true);
+    } finally {
+      setPending(false);
+    }
+  };
 
   const create = () =>
-    startTransition(async () => {
+    run(async () => {
       const inv = await createInvestment();
       router.push(`/inversiones/${inv.id}`);
     });
 
   const remove = (inv: InversionSummary) =>
-    startTransition(async () => {
-      await deleteInvestment(inv.id);
-      setList((l) => l.filter((x) => x.id !== inv.id));
-      setConfirm(null);
+    run(async () => {
+      try {
+        await deleteInvestment(inv.id);
+        setList((l) => l.filter((x) => x.id !== inv.id));
+      } finally {
+        setConfirm(null);
+      }
+    });
+
+  const rename = (inv: InversionSummary, value: string) =>
+    run(async () => {
+      const saved = await renameInvestment(inv.id, value);
+      setList((l) => l.map((x) => (x.id === inv.id ? { ...x, name: saved.name } : x)));
     });
 
   return (
     <div className="space-y-3">
-      <Button onClick={create} disabled={pending}>
-        + Nueva inversión
-      </Button>
+      <div className="flex flex-wrap items-center gap-3">
+        <Button onClick={() => void create()} disabled={pending}>
+          + Nueva inversión
+        </Button>
+        {saveError && (
+          <p role="alert" className="text-sm text-loss">
+            No se pudo guardar.
+          </p>
+        )}
+      </div>
       {list.length === 0 ? (
         <p className="text-sm text-muted-foreground">Todavía no tienes inversiones.</p>
       ) : (
@@ -130,7 +156,7 @@ export function InversionList({ investments }: { investments: InversionSummary[]
             <InversionRow
               key={inv.id}
               inv={inv}
-              onRename={(name) => setList((l) => l.map((x) => (x.id === inv.id ? { ...x, name } : x)))}
+              onRename={(value) => rename(inv, value)}
               onDelete={() => setConfirm(inv)}
             />
           ))}
@@ -150,7 +176,7 @@ export function InversionList({ investments }: { investments: InversionSummary[]
             </Button>
             <Button
               disabled={pending}
-              onClick={() => confirm && remove(confirm)}
+              onClick={() => confirm && void remove(confirm)}
               className="bg-loss text-white hover:bg-loss/90"
             >
               Borrar
