@@ -69,6 +69,7 @@ export function PickPanel({
   id,
   name,
   picks,
+  rowKey,
   saveError,
   onRename,
   onRemove,
@@ -77,6 +78,8 @@ export function PickPanel({
   id: string;
   name: string;
   picks: PickView[];
+  /** A stable key per pick target, so the row keeps its draft when a temporary item gets its real id. */
+  rowKey: (itemId: string) => string;
   saveError: boolean;
   onRename: (name: string) => void;
   onRemove: (itemId: string) => void;
@@ -110,7 +113,7 @@ export function PickPanel({
         ) : (
           <ul className="divide-y divide-border">
             {picks.map((p) => (
-              <PickRow key={p.itemId} pick={p} onRemove={() => onRemove(p.itemId)} onNote={(note) => onNote(p.itemId, note)} />
+              <PickRow key={rowKey(p.itemId)} pick={p} onRemove={() => onRemove(p.itemId)} onNote={(note) => onNote(p.itemId, note)} />
             ))}
           </ul>
         )}

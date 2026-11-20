@@ -25,7 +25,8 @@ export default async function InversionesPage() {
           Cada inversión guarda sus filtros, sus elegidos y tus notas.
         </p>
       </div>
-      <InversionList investments={summaries} />
+      {/* A new render id per server render: a refresh after Back remounts the list with fresh rows. */}
+      <InversionList key={crypto.randomUUID()} investments={summaries} />
     </div>
   );
 }

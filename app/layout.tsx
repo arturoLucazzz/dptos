@@ -6,6 +6,7 @@ import "./globals.css";
 import { TopBar } from "@/components/top-bar";
 import { FavoritesProvider } from "./providers";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { HistoryRefresh } from "./inversiones/history-refresh";
 import { prisma } from "@/lib/db";
 import { ASSUMPTIONS_COOKIE, parseAssumptionsCookie } from "@/lib/assumptions-cookie";
 
@@ -42,6 +43,7 @@ export default async function RootLayout({
         <NuqsAdapter>
           <FavoritesProvider initialFavoriteIds={favoriteIds}>
             <TooltipProvider>
+              <HistoryRefresh />
               <TopBar assumptions={assumptions} />
               <main className="mx-auto w-full max-w-screen-2xl py-6 px-4">{children}</main>
             </TooltipProvider>

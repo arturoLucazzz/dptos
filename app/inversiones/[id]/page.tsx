@@ -33,9 +33,10 @@ export default async function InversionPage({ params }: { params: Promise<{ id: 
   ]);
 
   return (
-    // The key restarts the workspace when the assumptions change, so it never shows old numbers.
+    // A new key per server render: a settings change or a refresh after Back remounts the
+    // workspace with fresh numbers and picks instead of keeping the old state.
     <Workspace
-      key={raw ?? ""}
+      key={crypto.randomUUID()}
       investment={{
         id: investment.id,
         name: investment.name,

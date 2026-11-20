@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/dialog";
 import { CardPhoto } from "@/components/listing-card";
 import { createInvestment, deleteInvestment, renameInvestment } from "./actions";
+import { markInversionesChanged } from "./history-refresh";
 
 export type InversionSummary = { id: string; name: string; count: number; thumbs: string[] };
 
@@ -107,6 +108,7 @@ export function InversionList({ investments }: { investments: InversionSummary[]
     setSaveError(false);
     try {
       await work();
+      markInversionesChanged();
     } catch {
       setSaveError(true);
     } finally {

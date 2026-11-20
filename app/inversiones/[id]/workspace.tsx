@@ -11,6 +11,7 @@ import { addPick, removePick, renameInvestment, setPickNote } from "../actions";
 import { FilterChips } from "./filter-chips";
 import { PROJECT_SORT_IDS, SortChips } from "./sort-chips";
 import { PickPanel } from "./pick-panel";
+import { markInversionesChanged } from "../history-refresh";
 
 type Item = { id: string; propertyId: string | null; projectId: string | null };
 
@@ -20,6 +21,11 @@ const isTemp = (itemId: string) => itemId.startsWith(TEMP);
 function insertAt<T>(list: T[], index: number, value: T): T[] {
   const at = Math.min(Math.max(0, index), list.length);
   return [...list.slice(0, at), value, ...list.slice(at)];
+}
+
+/** One key per pick target, so a temporary item and its server item share a panel row. */
+function targetKey(i: { propertyId: string | null; projectId: string | null }): string {
+  return i.propertyId ? `u:${i.propertyId}` : `p:${i.projectId}`;
 }
 
 function cardKey(c: CardRow): string {
@@ -50,6 +56,8 @@ export function Workspace({
   const [picks, setPicks] = useState<PickView[]>(initialPicks);
   const [saveError, setSaveError] = useState(false);
   const tempCounter = useRef(0);
+  // Notes typed on a temporary pick wait here, by target, until the server item arrives.
+  const queuedNotes = useRef(new Map<string, string>());
   // Each request takes a number; only the newest one may write the cards.
   const requestId = useRef(0);
 
@@ -122,16 +130,26 @@ export function Workspace({
     try {
       const item = await addPick(id, target);
       // A repeat add returns the existing item: keep one row for it.
-      setItems((list) => {
-        const rest = list.filter((i) => i.id !== temp.id && i.id !== item.id);
-        return [...rest, item];
-      });
-      setPicks((list) => {
-        const known = list.find((p) => p.itemId === item.id);
-        const rest = list.filter((p) => p.itemId !== temp.id && p.itemId !== item.id);
-        return [...rest, known ?? view(item)];
-      });
+      // The server item takes the temporary item's place, so the order stays as clicked.
+      setItems((list) =>
+        list.some((i) => i.id === item.id)
+          ? list.filter((i) => i.id !== temp.id)
+          : list.map((i) => (i.id === temp.id ? item : i))
+      );
+      setPicks((list) =>
+        list.some((p) => p.itemId === item.id)
+          ? list.filter((p) => p.itemId !== temp.id)
+          : // Keep the note shown on the temporary row until the queued save answers.
+            list.map((p) => (p.itemId === temp.id ? { ...view(item), note: p.note ?? item.note } : p))
+      );
+      markInversionesChanged();
+      const queued = queuedNotes.current.get(targetKey(temp));
+      if (queued !== undefined) {
+        queuedNotes.current.delete(targetKey(temp));
+        void note(item.id, queued);
+      }
     } catch {
+      queuedNotes.current.delete(targetKey(temp));
       setItems((list) => list.filter((i) => i.id !== temp.id));
       setPicks((list) => list.filter((p) => p.itemId !== temp.id));
       failSave();
@@ -149,6 +167,7 @@ export function Workspace({
     setPicks((list) => list.filter((p) => p.itemId !== itemId));
     try {
       await removePick(itemId);
+      markInversionesChanged();
     } catch {
       // Put the pick back where it was, keeping any change made meanwhile.
       if (item) setItems((list) => (list.some((i) => i.id === itemId) ? list : insertAt(list, itemAt, item)));
@@ -158,10 +177,16 @@ export function Workspace({
   };
 
   const note = async (itemId: string, value: string) => {
-    if (isTemp(itemId)) return;
+    if (isTemp(itemId)) {
+      const item = items.find((i) => i.id === itemId);
+      if (item) queuedNotes.current.set(targetKey(item), value);
+      setPicks((list) => list.map((p) => (p.itemId === itemId ? { ...p, note: value.trim() || null } : p)));
+      return;
+    }
     setSaveError(false);
     try {
       const saved = await setPickNote(itemId, value);
+      markInversionesChanged();
       setPicks((list) => list.map((p) => (p.itemId === itemId ? { ...p, note: saved.note } : p)));
     } catch {
       failSave();
@@ -173,6 +198,7 @@ export function Workspace({
     try {
       const saved = await renameInvestment(id, value);
       setName(saved.name);
+      markInversionesChanged();
     } catch {
       failSave();
     }
@@ -228,6 +254,10 @@ export function Workspace({
           id={id}
           name={name}
           picks={picks}
+          rowKey={(itemId) => {
+            const item = items.find((i) => i.id === itemId);
+            return item ? targetKey(item) : itemId;
+          }}
           saveError={saveError}
           onRename={(v) => void rename(v)}
           onRemove={(itemId) => void remove(itemId)}
