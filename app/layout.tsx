@@ -5,6 +5,7 @@ import { NuqsAdapter } from "nuqs/adapters/next/app";
 import "./globals.css";
 import { TopBar } from "@/components/top-bar";
 import { FavoritesProvider } from "./providers";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { prisma } from "@/lib/db";
 import { ASSUMPTIONS_COOKIE, parseAssumptionsCookie } from "@/lib/assumptions-cookie";
 
@@ -40,8 +41,10 @@ export default async function RootLayout({
       <body className="min-h-screen font-sans bg-background text-foreground antialiased">
         <NuqsAdapter>
           <FavoritesProvider initialFavoriteIds={favoriteIds}>
-            <TopBar assumptions={assumptions} />
-            <main className="mx-auto w-full max-w-screen-2xl py-6 px-4">{children}</main>
+            <TooltipProvider>
+              <TopBar assumptions={assumptions} />
+              <main className="mx-auto w-full max-w-screen-2xl py-6 px-4">{children}</main>
+            </TooltipProvider>
           </FavoritesProvider>
         </NuqsAdapter>
       </body>
