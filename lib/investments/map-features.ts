@@ -94,3 +94,28 @@ export function zoneOutlines(zones: readonly ZoneOutlineInput[]): ZoneFeatures {
     ),
   };
 }
+
+/** How near the first point a tap must land to close a drawing: a fingertip needs more room. */
+export function closeHitRadiusPx(coarsePointer: boolean): number {
+  return coarsePointer ? 28 : 12;
+}
+
+/**
+ * What a tap while drawing does: close the shape (3 or more points and near the first),
+ * add a point, or nothing because the drawing is full.
+ */
+export function draftTap(input: {
+  count: number;
+  firstPx: { x: number; y: number } | null;
+  tapPx: { x: number; y: number };
+  radiusPx: number;
+  max: number;
+}): 'close' | 'add' | 'full' {
+  const { count, firstPx, tapPx, radiusPx, max } = input;
+  if (count >= 3 && firstPx && Math.hypot(firstPx.x - tapPx.x, firstPx.y - tapPx.y) <= radiusPx) return 'close';
+  return count >= max ? 'full' : 'add';
+}
+
+export function undoLastPoint<T>(draft: readonly T[]): T[] {
+  return draft.slice(0, -1);
+}

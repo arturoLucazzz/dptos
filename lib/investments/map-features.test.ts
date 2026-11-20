@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { circleRing, pointsToFeatures, ratingColor, unitPoints, projectPoints, zoneOutlines } from './map-features';
+import { circleRing, closeHitRadiusPx, draftTap, pointsToFeatures, ratingColor, undoLastPoint, unitPoints, projectPoints, zoneOutlines } from './map-features';
 
 test('pointsToFeatures builds one GeoJSON point per row, with the gain', () => {
   const fc = pointsToFeatures([
@@ -61,4 +61,29 @@ test('zoneOutlines turns each zone into a polygon with its rating color', () => 
   assert.equal(fc.features.length, 1);
   assert.deepEqual(fc.features[0].geometry, { type: 'Polygon', coordinates: [ring] });
   assert.deepEqual(fc.features[0].properties, { id: 'p', name: 'Mi zona', rating: 10, color: '#34d399' });
+});
+
+test('closeHitRadiusPx is larger on a touch screen', () => {
+  assert.equal(closeHitRadiusPx(false), 12);
+  assert.equal(closeHitRadiusPx(true), 28);
+});
+
+test('draftTap closes near the first point once there are 3 points, else adds', () => {
+  const three: [number, number][] = [[-77.04, -12.12], [-77.02, -12.12], [-77.02, -12.1]];
+  const first = { x: 100, y: 100 };
+  // 20 px away: a close on touch, an add with a mouse.
+  assert.equal(draftTap({ count: 3, firstPx: first, tapPx: { x: 120, y: 100 }, radiusPx: 28, max: 50 }), 'close');
+  assert.equal(draftTap({ count: 3, firstPx: first, tapPx: { x: 120, y: 100 }, radiusPx: 12, max: 50 }), 'add');
+  // Two points cannot close yet.
+  assert.equal(draftTap({ count: 2, firstPx: first, tapPx: first, radiusPx: 28, max: 50 }), 'add');
+  assert.equal(draftTap({ count: 0, firstPx: null, tapPx: first, radiusPx: 28, max: 50 }), 'add');
+  // Full: no more points, but a close still works.
+  assert.equal(draftTap({ count: 50, firstPx: first, tapPx: { x: 400, y: 400 }, radiusPx: 12, max: 50 }), 'full');
+  assert.equal(draftTap({ count: 50, firstPx: first, tapPx: first, radiusPx: 12, max: 50 }), 'close');
+  assert.equal(three.length, 3);
+});
+
+test('undoLastPoint drops the last point and leaves an empty draft empty', () => {
+  assert.deepEqual(undoLastPoint([[1, 2], [3, 4]]), [[1, 2]]);
+  assert.deepEqual(undoLastPoint([]), []);
 });

@@ -15,7 +15,15 @@ import { setWorkerUrl, type GeoJSONSource } from "maplibre-gl";
 import { CardPhoto, pen } from "@/components/listing-card";
 import { moneyLine } from "@/lib/home";
 import type { InvestmentFilters } from "@/lib/investments/filters";
-import { pointsToFeatures, zoneOutlines, type MapPoint, type ZoneOutlineInput } from "@/lib/investments/map-features";
+import {
+  closeHitRadiusPx,
+  draftTap,
+  pointsToFeatures,
+  undoLastPoint,
+  zoneOutlines,
+  type MapPoint,
+  type ZoneOutlineInput,
+} from "@/lib/investments/map-features";
 import type { CardRow } from "@/lib/investments/workspace-data";
 import type { Ring } from "@/lib/location/geo";
 import { POLYGON_MAX_POINTS, validatePolygon } from "@/lib/location/polygon-input";
@@ -33,7 +41,6 @@ const GAIN = "#34d399";
 const LOSS = "#fb7185";
 const NEUTRAL = "#939aa6";
 const PRIMARY = "#10b981";
-const FIRST_POINT_PX = 12;
 
 type Selected = { id: string; lon: number; lat: number };
 type Lookup = { id: string; state: "loading" | "error" } | { id: string; state: "ready"; card: CardRow | null };
@@ -288,18 +295,18 @@ export function WorkspaceMap({
     if (!map) return;
     if (drawing) {
       const clicked: [number, number] = [e.lngLat.lng, e.lngLat.lat];
-      if (draft.length >= 3) {
-        const first = map.project(draft[0]);
-        if (Math.hypot(first.x - e.point.x, first.y - e.point.y) <= FIRST_POINT_PX) {
-          finishDrawing(draft);
-          return;
-        }
-      }
-      if (draft.length >= POLYGON_MAX_POINTS) {
-        setDrawError(`Usa como máximo ${POLYGON_MAX_POINTS} puntos. Haz clic en el primer punto para cerrar.`);
-        return;
-      }
-      setDraft((list) => [...list, clicked]);
+      // A fingertip lands less exactly than a mouse, so a touch screen gets a wider target.
+      const coarse = window.matchMedia("(pointer: coarse)").matches;
+      const action = draftTap({
+        count: draft.length,
+        firstPx: draft.length > 0 ? map.project(draft[0]) : null,
+        tapPx: e.point,
+        radiusPx: closeHitRadiusPx(coarse),
+        max: POLYGON_MAX_POINTS,
+      });
+      if (action === "close") finishDrawing(draft);
+      else if (action === "full") setDrawError(`Usa como máximo ${POLYGON_MAX_POINTS} puntos. Toca "Cerrar zona".`);
+      else setDraft((list) => [...list, clicked]);
       return;
     }
     const feature = e.features?.[0];
@@ -334,8 +341,29 @@ export function WorkspaceMap({
         {drawing ? (
           <>
             <span className="text-xs text-muted-foreground">
-              Haz clic para poner puntos. Clic en el primero para cerrar. Esc cancela.
+              Toca el mapa para poner puntos. Cierra con el primer punto o con «Cerrar zona». Esc cancela.
             </span>
+            {draft.length >= 3 && (
+              <button
+                type="button"
+                onClick={() => finishDrawing(draft)}
+                className="rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+              >
+                Cerrar zona
+              </button>
+            )}
+            {draft.length > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  setDrawError(null);
+                  setDraft((list) => undoLastPoint(list));
+                }}
+                className="rounded-md border border-border px-3 py-1 text-xs hover:bg-accent"
+              >
+                Deshacer punto
+              </button>
+            )}
             <button
               type="button"
               onClick={() => {
