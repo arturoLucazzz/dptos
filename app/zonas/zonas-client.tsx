@@ -9,7 +9,7 @@ import { deleteZone, saveZone, type ZoneFormState } from './actions';
 export interface ZoneView {
   id: string;
   name: string;
-  kind: 'DISTRICT' | 'CIRCLE';
+  kind: 'DISTRICT' | 'CIRCLE' | 'POLYGON';
   districtSlug: string | null;
   lat: number | null;
   lon: number | null;
