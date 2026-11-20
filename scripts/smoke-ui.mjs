@@ -15,7 +15,7 @@ const PAGES = [
 // Steps that click through from a page: open it, click the link, expect the texts on the next page.
 const FLOWS = [
   // On a desktop the map starts open: wait for its canvas and a moment for tiles and pins.
-  { name: 'inversion-workspace', from: '/inversiones', link: 'main a[href^="/inversiones/"]', texts: ['elegido'], desktopWait: 'canvas.maplibregl-canvas' },
+  { name: 'inversion-workspace', from: '/inversiones', link: 'main a[href^="/inversiones/"]', texts: ['elegido'], desktopTexts: ['Comparar'], desktopWait: 'canvas.maplibregl-canvas' },
 ];
 FLOWS.push({ name: 'inversion-comparar', from: '/inversiones', link: 'main a[href^="/inversiones/"]', then: '/comparar', texts: ['Comparar', 'Precio por m²', 'Rentabilidad bruta'] });
 const SIZES = [
@@ -70,7 +70,7 @@ for (const size of SIZES) {
         await page.waitForTimeout(4_000);
       }
       const body = await page.locator('body').innerText();
-      for (const t of flow.texts) {
+      for (const t of [...flow.texts, ...(size.name === 'desktop' ? flow.desktopTexts ?? [] : [])]) {
         if (!body.includes(t)) failures.push(`${label}: missing text "${t}"`);
       }
     } catch (e) {

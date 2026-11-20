@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import { cookies } from "next/headers";
 import { NuqsAdapter } from "nuqs/adapters/next/app";
@@ -16,6 +16,8 @@ export const metadata: Metadata = {
   title: "Dptos",
   description: "Análisis de departamentos en venta",
 };
+
+export const viewport: Viewport = { width: "device-width", initialScale: 1, viewportFit: "cover" };
 
 export const dynamic = "force-dynamic";
 

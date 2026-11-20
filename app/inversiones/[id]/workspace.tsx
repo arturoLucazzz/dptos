@@ -1,8 +1,8 @@
 "use client";
 
-import { useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import dynamic from "next/dynamic";
-import { DndContext, DragOverlay, MouseSensor, TouchSensor, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
+import { DndContext, DragOverlay, pointerWithin, rectIntersection, type CollisionDetection, MouseSensor, TouchSensor, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { ChevronUp, X } from "lucide-react";
 import { ListingCard } from "@/components/listing-card";
 import { ProjectCard } from "@/components/project-card";
@@ -38,6 +38,17 @@ function useIsDesktop(): boolean {
   return useSyncExternalStore(subscribeDesktop, () => window.matchMedia(DESKTOP).matches, () => false);
 }
 
+const WIDE = "(min-width: 1024px)";
+function subscribeWide(onChange: () => void): () => void {
+  const query = window.matchMedia(WIDE);
+  query.addEventListener("change", onChange);
+  return () => query.removeEventListener("change", onChange);
+}
+/** At lg and up the panel sits beside the cards; below it is a bottom sheet. */
+function useIsWide(): boolean {
+  return useSyncExternalStore(subscribeWide, () => window.matchMedia(WIDE).matches, () => true);
+}
+
 const TEMP = "temp:";
 const isTemp = (itemId: string) => itemId.startsWith(TEMP);
 
@@ -54,6 +65,12 @@ function targetKey(i: { propertyId: string | null; projectId: string | null }): 
 function cardKey(c: CardRow): string {
   return c.type === "unit" ? `u:${c.row.postingId}` : `p:${c.row.projectId}`;
 }
+
+/** What is under the pointer wins; the card rectangle is only the fallback. */
+const collide: CollisionDetection = (args) => {
+  const within = pointerWithin(args);
+  return within.length > 0 ? within : rectIntersection(args);
+};
 
 /** A card the user can pick up. The listeners sit on the wrapper, so the link, the add button and the badge keep their own clicks. */
 function DraggableCard({ dragId, children }: { dragId: string; children: React.ReactNode }) {
@@ -127,6 +144,53 @@ export function Workspace({
   const [dragId, setDragId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
+  const isWide = useIsWide();
+  // The sheet is modal only on a phone; a wide screen shows the panel as a plain side column.
+  const modal = sheetOpen && !isWide;
+  const noticeTimer = useRef<number | undefined>(undefined);
+  const sheetRef = useRef<HTMLElement>(null);
+  const barRef = useRef<HTMLButtonElement>(null);
+  const wasModal = useRef(false);
+
+  useEffect(() => {
+    if (!modal) {
+      // Back to the bar that opened the sheet.
+      if (wasModal.current) barRef.current?.focus();
+      wasModal.current = false;
+      return;
+    }
+    wasModal.current = true;
+    sheetRef.current?.focus();
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setSheetOpen(false);
+        return;
+      }
+      if (e.key !== "Tab" || !sheetRef.current) return;
+      // Keep Tab inside the sheet.
+      const items = Array.from(
+        sheetRef.current.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), input:not([disabled])')
+      );
+      if (items.length === 0) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      const active = document.activeElement;
+      if (!sheetRef.current.contains(active) || (e.shiftKey && (active === first || active === sheetRef.current))) {
+        e.preventDefault();
+        (e.shiftKey ? last : first).focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = overflow;
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [modal]);
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } })
@@ -207,7 +271,7 @@ export function Workspace({
       projectId: c.type === "project" ? c.row.projectId : null,
     };
     const view = (item: Item & { note: string | null }) =>
-      // The card row has every field the panel shows.
+      // The card row carries the fields the panel reads, so it stands in for the panel row.
       toPickView(
         item,
         c.type === "unit" ? (c.row as unknown as DepartamentosRow) : null,
@@ -291,7 +355,8 @@ export function Workspace({
     // A drop never removes: a card already in the inversión only shows a note.
     if (itemFor(c)) {
       setNotice("Ya está en la inversión");
-      window.setTimeout(() => setNotice(null), 2500);
+      window.clearTimeout(noticeTimer.current);
+      noticeTimer.current = window.setTimeout(() => setNotice(null), 2500);
       return;
     }
     void add(c);
@@ -326,12 +391,13 @@ export function Workspace({
   return (
     <DndContext
       sensors={sensors}
+      collisionDetection={collide}
       onDragStart={(e) => setDragId(String(e.active.id))}
       onDragEnd={onDragEnd}
       onDragCancel={() => setDragId(null)}
     >
-    <div className="flex flex-col gap-6 pb-16 lg:flex-row lg:items-start lg:pb-0">
-      <div className="min-w-0 flex-1 space-y-4">
+    <div className="flex flex-col gap-6 pb-[calc(4rem+env(safe-area-inset-bottom))] lg:flex-row lg:items-start lg:pb-0">
+      <div className="min-w-0 flex-1 space-y-4" inert={modal}>
         <div className="space-y-2">
           <FilterChips filters={filters} districtOptions={districtOptions} onChange={change} />
           <SortChips filters={filters} onChange={change} />
@@ -407,7 +473,12 @@ export function Workspace({
       {/* Phone: a backdrop behind the open sheet. */}
       {sheetOpen && <div className="fixed inset-0 z-30 bg-black/50 lg:hidden" onClick={() => setSheetOpen(false)} aria-hidden />}
       <aside
-        className={`${sheetOpen ? "" : "max-lg:hidden"} max-lg:fixed max-lg:inset-x-0 max-lg:bottom-0 max-lg:z-40 lg:sticky lg:top-20 lg:w-80 lg:shrink-0`}
+        ref={sheetRef}
+        tabIndex={-1}
+        role={modal ? "dialog" : undefined}
+        aria-modal={modal ? true : undefined}
+        aria-label={modal ? `Elegidos de ${name}` : undefined}
+        className={`outline-none max-lg:bg-background max-lg:pb-[env(safe-area-inset-bottom)] ${sheetOpen ? "" : "max-lg:hidden"} max-lg:fixed max-lg:inset-x-0 max-lg:bottom-0 max-lg:z-40 lg:sticky lg:top-20 lg:w-80 lg:shrink-0`}
       >
         <DropZone dropId="panel" dragging={dragId != null} className="max-lg:rounded-t-2xl max-lg:bg-background">
           <button
@@ -418,11 +489,6 @@ export function Workspace({
           >
             <X className="size-4" />
           </button>
-          {notice && (
-            <p role="status" className="absolute inset-x-3 top-2 z-20 rounded-md bg-primary px-3 py-1.5 text-center text-xs font-medium text-primary-foreground">
-              {notice}
-            </p>
-          )}
           <PickPanel
             id={id}
             name={name}
@@ -439,10 +505,18 @@ export function Workspace({
         </DropZone>
       </aside>
 
+      {/* Outside the aside, so it shows while the sheet is closed. */}
+      <p
+        role="status"
+        className={`fixed inset-x-3 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-50 rounded-md bg-primary px-3 py-2 text-center text-sm font-medium text-primary-foreground shadow-lg lg:bottom-6 lg:left-auto lg:right-6 lg:w-72 ${notice ? "" : "hidden"}`}
+      >
+        {notice}
+      </p>
+
       {/* Phone: the bar that opens the sheet; it takes drops too. */}
-      <div className="fixed inset-x-0 bottom-0 z-20 border-t border-border bg-background lg:hidden">
+      <div className="fixed inset-x-0 bottom-0 z-20 border-t border-border bg-background pb-[env(safe-area-inset-bottom)] lg:hidden" inert={modal}>
         <DropZone dropId="bar" dragging={dragId != null}>
-          <button type="button" onClick={() => setSheetOpen(true)} className="flex h-14 w-full items-center justify-between px-4 text-sm font-medium">
+          <button ref={barRef} type="button" onClick={() => setSheetOpen(true)} className="flex h-14 w-full items-center justify-between px-4 text-sm font-medium">
             <span>{picks.length === 1 ? "1 elegido" : `${picks.length} elegidos`}</span>
             <ChevronUp className="size-4" />
           </button>
