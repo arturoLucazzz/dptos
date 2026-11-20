@@ -18,3 +18,6 @@ data/location/boundaries-lima.json
 lib/generated/
 .tmp/
 *.tsbuildinfo
+
+# Brainstorm mockups and plan workspaces (local only)
+.superpowers/

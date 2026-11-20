@@ -1,9 +1,12 @@
+import { cookies } from "next/headers";
+import { ASSUMPTIONS_COOKIE, parseAssumptionsCookie } from "@/lib/assumptions-cookie";
 import { getCachedSaleListings } from "@/lib/listings";
 import { FavoritosClient } from "./favoritos-client";
 
 export const dynamic = "force-dynamic";
 
 export default async function FavoritosPage() {
+  const panel = parseAssumptionsCookie((await cookies()).get(ASSUMPTIONS_COOKIE)?.value);
   const page = await getCachedSaleListings();
   const favorites = page.listings.filter((l) => l.favorite);
 
@@ -17,6 +20,7 @@ export default async function FavoritosPage() {
         <FavoritosClient
           listings={favorites}
           fixedAssumptions={page.fixedAssumptions}
+          panel={panel}
         />
       </div>
     </div>

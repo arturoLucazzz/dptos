@@ -1,4 +1,6 @@
+import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
+import { ASSUMPTIONS_COOKIE, parseAssumptionsCookie } from '@/lib/assumptions-cookie';
 import {
   parseDepartamentosSearchParams,
   queryDepartamentos,
@@ -10,7 +12,10 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
-    const input = parseDepartamentosSearchParams(url.searchParams);
+    const input = parseDepartamentosSearchParams(
+      url.searchParams,
+      parseAssumptionsCookie((await cookies()).get(ASSUMPTIONS_COOKIE)?.value)
+    );
     const universe = await getCachedSaleListings();
     const result = queryDepartamentos(universe.listings, universe.fixedAssumptions, input);
 

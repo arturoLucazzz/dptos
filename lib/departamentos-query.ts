@@ -95,7 +95,10 @@ export function isDepartamentosSortId(value: string): value is DepartamentosSort
 }
 
 /** Parse GET /api/departamentos search params into a typed query. */
-export function parseDepartamentosSearchParams(params: URLSearchParams): DepartamentosQueryInput {
+export function parseDepartamentosSearchParams(
+  params: URLSearchParams,
+  fallback: PanelAssumptions = DEFAULT_PANEL
+): DepartamentosQueryInput {
   const districtsRaw = params.get('districts') ?? params.get('distrito') ?? '';
   const districts = districtsRaw
     .split(',')
@@ -125,12 +128,12 @@ export function parseDepartamentosSearchParams(params: URLSearchParams): Departa
     coverageMin: parseOptionalNumber(params.get('coverageMin')),
     locationMin: parseOptionalNumber(params.get('ubicacion')),
     panel: {
-      downPaymentPct: parseOptionalNumber(params.get('inicial')) ?? DEFAULT_PANEL.downPaymentPct,
-      tea: parseOptionalNumber(params.get('tea')) ?? DEFAULT_PANEL.tea,
-      tcea: parseOptionalNumber(params.get('tcea')) ?? DEFAULT_PANEL.tcea,
-      termYears: parseOptionalInt(params.get('plazo')) ?? DEFAULT_PANEL.termYears,
-      cashAvailablePen: parseOptionalNumber(params.get('efectivo')),
-      extraMonthlyPen: parseOptionalNumber(params.get('extra')) ?? DEFAULT_PANEL.extraMonthlyPen,
+      downPaymentPct: parseOptionalNumber(params.get('inicial')) ?? fallback.downPaymentPct,
+      tea: parseOptionalNumber(params.get('tea')) ?? fallback.tea,
+      tcea: parseOptionalNumber(params.get('tcea')) ?? fallback.tcea,
+      termYears: parseOptionalInt(params.get('plazo')) ?? fallback.termYears,
+      cashAvailablePen: parseOptionalNumber(params.get('efectivo')) ?? fallback.cashAvailablePen,
+      extraMonthlyPen: parseOptionalNumber(params.get('extra')) ?? fallback.extraMonthlyPen,
     },
     sort,
     order,

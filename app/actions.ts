@@ -13,7 +13,8 @@
  * missing.
  */
 
-import { revalidatePath, revalidateTag } from 'next/cache';
+import { revalidatePath } from 'next/cache';
+import { invalidateSaleListings, patchSaleListingFavorite } from '@/lib/listings';
 import { prisma } from '@/lib/db';
 import {
   confirmDuplicate as confirmDuplicateInDb,
@@ -23,14 +24,19 @@ import {
 } from '@/lib/duplicates';
 
 /**
- * The table reads rows from a cache keyed by scrape run (`getCachedSaleListings`),
- * which a path revalidation does not reach. Expiring the tag at once is what makes
- * a change show on the next fetch instead of after the next scrape.
+ * The table reads rows from an in-process memo keyed by scrape run
+ * (`getCachedSaleListings`), which a path revalidation does not reach. Dropping the
+ * memo is what makes a change show on the next fetch instead of after the next scrape.
  */
-function refreshListings() {
-  revalidateTag('sale-listings', { expire: 0 });
+function refreshPages() {
+  revalidatePath('/');
   revalidatePath('/departamentos');
   revalidatePath('/favoritos');
+}
+
+function refreshListings() {
+  invalidateSaleListings();
+  refreshPages();
 }
 
 async function touch(propertyId: string, data: { favorite?: boolean; discarded?: boolean; discardReason?: string | null; notes?: string | null }) {
@@ -39,7 +45,10 @@ async function touch(propertyId: string, data: { favorite?: boolean; discarded?:
 }
 
 export async function setFavorite(propertyId: string, favorite: boolean): Promise<void> {
-  await touch(propertyId, { favorite });
+  await prisma.property.update({ where: { id: propertyId }, data: { favorite } });
+  // Only the flag changed: patch it in the memo instead of dropping the universe.
+  await patchSaleListingFavorite(propertyId, favorite);
+  refreshPages();
 }
 
 export async function setDiscarded(

@@ -6,6 +6,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.scraper.json && next build",
     "dev": "next dev",
+    "smoke:ui": "node scripts/smoke-ui.mjs",
     "scrape": "tsx --env-file-if-exists=.env scraper/src/index.ts scrape",
     "scrape:check": "tsx scraper/src/check.ts",
     "location:places": "tsx --env-file-if-exists=.env scraper/src/location-places.ts",

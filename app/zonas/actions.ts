@@ -5,7 +5,8 @@
  * score, then expires the listings cache so the table shows the new score at once.
  */
 
-import { revalidatePath, revalidateTag } from 'next/cache';
+import { revalidatePath } from 'next/cache';
+import { invalidateSaleListings } from '@/lib/listings';
 import { prisma } from '@/lib/db';
 import { ZoneKind } from '@/lib/generated/prisma/enums';
 import { refreshLocations } from '@/lib/location/refresh';
@@ -24,7 +25,7 @@ async function recompute(): Promise<string | null> {
     console.error('location refresh after a zone change failed', error);
     return 'La zona se guardó, pero no se pudo recalcular la ubicación. Corre pnpm location:refresh.';
   } finally {
-    revalidateTag('sale-listings', { expire: 0 });
+    invalidateSaleListings();
     revalidatePath('/departamentos');
     revalidatePath('/favoritos');
     revalidatePath('/zonas');

@@ -5,20 +5,10 @@ import { useQueryStates } from "nuqs";
 import useSWR from "swr";
 import { DashboardsSection } from "./dashboards-section";
 import { DepartamentosTable } from "./departamentos-table";
-import {
-  AssumptionsFields,
-  type PanelDraftStrings,
-} from "@/components/assumptions-panel";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { MultiSelect, type MultiSelectOption } from "@/components/ui/multi-select";
-import {
-  DEFAULT_PANEL,
-  financeFrom,
-  fixedFromDefaults,
-  type FixedAssumptions,
-  type PanelAssumptions,
-} from "@/lib/assumption-defaults";
+import type { FixedAssumptions } from "@/lib/assumption-defaults";
 import type {
   DepartamentosQueryResult,
   DepartamentosSortId,
@@ -27,12 +17,13 @@ import type {
 import {
   departamentosApiQuery,
   departamentosSearchParams,
+  urlOverrideNote,
 } from "@/lib/departamentos-search-params";
-import { assumptionWarnings } from "@/lib/finance";
 import { SOURCE_IDS, SOURCE_LABELS } from "@/lib/listing-card";
 import { isSourceId } from "@/lib/official-price";
 import { parseNumericInput, sanitizeNumericInput } from "@/lib/numeric-input";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
+import { useAssumptionsVersion } from "@/hooks/use-assumptions-version";
 
 const SOURCE_OPTIONS: MultiSelectOption[] = SOURCE_IDS.map((id) => ({ label: SOURCE_LABELS[id], value: id }));
 
@@ -63,35 +54,10 @@ type DraftFilters = {
   bedroomsMax: string;
   coverageMin: string;
   ubicacion: string;
-  panel: PanelDraftStrings;
 };
 
 function optionalNumberString(n: number | null): string {
   return n == null ? "" : String(n);
-}
-
-function panelToStrings(panel: PanelAssumptions): PanelDraftStrings {
-  return {
-    downPaymentPct: String(panel.downPaymentPct),
-    tea: String(panel.tea),
-    tcea: String(panel.tcea),
-    termYears: String(panel.termYears),
-    cashAvailablePen: optionalNumberString(panel.cashAvailablePen),
-    extraMonthlyPen: panel.extraMonthlyPen > 0 ? String(panel.extraMonthlyPen) : "",
-  };
-}
-
-function parsePanelDraft(panel: PanelDraftStrings): PanelAssumptions {
-  return {
-    downPaymentPct:
-      parseNumericInput(panel.downPaymentPct) ?? DEFAULT_PANEL.downPaymentPct,
-    tea: parseNumericInput(panel.tea) ?? DEFAULT_PANEL.tea,
-    tcea: parseNumericInput(panel.tcea) ?? DEFAULT_PANEL.tcea,
-    termYears: Math.round(parseNumericInput(panel.termYears) ?? DEFAULT_PANEL.termYears),
-    // Empty means "use the Inicial %", so empty is a value here, not mid-edit.
-    cashAvailablePen: parseNumericInput(panel.cashAvailablePen),
-    extraMonthlyPen: parseNumericInput(panel.extraMonthlyPen) ?? 0,
-  };
 }
 
 function draftEqualsUrl(a: DraftFilters, b: DraftFilters): boolean {
@@ -102,13 +68,7 @@ function draftEqualsUrl(a: DraftFilters, b: DraftFilters): boolean {
     a.bedroomsMin === b.bedroomsMin &&
     a.bedroomsMax === b.bedroomsMax &&
     a.coverageMin === b.coverageMin &&
-    a.ubicacion === b.ubicacion &&
-    a.panel.downPaymentPct === b.panel.downPaymentPct &&
-    a.panel.tea === b.panel.tea &&
-    a.panel.tcea === b.panel.tcea &&
-    a.panel.termYears === b.panel.termYears &&
-    a.panel.cashAvailablePen === b.panel.cashAvailablePen &&
-    a.panel.extraMonthlyPen === b.panel.extraMonthlyPen
+    a.ubicacion === b.ubicacion
   );
 }
 
@@ -126,14 +86,6 @@ export function DepartamentosUnifiedClient() {
     bedroomsMax: optionalNumberString(urlState.bedroomsMax),
     coverageMin: optionalNumberString(urlState.coverageMin),
     ubicacion: optionalNumberString(urlState.ubicacion),
-    panel: panelToStrings({
-      downPaymentPct: urlState.inicial,
-      tea: urlState.tea,
-      tcea: urlState.tcea,
-      termYears: urlState.plazo,
-      cashAvailablePen: urlState.efectivo,
-      extraMonthlyPen: urlState.extra,
-    }),
   }));
 
   // Sync draft from URL on back/forward (URL is an external system here).
@@ -146,15 +98,7 @@ export function DepartamentosUnifiedClient() {
       bedroomsMax: optionalNumberString(urlState.bedroomsMax),
       coverageMin: optionalNumberString(urlState.coverageMin),
       ubicacion: optionalNumberString(urlState.ubicacion),
-      panel: panelToStrings({
-        downPaymentPct: urlState.inicial,
-        tea: urlState.tea,
-        tcea: urlState.tcea,
-        termYears: urlState.plazo,
-        cashAvailablePen: urlState.efectivo,
-        extraMonthlyPen: urlState.extra,
-      }),
-    };
+      };
     // eslint-disable-next-line react-hooks/set-state-in-effect -- sync from URL navigation
     setDraft((prev) => (draftEqualsUrl(prev, next) ? prev : next));
   }, [
@@ -165,12 +109,6 @@ export function DepartamentosUnifiedClient() {
     urlState.bedroomsMax,
     urlState.coverageMin,
     urlState.ubicacion,
-    urlState.inicial,
-    urlState.tea,
-    urlState.tcea,
-    urlState.plazo,
-    urlState.efectivo,
-    urlState.extra,
   ]);
 
   const debouncedDraft = useDebouncedValue(draft, 300);
@@ -190,17 +128,6 @@ export function DepartamentosUnifiedClient() {
       bedroomsMax: parseNumericInput(debouncedDraft.bedroomsMax),
       coverageMin: parseNumericInput(debouncedDraft.coverageMin),
       ubicacion: parseNumericInput(debouncedDraft.ubicacion),
-      // Keep previous URL value while the field is empty / mid-edit (e.g. "0.").
-      inicial:
-        parseNumericInput(debouncedDraft.panel.downPaymentPct) ?? current.inicial,
-      tea: parseNumericInput(debouncedDraft.panel.tea) ?? current.tea,
-      tcea: parseNumericInput(debouncedDraft.panel.tcea) ?? current.tcea,
-      plazo:
-        parseNumericInput(debouncedDraft.panel.termYears) != null
-          ? Math.round(parseNumericInput(debouncedDraft.panel.termYears)!)
-          : current.plazo,
-      efectivo: parseNumericInput(debouncedDraft.panel.cashAvailablePen),
-      extra: parseNumericInput(debouncedDraft.panel.extraMonthlyPen) ?? 0,
     };
 
     const filtersChanged =
@@ -210,13 +137,7 @@ export function DepartamentosUnifiedClient() {
       next.bedroomsMin !== current.bedroomsMin ||
       next.bedroomsMax !== current.bedroomsMax ||
       next.coverageMin !== current.coverageMin ||
-      next.ubicacion !== current.ubicacion ||
-      next.inicial !== current.inicial ||
-      next.tea !== current.tea ||
-      next.tcea !== current.tcea ||
-      next.plazo !== current.plazo ||
-      next.efectivo !== current.efectivo ||
-      next.extra !== current.extra;
+      next.ubicacion !== current.ubicacion;
 
     if (!filtersChanged) return;
 
@@ -247,9 +168,12 @@ export function DepartamentosUnifiedClient() {
     [urlState]
   );
 
+  // The API reads the assumptions from a cookie, so the key carries its value:
+  // a change in the settings window refetches.
+  const assumptionsVersion = useAssumptionsVersion();
   const { data, error, isLoading, isValidating, mutate } = useSWR(
-    `/api/departamentos?${apiQuery}`,
-    fetchDepartamentos,
+    [`/api/departamentos?${apiQuery}`, assumptionsVersion],
+    ([url]) => fetchDepartamentos(url),
     { keepPreviousData: true, revalidateOnFocus: false }
   );
 
@@ -257,25 +181,6 @@ export function DepartamentosUnifiedClient() {
     () => (data?.districtOptions ?? []).map((d) => ({ label: d.label, value: d.value })),
     [data?.districtOptions]
   );
-
-  const warnings = useMemo(
-    () =>
-      assumptionWarnings(
-        financeFrom(parsePanelDraft(draft.panel), data?.fixedAssumptions ?? fixedFromDefaults())
-      ),
-    [draft.panel, data?.fixedAssumptions]
-  );
-
-  const setPanelField = useCallback(
-    <K extends keyof PanelAssumptions>(key: K, value: string) => {
-      setDraft((prev) => ({ ...prev, panel: { ...prev.panel, [key]: value } }));
-    },
-    []
-  );
-
-  const resetPanel = useCallback(() => {
-    setDraft((prev) => ({ ...prev, panel: panelToStrings(DEFAULT_PANEL) }));
-  }, []);
 
   const onSortChange = useCallback(
     (sort: DepartamentosSortId) => {
@@ -318,6 +223,9 @@ export function DepartamentosUnifiedClient() {
           {stats ? `${stats.total.toLocaleString("es-PE")} avisos filtrados` : "Cargando…"}
           {scrapedAt ? ` · actualizado ${new Date(scrapedAt).toLocaleString("es-PE")}` : ""}
         </p>
+        {urlOverrideNote(urlState) && (
+          <p className="mt-2 text-sm text-primary">{urlOverrideNote(urlState)}</p>
+        )}
         {error && (
           <p className="mt-2 text-sm text-red-700">
             {error instanceof Error ? error.message : String(error)}
@@ -392,20 +300,6 @@ export function DepartamentosUnifiedClient() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="pb-3 text-center">
-            <CardTitle className="text-lg">Hipoteca</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <AssumptionsFields
-              panel={draft.panel}
-              setField={setPanelField}
-              reset={resetPanel}
-              warnings={warnings}
-              prominent
-            />
-          </CardContent>
-        </Card>
       </div>
 
       {isLoading && !data ? (
