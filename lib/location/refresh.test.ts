@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildRows } from './refresh';
+import { buildRows, zoneShapes } from './refresh';
 import type { LocationResult } from './score';
 
 const at = new Date('2026-11-17T12:00:00Z');
@@ -48,4 +48,23 @@ test('buildRows stores reasons as JSON and scores as one-decimal values', () => 
   assert.equal(row.livability, 5);
   assert.equal(row.demand, null);
   assert.equal(JSON.stringify(row.reasons), '[{"tone":"info","text":"x"}]');
+});
+
+test('zoneShapes passes a POLYGON zone with its boundary rings and skips one without', () => {
+  const ring: [number, number][] = [[-77.04, -12.12], [-77.02, -12.12], [-77.02, -12.1], [-77.04, -12.12]];
+  const base = { latitude: null, longitude: null, radiusM: null, districtSlug: null, boundary: null };
+  const shapes = zoneShapes(
+    [
+      { ...base, id: 'p', name: 'Mi zona', rating: 8, kind: 'POLYGON', boundary: [ring] },
+      { ...base, id: 'q', name: 'Sin borde', rating: 8, kind: 'POLYGON' },
+      { ...base, id: 'd', name: 'San Isidro', rating: 9, kind: 'DISTRICT', districtSlug: 'san-isidro' },
+      { ...base, id: 'c', name: 'Parque', rating: 7, kind: 'CIRCLE', latitude: -12.1, longitude: -77.03, radiusM: 300 },
+    ],
+    new Map([['san-isidro', [ring]]]),
+  );
+  assert.deepEqual(shapes, [
+    { id: 'p', name: 'Mi zona', rating: 8, kind: 'POLYGON', rings: [ring] },
+    { id: 'd', name: 'San Isidro', rating: 9, kind: 'DISTRICT', districtSlug: 'san-isidro', rings: [ring] },
+    { id: 'c', name: 'Parque', rating: 7, kind: 'CIRCLE', lat: -12.1, lon: -77.03, radiusM: 300 },
+  ]);
 });

@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import { ASSUMPTIONS_COOKIE, parseAssumptionsCookie } from "@/lib/assumptions-cookie";
 import { parseInvestmentFilters } from "@/lib/investments/filters";
 import { getInvestment, touchInvestment } from "@/lib/investments/store";
-import { loadCards, loadDistrictOptions, loadPickViews } from "@/lib/investments/workspace-data";
+import { loadCards, loadDistrictOptions, loadPickViews, loadZoneOutlines } from "@/lib/investments/workspace-data";
 import { Workspace } from "./workspace";
 
 export const dynamic = "force-dynamic";
@@ -25,10 +25,11 @@ export default async function InversionPage({ params }: { params: Promise<{ id: 
   const raw = (await cookies()).get(ASSUMPTIONS_COOKIE)?.value;
   const panel = parseAssumptionsCookie(raw);
   const filters = parseInvestmentFilters(investment.filters);
-  const [cards, picks, districtOptions] = await Promise.all([
+  const [cards, picks, districtOptions, zones] = await Promise.all([
     loadCards(filters, panel, 1),
     loadPickViews(investment.items, panel),
     loadDistrictOptions(),
+    loadZoneOutlines(),
     touchInvestment(id),
   ]);
 
@@ -46,6 +47,7 @@ export default async function InversionPage({ params }: { params: Promise<{ id: 
       initialCards={cards}
       initialPicks={picks}
       districtOptions={districtOptions}
+      zones={zones}
     />
   );
 }

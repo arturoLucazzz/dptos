@@ -33,6 +33,13 @@ test('area needs a ring of 4 or more number pairs', () => {
   assert.deepEqual(parseInvestmentFilters({ area: ring }).area, ring);
 });
 
+test('area must be a closed, valid polygon', () => {
+  // Open: the last pair is not the first.
+  assert.equal(parseInvestmentFilters({ area: [[-77, -12], [-77.1, -12], [-77.1, -12.1], [-77, -12.1]] }).area, null);
+  // A bow tie, closed.
+  assert.equal(parseInvestmentFilters({ area: [[-77, -12], [-77.1, -12.1], [-77.1, -12], [-77, -12.1], [-77, -12]] }).area, null);
+});
+
 test('normalizeNote keeps one line of at most 280 characters', () => {
   assert.equal(normalizeNote('  a\nb\r\nc  '), 'a b c');
   assert.equal(normalizeNote('   '), null);

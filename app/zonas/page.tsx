@@ -18,6 +18,8 @@ export default async function ZonasPage() {
     lat: z.latitude == null ? null : Number(z.latitude),
     lon: z.longitude == null ? null : Number(z.longitude),
     radiusM: z.radiusM,
+    // The stored ring is closed, so its last point repeats the first.
+    vertexCount: z.kind === 'POLYGON' && Array.isArray(z.boundary) && Array.isArray(z.boundary[0]) ? Math.max(0, z.boundary[0].length - 1) : null,
     rating: z.rating,
     notes: z.notes,
   }));

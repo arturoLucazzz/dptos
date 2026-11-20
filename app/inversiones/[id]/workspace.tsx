@@ -1,11 +1,14 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, useSyncExternalStore } from "react";
+import dynamic from "next/dynamic";
 import { ListingCard } from "@/components/listing-card";
 import { ProjectCard } from "@/components/project-card";
 import type { InvestmentFilters } from "@/lib/investments/filters";
 import { toPickView, type PickView } from "@/lib/investments/pick-view";
 import type { CardRow, CardsPage } from "@/lib/investments/workspace-data";
+import type { ZoneOutlineInput } from "@/lib/investments/map-features";
+import { saveDrawnZone } from "../../zonas/actions";
 import type { DepartamentosRow } from "@/lib/departamentos-query";
 import { addPick, removePick, renameInvestment, setPickNote } from "../actions";
 import { FilterChips } from "./filter-chips";
@@ -14,6 +17,24 @@ import { PickPanel } from "./pick-panel";
 import { markInversionesChanged } from "../history-refresh";
 
 type Item = { id: string; propertyId: string | null; projectId: string | null };
+
+// Client only, so the server bundle never loads maplibre.
+const WorkspaceMap = dynamic(() => import("./workspace-map").then((m) => m.WorkspaceMap), {
+  ssr: false,
+  // The toolbar row plus the map box, so the page does not jump when the map arrives.
+  loading: () => <div className="mt-9 h-80 animate-pulse rounded-xl border border-border bg-muted/40 lg:h-[30rem]" />,
+});
+
+const DESKTOP = "(min-width: 768px)";
+function subscribeDesktop(onChange: () => void): () => void {
+  const query = window.matchMedia(DESKTOP);
+  query.addEventListener("change", onChange);
+  return () => query.removeEventListener("change", onChange);
+}
+/** The map starts open on a desktop and folded on a phone; the server renders it folded. */
+function useIsDesktop(): boolean {
+  return useSyncExternalStore(subscribeDesktop, () => window.matchMedia(DESKTOP).matches, () => false);
+}
 
 const TEMP = "temp:";
 const isTemp = (itemId: string) => itemId.startsWith(TEMP);
@@ -38,12 +59,14 @@ export function Workspace({
   initialCards,
   initialPicks,
   districtOptions,
+  zones,
 }: {
   investment: { id: string; name: string; items: Item[] };
   initialFilters: InvestmentFilters;
   initialCards: CardsPage;
   initialPicks: PickView[];
   districtOptions: { value: string; label: string }[];
+  zones: ZoneOutlineInput[];
 }) {
   const id = investment.id;
   const [name, setName] = useState(investment.name);
@@ -60,6 +83,11 @@ export function Workspace({
   const queuedNotes = useRef(new Map<string, string>());
   // Each request takes a number; only the newest one may write the cards.
   const requestId = useRef(0);
+  const isDesktop = useIsDesktop();
+  const [mapChoice, setMapChoice] = useState<boolean | null>(null);
+  const mapOpen = mapChoice ?? isDesktop;
+  const [pointsToken, setPointsToken] = useState(0);
+  const [savedZones, setSavedZones] = useState(zones);
 
   const fetchCards = async (next: InvestmentFilters, nextPage: number) => {
     const mine = ++requestId.current;
@@ -92,6 +120,20 @@ export function Workspace({
     }
     setFilters(next);
     void fetchCards(next, 1);
+  };
+
+  /** The popup card: from the loaded rows when it is there, else from the cards route by id. */
+  const cardFor = async (pinId: string): Promise<CardRow | null> => {
+    const loaded = cards.rows.find((c) => (c.type === "unit" ? c.row.postingId : c.row.projectId) === pinId);
+    if (loaded) return loaded;
+    const res = await fetch(`/api/inversiones/${id}/cards`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ filters, ids: [pinId] }),
+    });
+    if (!res.ok) throw new Error(String(res.status));
+    const data = (await res.json()) as CardsPage;
+    return data.rows[0] ?? null;
   };
 
   const itemFor = (c: CardRow): Item | undefined =>
@@ -204,6 +246,17 @@ export function Workspace({
     }
   };
 
+  const foldButton = (
+    <button
+      type="button"
+      onClick={() => setMapChoice(!mapOpen)}
+      aria-expanded={mapOpen}
+      className="rounded-md border border-border px-3 py-1 text-xs hover:bg-accent"
+    >
+      {mapOpen ? "Ocultar mapa" : "Mostrar mapa"}
+    </button>
+  );
+
   const noun = filters.kind === "projects" ? (cards.total === 1 ? "proyecto" : "proyectos") : cards.total === 1 ? "departamento" : "departamentos";
 
   return (
@@ -214,7 +267,35 @@ export function Workspace({
           <SortChips filters={filters} onChange={change} />
         </div>
 
-        {/* Task 5: the map goes here, above the cards. */}
+        {mapOpen ? (
+          <WorkspaceMap
+            toolbarStart={foldButton}
+            investmentId={id}
+            filters={filters}
+            refreshToken={pointsToken}
+            zones={savedZones}
+            cardFor={cardFor}
+            isAdded={(c) => itemFor(c) != null}
+            onToggle={(c) => void toggle(c)}
+            onAreaChange={(area) => change({ area })}
+            onZoneSaved={(zone) => {
+              setSavedZones((list) => [...list, zone]);
+              // New scores: read page 1 and the pins again, without re-rendering the route.
+              void fetchCards(filters, 1);
+              setPointsToken((n) => n + 1);
+            }}
+            saveZone={saveDrawnZone}
+          />
+        ) : (
+          <div className="flex items-center gap-2">
+            {foldButton}
+            {filters.area && (
+              <button type="button" onClick={() => change({ area: null })} className="rounded-md border border-border px-3 py-1 text-xs hover:bg-accent">
+                Quitar zona
+              </button>
+            )}
+          </div>
+        )}
 
         <p className="text-sm text-muted-foreground" aria-live="polite">
           {cards.total.toLocaleString("es-PE")} {noun}

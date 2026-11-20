@@ -7,6 +7,7 @@ import { DEPARTAMENTOS_SORT_IDS, type DepartamentosSortId } from '../departament
 import type { SourceId } from '../listing-card';
 import { isSourceId } from '../official-price';
 import type { Ring } from '../location/geo';
+import { validatePolygon } from '../location/polygon-input';
 
 export type InvestmentFilters = {
   districts: string[];
@@ -60,16 +61,21 @@ function strings(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
 }
 
+/** A stored area must be a closed ring that validatePolygon accepts, so a bad one never filters. */
 function parseArea(value: unknown): Ring | null {
   if (!Array.isArray(value) || value.length < 4) return null;
-  const ring: Ring = [];
+  const points: [number, number][] = [];
   for (const point of value) {
     if (!Array.isArray(point) || point.length !== 2) return null;
     const [lon, lat] = point;
     if (typeof lon !== 'number' || typeof lat !== 'number' || !Number.isFinite(lon) || !Number.isFinite(lat)) return null;
-    ring.push([lon, lat]);
+    points.push([lon, lat]);
   }
-  return ring;
+  const first = points[0];
+  const last = points[points.length - 1];
+  if (first[0] !== last[0] || first[1] !== last[1]) return null;
+  const checked = validatePolygon(points);
+  return checked.ok ? checked.ring : null;
 }
 
 export function parseInvestmentFilters(raw: unknown): InvestmentFilters {

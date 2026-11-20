@@ -14,8 +14,16 @@ export interface ZoneView {
   lat: number | null;
   lon: number | null;
   radiusM: number | null;
+  /** POLYGON zones: the corners of the drawn area (the closing point not counted). */
+  vertexCount: number | null;
   rating: number;
   notes: string | null;
+}
+
+function shapeLabel(z: ZoneView, districtName: Map<string, string>): string {
+  if (z.kind === 'DISTRICT') return `Distrito: ${districtName.get(z.districtSlug ?? '') ?? z.districtSlug}`;
+  if (z.kind === 'POLYGON') return `Área dibujada · ${z.vertexCount ?? 0} ${z.vertexCount === 1 ? 'punto' : 'puntos'}`;
+  return `Punto ${z.lat}, ${z.lon} · radio ${z.radiusM} m`;
 }
 
 const INITIAL: ZoneFormState = { result: null, values: {} };
@@ -51,6 +59,8 @@ function ZoneForm({
   const values = state.result && !state.result.ok ? state.values : valuesOf(initial);
   const errors = state.result && !state.result.ok ? state.result.errors : {};
   const [kind, setKind] = useState(values.kind === 'DISTRICT' ? 'DISTRICT' : 'CIRCLE');
+  // A drawn zone keeps its shape: only the name, rating, and note are edited here.
+  const drawn = initial?.kind === 'POLYGON';
   const withBoundary = new Set(districtsWithBoundary);
 
   const error = (name: string) => errors[name] && <span className="block text-xs text-red-700">{errors[name]}</span>;
@@ -64,14 +74,21 @@ function ZoneForm({
         <Input name="name" defaultValue={values.name ?? ''} placeholder="Ej. Parque Castilla" />
         {error('name')}
       </label>
-      <label className="block space-y-1 text-sm">
-        <span className="font-medium">Tipo</span>
-        <select name="kind" className={SELECT_CLASS} value={kind} onChange={(e) => setKind(e.target.value)}>
-          <option value="CIRCLE">Punto y radio</option>
-          <option value="DISTRICT">Distrito completo</option>
-        </select>
-      </label>
-      {kind === 'DISTRICT' ? (
+      {drawn ? (
+        <>
+          <input type="hidden" name="kind" value="POLYGON" />
+          <p className="text-xs text-muted-foreground">Área dibujada en el mapa. Su forma no se edita aquí.</p>
+        </>
+      ) : (
+        <label className="block space-y-1 text-sm">
+          <span className="font-medium">Tipo</span>
+          <select name="kind" className={SELECT_CLASS} value={kind} onChange={(e) => setKind(e.target.value)}>
+            <option value="CIRCLE">Punto y radio</option>
+            <option value="DISTRICT">Distrito completo</option>
+          </select>
+        </label>
+      )}
+      {drawn ? null : kind === 'DISTRICT' ? (
         <label className="block space-y-1 text-sm">
           <span className="font-medium">Distrito *</span>
           <select name="districtSlug" className={SELECT_CLASS} defaultValue={values.districtSlug ?? ''}>
@@ -156,9 +173,7 @@ export function ZonasClient({
               <div className="min-w-48 flex-1">
                 <div className="font-medium">{z.name}</div>
                 <div className="text-xs text-muted-foreground">
-                  {z.kind === 'DISTRICT'
-                    ? `Distrito: ${districtName.get(z.districtSlug ?? '') ?? z.districtSlug}`
-                    : `Punto ${z.lat}, ${z.lon} · radio ${z.radiusM} m`}
+                  {shapeLabel(z, districtName)}
                   {z.notes ? ` · ${z.notes}` : ''}
                 </div>
               </div>
