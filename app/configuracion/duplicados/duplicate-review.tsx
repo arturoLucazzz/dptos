@@ -44,18 +44,20 @@ function ReviewButton({ label, disabled, onClick }: { label: string; disabled: b
  * A refused decision keeps the row and shows the message under it; a saved one drops the
  * row when the page renders again.
  */
-export function DuplicateReview({ row }: { row: ReviewRow }) {
+export function DuplicateReview({ row, onDecided }: { row: ReviewRow; onDecided: () => void }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const { copies, duplicateFlags } = row;
   const several = copies.length > 1;
 
+  // The row leaves the list at once on success. A refusal keeps it, with the message.
   const run = (action: () => Promise<ReviewResult>) => {
     setError(null);
     startTransition(async () => {
       try {
         const result = await action();
-        if (!result.ok) setError(result.error);
+        if (result.ok) onDecided();
+        else setError(result.error);
       } catch {
         setError("No se pudo guardar. Intenta de nuevo.");
       }

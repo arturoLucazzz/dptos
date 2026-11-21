@@ -1,6 +1,5 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { invalidateSaleListings } from "@/lib/listings";
 import {
@@ -13,12 +12,12 @@ import {
 export type ReviewResult = { ok: true } | { ok: false; error: string };
 
 /**
- * The review reads rows from an in-process memo that a path revalidation does not reach,
- * so a decision drops the memo as well.
+ * The review reads rows from an in-process memo, and confirm and split change which
+ * listings exist, so a decision drops the memo. The page does not revalidate: the client
+ * removes the decided row itself, and the next visit reads the fresh memo.
  */
 function refresh() {
   invalidateSaleListings();
-  revalidatePath("/configuracion/duplicados");
 }
 
 /** An expected refusal comes back as a message; anything else is a bug and is thrown. */
