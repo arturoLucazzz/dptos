@@ -415,3 +415,22 @@ describe('early payment on the page rows', () => {
     assert.deepEqual(second.prepaymentLines, all[1]!.prepaymentLines);
   });
 });
+
+describe('the m² filter', () => {
+  const base = { districts: [] as string[], sources: [], priceMin: null, priceMax: null, bedroomsMin: null, bedroomsMax: null };
+  const listings = [
+    row({ postingId: 'small', pricePen: 1, areaM2: 40 }),
+    row({ postingId: 'mid', pricePen: 1, areaM2: 70 }),
+    row({ postingId: 'unknown', pricePen: 1, areaM2: null }),
+  ];
+
+  it('filterListings keeps rows inside the m² range', () => {
+    const ids = filterListings(listings, { ...base, areaM2Min: 50, areaM2Max: 80 }).map((r) => r.postingId);
+    assert.deepEqual(ids, ['mid']);
+  });
+
+  it('a min alone drops rows with no area', () => {
+    const ids = filterListings(listings, { ...base, areaM2Min: 50 }).map((r) => r.postingId);
+    assert.deepEqual(ids, ['mid']);
+  });
+});
