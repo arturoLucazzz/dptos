@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Remove the pages that the new interface replaced, keep the duplicate review as an owner page, and make the news filter precise and daily.
+**Goal:** Remove the pages that the new interface replaced, add a settings page whose first section is the duplicate review, and make the news filter precise and daily.
 
-**Architecture:** The duplicate review moves from the `/departamentos` table to a new owner page, `/duplicados`. The old pages and the code that only they use are deleted. The drawn-zone action that Mis inversiones uses moves next to the workspace. The daily scrape wrapper also runs `pnpm news:fetch`.
+**Architecture:** A new owner page, `/configuracion`, holds settings sections. Its first section, `/configuracion/duplicados`, takes the duplicate review from the `/departamentos` table. The old pages and the code that only they use are deleted. The drawn-zone action that Mis inversiones uses moves next to the workspace. The daily scrape wrapper also runs `pnpm news:fetch`.
 
 **Tech Stack:** Next.js 16, React 19, Tailwind 4, Prisma 7, node:test with tsx, Playwright smoke, bash.
 
@@ -13,16 +13,16 @@
 ## Global Constraints
 
 - Screen text is Spanish. Dark mode only, with the theme tokens in `app/globals.css`. Icons from `lucide-react`.
-- The owner decided the scope on 2026-11-21: keep the duplicate review as a page, and remove the rest with no replacement. That covers `/departamentos`, `/favoritos`, `/zonas`, `/estadisticas`, `/alertas`, and `/agregar`. The alerts, the zone list, the price evolution chart, and manual entry are not moved anywhere.
+- The owner decided the scope on 2026-11-21: keep the duplicate review, inside a settings page that later holds other settings, and remove the rest with no replacement. That covers `/departamentos`, `/favoritos`, `/zonas`, `/estadisticas`, `/alertas`, and `/agregar`. The alerts, the zone list, the price evolution chart, and manual entry are not moved anywhere.
 - Old URLs get no redirects. A bookmarked old URL shows the Next.js "not found" page.
-- `/runs` stays as an owner page. The "Más" menu lists only "Duplicados" and "Corridas".
+- `/runs` stays as an owner page. The "Más" menu lists only "Configuración" and "Corridas".
 - Never touch the database `dptos` during the build. Use `DATABASE_URL=postgresql://arturoLucazzz@localhost:5432/dptos_seed`, with the dev server on port 3100.
 - No database migration in this step. The `Property.favorite` and `Property.notes` columns stay in the schema, unused, as the spec says.
 - Test command: `pnpm test`. Typecheck: `pnpm typecheck`. Lint: `pnpm lint`. Smoke: `pnpm smoke:ui http://localhost:3100 /tmp/dptos-smoke`.
 
 ## Builder calls in this plan
 
-- `/agregar` is removed with the others, because the owner said to remove everything except the duplicates. `lib/manual-listing.ts` goes with it. Existing `manual` postings stay in the database, and `/duplicados` can still mark a manual copy as removed.
+- `/agregar` is removed with the others, because the owner said to remove everything except the duplicates. `lib/manual-listing.ts` goes with it. Existing `manual` postings stay in the database, and the duplicate review can still mark a manual copy as removed.
 - The new news keywords replace the broad words "vivienda", "departamento", "construcción", and "bcrp" with phrases. The list is in Task 1.
 - `news:fetch` runs before the scrape in the daily and weekly wrapper modes, so that a failed scrape does not skip the news. A failed `news:fetch` never stops the scrape.
 
@@ -86,10 +86,10 @@
 - [ ] **Step 6:** Run `bash -n scripts/scrape-wrapper.sh`. Expected: no output. Then check the failure path without the network and without a scrape: run the wrapper's news line alone with `pnpm` replaced by `false`, and show that the echo prints and the exit code is 0. Paste the command and output in the report.
 - [ ] **Step 7:** Run `pnpm test && pnpm typecheck && pnpm lint`, then commit `feat: precise news keywords and news:fetch in the daily and weekly runs`.
 
-### Task 2: The duplicates owner page
+### Task 2: The settings page with the duplicate review
 
 **Files:**
-- Create: `app/duplicados/page.tsx`, `app/duplicados/duplicate-review.tsx` (client), `app/duplicados/actions.ts`
+- Create: `app/configuracion/page.tsx`, `app/configuracion/layout.tsx`, `app/configuracion/sections.ts`, `app/configuracion/duplicados/page.tsx`, `app/configuracion/duplicados/duplicate-review.tsx` (client), `app/configuracion/duplicados/actions.ts`
 - Create: `lib/duplicate-queue.ts`, `lib/duplicate-queue.test.ts`
 - Modify: `components/top-bar.tsx`, `scripts/smoke-ui.mjs`
 
@@ -97,18 +97,22 @@
 - Consumes: `getCachedSaleListings()` rows with `copies` and `duplicateFlags` (lib/listings.ts), `confirmDuplicate`, `rejectDuplicate`, `splitPosting`, `DuplicateReviewError` (lib/duplicates.ts). The review cell, `DUPLICATE_BADGES`, and the four actions in `app/actions.ts` and `app/departamentos/departamentos-table.tsx` are the code to move. Task 4 deletes the originals.
 - Produces:
   - `duplicateQueue<T extends { duplicateFlags: unknown[]; copies: unknown[] }>(rows: T[]): T[]`: rows with at least one duplicate flag first, then rows with 2 or more copies and no flag. Keep the input order inside each group.
-  - `app/duplicados/actions.ts`: `confirmDuplicate(candidateId)`, `rejectDuplicate(candidateId)`, `splitPosting(postingId)`, each returning `ReviewResult = { ok: true } | { ok: false; error: string }`, and `markManualRemoved(postingId): Promise<void>`. Each one calls `invalidateSaleListings()` and `revalidatePath('/duplicados')`.
+  - `SETTINGS_SECTIONS` in `app/configuracion/sections.ts`: an array of `{ href: string; label: string; description: string }`. Today it has one entry: `{ href: "/configuracion/duplicados", label: "Duplicados", description: "Avisos que pueden ser la misma propiedad en dos portales." }`. A new setting later adds one entry and one route.
+  - `app/configuracion/duplicados/actions.ts`: `confirmDuplicate(candidateId)`, `rejectDuplicate(candidateId)`, `splitPosting(postingId)`, each returning `ReviewResult = { ok: true } | { ok: false; error: string }`, and `markManualRemoved(postingId): Promise<void>`. Each one calls `invalidateSaleListings()` and `revalidatePath('/configuracion/duplicados')`.
 
 - [ ] **Step 1: Failing tests** for `duplicateQueue`: flagged rows come first, multi-copy rows follow, rows with one copy and no flag are dropped, and the order inside each group is kept.
 - [ ] **Step 2:** Run them. Expected: FAIL. Implement `duplicateQueue`. Expected: PASS.
-- [ ] **Step 3:** Move the four actions into `app/duplicados/actions.ts` with the same behavior and Spanish errors. Move the review cell into `duplicate-review.tsx`. If an action returns `ok: false`, the row stays and shows the error under it. Leave the originals in place for Task 4.
-- [ ] **Step 4:** Build `/duplicados`:
-  - Title "Duplicados". The one-line explanation reads "Avisos que pueden ser la misma propiedad en dos portales. Decide si son la misma, o sepáralos."
+- [ ] **Step 3:** Move the four actions into `app/configuracion/duplicados/actions.ts` with the same behavior and Spanish errors. Move the review cell into `duplicate-review.tsx`. If an action returns `ok: false`, the row stays and shows the error under it. Leave the originals in place for Task 4.
+- [ ] **Step 4:** Build the settings shell:
+  - `app/configuracion/layout.tsx`: the title "Configuración" and a side menu built from `SETTINGS_SECTIONS`, with the current section marked. On a phone, the menu is a row of links above the content.
+  - `app/configuracion/page.tsx`: one card per section, with its label, description, and link.
+- [ ] **Step 5:** Build `/configuracion/duplicados`:
+  - The heading "Duplicados". The one-line explanation reads "Avisos que pueden ser la misma propiedad en dos portales. Decide si son la misma, o sepáralos."
   - One card per row in `duplicateQueue` order. Show the district, the price range, the copies with their source and link, and the review controls.
   - With no rows, the page reads "No hay duplicados por revisar."
-- [ ] **Step 5:** In `components/top-bar.tsx`, set "Más" to exactly `{ href: "/duplicados", label: "Duplicados" }` and `{ href: "/runs", label: "Corridas" }`.
-- [ ] **Step 6:** Add `/duplicados` to the smoke with the text "Duplicados". Run the smoke. Expected: PASS at both sizes. In a browser on port 3100, confirm one flag and split one copy on the seed. Paste what changed. Then undo both with the same page, so the seed ends as it began.
-- [ ] **Step 7:** Run the checks, then commit `feat: duplicates owner page`.
+- [ ] **Step 6:** In `components/top-bar.tsx`, set "Más" to exactly `{ href: "/configuracion", label: "Configuración" }` and `{ href: "/runs", label: "Corridas" }`.
+- [ ] **Step 7:** Add `/configuracion` to the smoke with the texts "Configuración" and "Duplicados", and `/configuracion/duplicados` with the text "Duplicados". Run the smoke. Expected: PASS at both sizes. In a browser on port 3100, confirm one flag and split one copy on the seed. Paste what changed. Then undo both with the same page, so the seed ends as it began.
+- [ ] **Step 8:** Run the checks, then commit `feat: settings page with the duplicate review`.
 
 ### Task 3: Remove the old pages
 
