@@ -22,3 +22,4 @@ Feeds RSS de noticias. Encabezado: `nombre,url,prioridad`. `prioridad` es un nú
 ## news-keywords.csv
 Palabras clave para filtrar noticias. Encabezado: `palabra`. Una por fila, en minúscula (se permiten tildes).
 Se busca la palabra dentro del titular, por eso `inmobiliari` cubre inmobiliario, inmobiliaria e inmobiliarios.
+Una palabra clave coincide con cualquier parte del titular, así que cada una debe ser una frase que solo aparece en noticias del mercado (por ejemplo `precio de vivienda`, no `vivienda`).

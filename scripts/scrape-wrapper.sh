@@ -87,6 +87,8 @@ case "$MODE" in
     # scraper/src/config/districts.ts; the scraper refuses any other.
     DISTRICTS="${SCRAPER_DAILY_DISTRICTS:-lince,jesus-maria,san-miguel,surquillo,magdalena,pueblo-libre,san-isidro,miraflores,barranco,santiago-de-surco}"
     ARGS=(--mode=TARGET_DAILY --districts="$DISTRICTS" --operations=sale,rent)
+    # News first, so a failed scrape does not skip it. A news failure never stops the scrape.
+    pnpm news:fetch || echo "news:fetch failed; continuing with the scrape"
     if ! needs_run; then
       echo "Last successful run is fresh; daily catch-up not needed."
       # Still run: the calendar interval is the source of truth for "daily". The
@@ -96,6 +98,8 @@ case "$MODE" in
     ;;
   weekly)
     ARGS=(--mode=FULL_WEEKLY --operations=sale,rent)
+    # News first, so a failed scrape does not skip it. A news failure never stops the scrape.
+    pnpm news:fetch || echo "news:fetch failed; continuing with the scrape"
     ;;
   manual|*)
     ARGS=("$@")
