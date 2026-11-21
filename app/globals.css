@@ -31,6 +31,7 @@
   --color-ring: var(--ring);
   --color-gain: var(--gain);
   --color-loss: var(--loss);
+  --color-warn: var(--warn);
   --color-score: var(--score);
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
   --color-chart-1: var(--chart-1);
@@ -71,6 +72,7 @@
   --ring: #10b981;
   --gain: #34d399;
   --loss: #fb7185;
+  --warn: #fbbf24;
   --score: #8b5cf6;
   --chart-1: #10b981;
   --chart-2: #34d399;

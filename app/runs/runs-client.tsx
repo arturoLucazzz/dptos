@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { RunSourceSection } from "@/lib/run-sources";
 import { SOURCE_LABELS } from "@/lib/listing-card";
 import { districtName } from "@/lib/district-name";
-import { formatRunDate, runModeLabel, runStatusLabel } from "@/lib/run-labels";
+import { formatRunDate, runModeLabel, runStatusLabel, runStatusTone } from "@/lib/run-labels";
 
 export interface RunRow {
   id: string;
@@ -27,21 +27,6 @@ export interface RunRow {
 
 function isThin(d: { sale: number; rent: number }): boolean {
   return (d.sale > 0 && d.sale < 50) || (d.rent > 0 && d.rent < 20);
-}
-
-function statusTone(status: string): string {
-  switch (status) {
-    case "SUCCESS":
-      return "bg-emerald-100 text-emerald-800";
-    case "PARTIAL":
-      return "bg-amber-100 text-amber-900";
-    case "FAILED":
-      return "bg-red-100 text-red-800";
-    case "RUNNING":
-      return "bg-sky-100 text-sky-800";
-    default:
-      return "";
-  }
 }
 
 function formatDuration(ms: number | null): string {
@@ -74,7 +59,7 @@ export function RunsClient({ runs }: { runs: RunRow[] }) {
                 <CardTitle className="text-base font-medium">
                   {formatRunDate(run.startedAt)}
                 </CardTitle>
-                <Badge className={statusTone(run.status)}>{runStatusLabel(run.status)}</Badge>
+                <Badge className={runStatusTone(run.status)}>{runStatusLabel(run.status)}</Badge>
                 <span className="text-sm text-muted-foreground">{runModeLabel(run.mode)}</span>
                 <span className="text-sm text-muted-foreground">{formatDuration(run.durationMs)}</span>
                 <span className="text-sm text-muted-foreground">
@@ -84,8 +69,8 @@ export function RunsClient({ runs }: { runs: RunRow[] }) {
                   <span className="font-mono text-xs text-muted-foreground">{run.gitSha.slice(0, 7)}</span>
                 )}
                 {run.skippedDistricts.length > 0 && (
-                  <Badge className="bg-amber-100 text-amber-900">
-                    sanity gate: {run.skippedDistricts.length}
+                  <Badge className="bg-warn/15 text-warn">
+                    distritos omitidos: {run.skippedDistricts.length}
                   </Badge>
                 )}
               </div>
@@ -103,7 +88,7 @@ export function RunsClient({ runs }: { runs: RunRow[] }) {
                           {source.sale.toLocaleString("es-PE")} venta · {source.rent.toLocaleString("es-PE")} alquiler
                         </span>
                         {!source.recorded && (
-                          <Badge className="bg-amber-100 text-amber-900">no registrada en esta corrida</Badge>
+                          <Badge className="bg-warn/15 text-warn">no registrada en esta corrida</Badge>
                         )}
                       </div>
                       {source.districts.length === 0 ? (
@@ -115,7 +100,7 @@ export function RunsClient({ runs }: { runs: RunRow[] }) {
                               key={d.slug}
                               className={
                                 isThin(d)
-                                  ? "rounded border border-amber-300 bg-amber-50 px-3 py-2"
+                                  ? "rounded border border-warn/40 bg-warn/10 px-3 py-2"
                                   : "rounded border px-3 py-2"
                               }
                             >
@@ -128,7 +113,7 @@ export function RunsClient({ runs }: { runs: RunRow[] }) {
                         </div>
                       )}
                       {suspicious.length > 0 && (
-                        <p className="text-amber-800">
+                        <p className="text-warn">
                           Distritos con conteos bajos (revisar): {suspicious.map((d) => districtName(d.slug)).join(", ")}
                         </p>
                       )}

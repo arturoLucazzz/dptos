@@ -18,6 +18,18 @@ export function runStatusLabel(status: string): string {
   return STATUS_LABELS[status] ?? status;
 }
 
+const STATUS_TONES: Record<string, string> = {
+  SUCCESS: 'bg-gain/15 text-gain',
+  PARTIAL: 'bg-warn/15 text-warn',
+  FAILED: 'bg-loss/15 text-loss',
+  RUNNING: 'bg-primary/15 text-primary',
+};
+
+/** Badge colors from the dark theme tokens, so a status never shows as a pale block. */
+export function runStatusTone(status: string): string {
+  return STATUS_TONES[status] ?? '';
+}
+
 export function runModeLabel(mode: string): string {
   return MODE_LABELS[mode] ?? mode;
 }
