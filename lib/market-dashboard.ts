@@ -68,16 +68,15 @@ export function topYieldSlugs(rows: DistrictMarket[], n = 3): string[] {
 }
 
 /** Bin edges in soles; the last bin has no upper edge. */
-const HISTOGRAM_EDGES = [0, 100_000, 200_000, 300_000, 400_000, 500_000, 700_000, 1_000_000, 1_500_000, 2_000_000];
+const HISTOGRAM_EDGES = Array.from({ length: 21 }, (_, i) => i * 100_000);
 
-function formatMillions(pen: number): string {
-  return String(pen / 1_000_000).replace('.', ',');
+function formatMillions(pen: number, decimals = 1): string {
+  return (pen / 1_000_000).toFixed(decimals).replace('.', ',');
 }
 
 function binLabel(from: number, to: number | null): string {
-  if (to == null) return `S/ ${formatMillions(from)} M o más`;
+  if (to == null) return `S/ ${formatMillions(from, 0)} M o más`;
   if (to <= 1_000_000) return `S/ ${from / 1000}–${to / 1000} mil`;
-  if (from < 1_000_000) return `S/ ${from / 1000} mil–${formatMillions(to)} M`;
   return `S/ ${formatMillions(from)}–${formatMillions(to)} M`;
 }
 
@@ -113,19 +112,32 @@ export type SourcePosting = {
 };
 
 /**
+ * When a posting left the market, or null while it is on it. A removed posting left
+ * when it was removed; otherwise it left once its source's cutoff passed it, and
+ * `lastSeenAt` is the date `loadPriceIndex` files that exit under.
+ */
+export function exitDate(
+  posting: Pick<SourcePosting, 'source' | 'districtSlug' | 'operation' | 'lastSeenAt' | 'removedAt'>,
+  cutoffs: PossiblySoldCutoffs,
+): Date | null {
+  if (posting.removedAt) return posting.removedAt;
+  return isLivePosting(posting, cutoffs) ? null : posting.lastSeenAt;
+}
+
+/**
  * Per portal: live postings, their median price, those first seen in the last 7 days,
  * and those that left in the last 7 days. "Left" is a posting that is no longer live and
- * whose last sighting (or removal) falls in the window: the run history that crossed its
- * cutoff is not stored, so the last sighting is the closest date there is.
+ * whose `exitDate` falls in (now - 7 days, now].
  */
 export function sourceStats(postings: SourcePosting[], cutoffs: PossiblySoldCutoffs, now: Date): SourceStats[] {
   const since = now.getTime() - 7 * DAY_MS;
   return SOURCE_IDS.flatMap((source) => {
     const own = postings.filter((p) => p.source === source);
     const live = own.filter((p) => isLivePosting(p, cutoffs));
-    const gone = own.filter(
-      (p) => !isLivePosting(p, cutoffs) && (p.removedAt ?? p.lastSeenAt).getTime() >= since,
-    );
+    const gone = own.filter((p) => {
+      const left = exitDate(p, cutoffs)?.getTime();
+      return left != null && left > since && left <= now.getTime();
+    });
     if (!live.length && !gone.length) return [];
     const prices = live.flatMap((p) => (p.pricePen == null ? [] : [p.pricePen]));
     return [

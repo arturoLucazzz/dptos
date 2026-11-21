@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   districtMarket,
+  exitDate,
   priceHistogram,
   repeatedAcrossPortals,
   sourceStats,
@@ -57,6 +58,11 @@ test('priceHistogram bins prices and labels them', () => {
   assert.equal(count('S/ 0–100 mil'), 1);
   assert.equal(count('S/ 300–400 mil'), 2);
   assert.equal(count('S/ 2 M o más'), 1);
+  assert.equal(bins.length, 21);
+  assert.equal(bins[0].label, 'S/ 0–100 mil');
+  assert.equal(bins[3].label, 'S/ 300–400 mil');
+  assert.equal(bins[10].label, 'S/ 1,0–1,1 M');
+  assert.equal(bins.at(-1)?.label, 'S/ 2 M o más');
   assert.equal(bins.reduce((s, b) => s + b.count, 0), 4);
   assert.equal(bins.at(-1)?.to, null);
 });
@@ -86,6 +92,8 @@ test('sourceStats counts live, new and gone postings per source', () => {
       { ...base, source: 'urbania', pricePen: 100_000, firstSeenAt: ago(60), lastSeenAt: ago(4) },
       // behind the cutoff for a long time: gone before the window
       { ...base, source: 'urbania', pricePen: 100_000, firstSeenAt: ago(90), lastSeenAt: ago(20) },
+      // removed 2 days ago, last seen long ago: left in the window by removal date
+      { ...base, source: 'urbania', pricePen: 100_000, firstSeenAt: ago(90), lastSeenAt: ago(20), removedAt: ago(2) },
       { ...base, source: 'nexo', pricePen: 300_000, firstSeenAt: ago(10), lastSeenAt: ago(0) },
     ],
     cutoffs,
@@ -98,7 +106,17 @@ test('sourceStats counts live, new and gone postings per source', () => {
     liveCount: 2,
     typicalSalePen: 300_000,
     newLast7: 1,
-    goneLast7: 1,
+    goneLast7: 2,
   });
   assert.equal(stats.find((s) => s.source === 'nexo')?.liveCount, 1);
+});
+
+test('exitDate is removedAt, else lastSeenAt once the cutoff has passed it, else null', () => {
+  const cutoffs = new Map([[sliceKey('urbania', 'lince', 'SALE'), new Date('2026-11-10T00:00:00Z')]]);
+  const base = { source: 'urbania' as const, districtSlug: 'lince', operation: 'SALE' };
+  const seen = new Date('2026-11-05T00:00:00Z');
+  const removed = new Date('2026-11-18T00:00:00Z');
+  assert.deepEqual(exitDate({ ...base, lastSeenAt: seen, removedAt: null }, cutoffs), seen);
+  assert.deepEqual(exitDate({ ...base, lastSeenAt: seen, removedAt: removed }, cutoffs), removed);
+  assert.equal(exitDate({ ...base, lastSeenAt: new Date('2026-11-12T00:00:00Z'), removedAt: null }, cutoffs), null);
 });
