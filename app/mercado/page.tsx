@@ -2,11 +2,17 @@ import type { ReactNode } from "react";
 import { constructionRows, rentVsSaleRows, yieldRows } from "@/lib/market-chart-rows";
 import { loadMarketDashboard } from "@/lib/market-dashboard";
 import { loadDistrictMap } from "@/lib/district-map-load";
+import { prisma } from "@/lib/db";
+import { loadEstudios, loadFeeds, loadVoces } from "@/lib/market-files";
+import { orderNews, sourcePriorities, type NewsRow } from "@/lib/news-order";
 import { KpiStrip } from "../inicio/kpi-strip";
 import { ChartCard, ConstructionChart, HistogramChart, RentVsSaleChart, YieldChart } from "./market-charts";
 import { DistrictMap } from "./district-map";
 import { NseBars } from "./nse-bars";
 import { SourcesTable } from "./sources-table";
+import { Estudios } from "./estudios";
+import { Voces } from "./voces";
+import { Noticias } from "./noticias";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +32,15 @@ function Section({ title, explain, children }: { title: string; explain: string;
 export default async function MercadoPage() {
   const m = await loadMarketDashboard();
   const map = await loadDistrictMap(m.districts.map((d) => d.slug));
+  const [recent, savedRows] = await Promise.all([
+    prisma.newsItem.findMany({ orderBy: [{ publishedAt: { sort: "desc", nulls: "last" } }, { fetchedAt: "desc" }], take: 200 }),
+    prisma.newsItem.findMany({ where: { saved: true }, orderBy: { savedAt: "desc" } }),
+  ]);
+  const toRow = (n: (typeof recent)[number]): NewsRow => ({
+    id: n.id, title: n.title, source: n.source, url: n.url, saved: n.saved,
+    publishedAt: n.publishedAt?.toISOString() ?? null, fetchedAt: n.fetchedAt.toISOString(),
+  });
+  const news = orderNews(recent.map(toRow), sourcePriorities(loadFeeds()), 20);
   const SRC = "Avisos de Urbania, Adondevivir, Proper y Nexo en las últimas corridas.";
 
   return (
@@ -80,6 +95,18 @@ export default async function MercadoPage() {
             <NseBars nse={map.nse} source={map.nseSource ? `${map.nseSource.source}, ${map.nseSource.period}` : "fuente sin cargar"} />
           </div>
         </div>
+      </Section>
+
+      <Section title="Estudios" explain="Informes de mercado que vale la pena leer, con su autor y cada cuánto salen.">
+        <Estudios estudios={loadEstudios()} />
+      </Section>
+
+      <Section title="Voces del mercado" explain="Personas y canales que opinan del mercado. El dueño de dptos revisa esta lista.">
+        <Voces voces={loadVoces({ onlyReviewed: true })} />
+      </Section>
+
+      <Section title="Noticias" explain="Los titulares más recientes. Solo guardamos el titular, la fuente, la fecha y el enlace.">
+        <Noticias items={news} savedItems={savedRows.map(toRow)} />
       </Section>
 
       <Section title="Nuestras fuentes" explain="Qué aporta cada portal y cuánto se movió en la última semana.">

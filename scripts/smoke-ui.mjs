@@ -10,7 +10,7 @@ const PAGES = [
   { path: '/', texts: ['Inicio', 'Continuar', 'Mis inversiones', 'Mercado', 'Supuestos: TEA', 'Recomendados'] },
   { path: '/departamentos', texts: ['Supuestos: TEA'] },
   { path: '/departamentos?tea=7&inicial=20', texts: ['Supuestos: TEA', 'supuestos del enlace'] },
-  { path: '/mercado', texts: ['Alquiler mensual vs precio de venta', 'Nuestras fuentes'] },
+  { path: '/mercado', texts: ['Alquiler mensual vs precio de venta', 'Nuestras fuentes', 'Estudios', 'Voces del mercado', 'Noticias'] },
   { path: '/inversiones', texts: ['Mis inversiones', '+ Nueva inversión'] },
 ];
 // Steps that click through from a page: open it, click the link, expect the texts on the next page.
