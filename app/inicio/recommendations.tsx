@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useQueryStates } from "nuqs";
 import { LayoutGrid, Table2 } from "lucide-react";
 import { AddButton, ListingCard, pen } from "@/components/listing-card";
 import { ScoreBadge } from "@/components/score-badge";
@@ -19,9 +20,12 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useInicioInversion } from "./inicio-inversion";
+import { HomeFilterRow, type FilterPatch } from "./home-filters";
+import { hasActiveFilters, homeFilterParsers, serializeHomeFilters } from "@/lib/home-filters";
+import type { SourceId } from "@/lib/listing-card";
 import { grossYieldPct } from "@/lib/gross-yield";
 import { COLS_MAX, COLS_MIN, nextCols, parseCols } from "@/lib/inicio-cols";
-import { moneyLine, RECO_TABS, type RecoMode } from "@/lib/home";
+import { moneyLine, RECO_TABS } from "@/lib/home";
 import type { HomeRow } from "@/lib/home-rows";
 
 function yieldText(rent: number | null, price: number): string {
@@ -101,10 +105,34 @@ function Head({ label }: { label: string }) {
   );
 }
 
-/** The server sends one page of the first tab; the rest is fetched as the person asks. */
-export function Recommendations({ initial }: { initial: Reco }) {
+const CLEARED: FilterPatch = {
+  precio_min: null,
+  precio_max: null,
+  dorm_min: null,
+  dorm_max: null,
+  distrito: null,
+  area_min: null,
+  area_max: null,
+  fuente: null,
+  ubicacion_min: null,
+};
+
+/**
+ * The server sends the first page for the URL's filters and tab; the rest is fetched as the
+ * person asks. The filters and the tab live in the URL, so a search can be shared as a link.
+ */
+export function Recommendations({
+  initial,
+  districtOptions,
+  sourceOptions,
+}: {
+  initial: Reco;
+  districtOptions: { value: string; label: string }[];
+  sourceOptions: SourceId[];
+}) {
   const { isAdded, toggle } = useInicioInversion();
-  const [mode, setMode] = useState<RecoMode>("gain");
+  const [filters, setFilters] = useQueryStates(homeFilterParsers, { shallow: true, history: "push" });
+  const mode = filters.orden;
   const [data, setData] = useState<Reco>(initial);
   const [loading, setLoading] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -114,22 +142,37 @@ export function Recommendations({ initial }: { initial: Reco }) {
   // While the person types, the field shows their text; the grid uses the last valid value.
   const [colsDraft, setColsDraft] = useState<string | null>(null);
 
-  async function load(nextMode: RecoMode, n: number) {
+  // Only the newest request may write the list, so a slow answer never shows stale filters.
+  const requestId = useRef(0);
+  async function load(n: number) {
+    const id = ++requestId.current;
     setLoading(true);
     setFailed(false);
     try {
-      const res = await fetch(
-        `/api/inicio/recomendados?mode=${nextMode}&n=${n}`,
-      );
+      const res = await fetch(serializeHomeFilters(`/api/inicio/recomendados?n=${n}`, filters));
       if (!res.ok) throw new Error(String(res.status));
-      setData((await res.json()) as Reco);
-      setMode(nextMode);
+      const next = (await res.json()) as Reco;
+      if (id === requestId.current) setData(next);
     } catch {
-      setFailed(true);
+      if (id === requestId.current) setFailed(true);
     } finally {
-      setLoading(false);
+      if (id === requestId.current) setLoading(false);
     }
   }
+
+  // A change of filters or tab reloads the first page. The server already rendered the first one.
+  const searchKey = serializeHomeFilters(filters);
+  const loadedKey = useRef(searchKey);
+  useEffect(() => {
+    if (loadedKey.current === searchKey) return;
+    loadedKey.current = searchKey;
+    void load(FIRST);
+    // load reads the same filters that make searchKey.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchKey]);
+
+  const active = hasActiveFilters(filters);
+  const clear = () => void setFilters(CLEARED);
 
   const list = data.rows;
   const hasMore = data.hasMore;
@@ -137,6 +180,14 @@ export function Recommendations({ initial }: { initial: Reco }) {
   return (
     <section className="space-y-3">
         <h2 className="text-lg font-semibold">Recomendados</h2>
+        <HomeFilterRow
+          filters={filters}
+          districtOptions={districtOptions}
+          sourceOptions={sourceOptions}
+          active={active}
+          onChange={(patch) => void setFilters(patch)}
+          onClear={clear}
+        />
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap gap-1.5">
             {RECO_TABS.map((t) => (
@@ -144,7 +195,7 @@ export function Recommendations({ initial }: { initial: Reco }) {
                 key={t.mode}
                 type="button"
                 onClick={() => {
-                  if (t.mode !== mode) void load(t.mode, FIRST);
+                  if (t.mode !== mode) void setFilters({ orden: t.mode });
                 }}
                 className={`rounded-full border px-3 py-1 text-sm ${
                   mode === t.mode
@@ -311,6 +362,16 @@ export function Recommendations({ initial }: { initial: Reco }) {
           </div>
         )}
 
+        {!loading && !failed && list.length === 0 && (
+          <div className="flex flex-col items-center gap-2 rounded-xl border border-border bg-card p-6 text-sm text-muted-foreground">
+            <p>Ningún departamento cumple estos filtros.</p>
+            {active && (
+              <button type="button" onClick={clear} className="rounded-md border border-border px-3 py-1.5 text-foreground hover:bg-accent">
+                Limpiar filtros
+              </button>
+            )}
+          </div>
+        )}
         {failed && (
           <p className="text-center text-sm text-loss">
             No se pudieron cargar los recomendados.
@@ -321,7 +382,7 @@ export function Recommendations({ initial }: { initial: Reco }) {
             <button
               type="button"
               disabled={loading}
-              onClick={() => void load(mode, list.length + STEP)}
+              onClick={() => void load(list.length + STEP)}
               className="rounded-md border border-border px-4 py-1.5 text-sm hover:bg-accent"
             >
               Ver más

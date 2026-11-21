@@ -5,7 +5,9 @@ import {
 } from "@/lib/assumptions-cookie";
 import { homeKpis } from "@/lib/home";
 import { RECO_FIRST } from "@/lib/home-rows";
-import { loadHomeRows, recommendHome } from "@/lib/home-universe";
+import { loadHomeFilters } from "@/lib/home-filters";
+import { filterHomeRows, homeDistrictOptions, loadHomeRows, recommendHome } from "@/lib/home-universe";
+import { SOURCE_IDS } from "@/lib/listing-card";
 import { pickImageLookup } from "@/lib/investments/workspace-data";
 import { listInvestments } from "@/lib/investments/store";
 import { loadRentObservations } from "@/lib/market";
@@ -16,9 +18,17 @@ import { Recommendations } from "./inicio/recommendations";
 
 export const dynamic = "force-dynamic";
 
-export default async function HomePage() {
+export default async function HomePage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const raw = (await cookies()).get(ASSUMPTIONS_COOKIE)?.value;
   const rows = await loadHomeRows(parseAssumptionsCookie(raw));
+  const filters = loadHomeFilters(await searchParams);
+  const districtOptions = homeDistrictOptions(rows);
+  const present = new Set(rows.flatMap((r) => r.copies.map((c) => c.source)));
+  const sourceOptions = SOURCE_IDS.filter((s) => present.has(s));
 
   const districts = new Set(rows.map((r) => r.districtSlug));
   const rents = (await loadRentObservations())
@@ -55,7 +65,9 @@ export default async function HomePage() {
         {/* The key restarts the list when the assumptions change, so it never shows old numbers. */}
         <Recommendations
           key={raw ?? ""}
-          initial={recommendHome(rows, "gain", RECO_FIRST)}
+          initial={recommendHome(filterHomeRows(rows, filters), filters.orden, RECO_FIRST)}
+          districtOptions={districtOptions}
+          sourceOptions={sourceOptions}
         />
       </div>
     </InicioInversionProvider>
