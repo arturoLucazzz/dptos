@@ -1,14 +1,19 @@
 /**
  * Proper (inversiones.proper.com.pe) as a source adapter.
  *
- * Proper sells new-building projects and publishes the price of every unit in
- * public JSON, with no Cloudflare in front, so plain `fetch` is enough:
+ * Proper sells new-building projects and publishes them in public JSON, with no
+ * Cloudflare in front, so plain `fetch` is enough:
  *
  * - the project list comes from an API Gateway endpoint (about 50 projects),
- * - the build id comes from the `/propiedades` page, and
- * - each project's units from `/_next/data/<buildId>/proyecto/<slug>.json`, and
- *   each single apartment for immediate delivery (listed with tipo
- *   "departamento alquiler") from `/entrega-inmediata/<slug>.json`.
+ * - each project from the same gateway's `proyecto_profile/<slug>/`, and its
+ *   images from `/api/galeria-proyecto?slug=<slug>` (a failed gallery falls back
+ *   to the facade in the list and does not fail the project),
+ * - each single apartment for immediate delivery (listed with tipo
+ *   "departamento alquiler") from `/_next/data/<buildId>/entrega-inmediata/<slug>.json`,
+ *   where the build id comes from `/propiedades`, fetched only when such a unit
+ *   is listed.
+ *
+ * Proper no longer publishes per-unit prices, so a project is one PROJECT card.
  *
  * The list holds every project in Lima whatever district was asked for, so the
  * `districts` filter is ignored: each project is handed over under its own
@@ -25,10 +30,22 @@ import type { ListingCard } from '@/lib/listing-card';
 import { districtSlugFromName } from '../../config/districts';
 import { RateLimiter } from '../../utils/anti-blocking';
 import type { SourceAdapter, SourceCrawlResult, SourceDistrictResult } from '../types';
-import { PROPER_BASE_URL, parseProperBuildId, parseProperImmediate, parseProperProject } from './parse';
+import { PROPER_BASE_URL, parseProperBuildId, parseProperImmediate, parseProperProfile } from './parse';
 
 export const PROPER_LIST_URL = 'https://3nors0yi4b.execute-api.us-east-2.amazonaws.com/production/get_proyects_departments/';
+const PROFILE_URL = 'https://3nors0yi4b.execute-api.us-east-2.amazonaws.com/production/proyecto_profile';
+const GALLERY_URL = `${PROPER_BASE_URL}/api/galeria-proyecto`;
 const PROPERTIES_URL = `${PROPER_BASE_URL}/propiedades`;
+
+/** A non-2xx answer, carrying its status so a 404 (delisted) can be told from a failure. */
+export class ProperHttpError extends Error {
+  constructor(
+    readonly status: number,
+    url: string
+  ) {
+    super(`HTTP ${status} for ${url}`);
+  }
+}
 
 /** What the adapter reaches outside itself for, replaceable in tests. */
 export interface ProperAdapterDeps {
@@ -49,7 +66,7 @@ function defaultDeps(): ProperAdapterDeps {
         // A stalled socket would otherwise hang the whole run.
         signal: AbortSignal.timeout(30_000),
       });
-      if (!response.ok) throw new Error(`HTTP ${response.status} for ${url}`);
+      if (!response.ok) throw new ProperHttpError(response.status, url);
       return response.text();
     },
     wait: () => limiter.wait(),
@@ -58,11 +75,17 @@ function defaultDeps(): ProperAdapterDeps {
   };
 }
 
+function isNotFound(json: unknown): boolean {
+  return typeof json === 'object' && json !== null && (json as { notFound?: unknown }).notFound === true;
+}
+
 interface ListedProject {
   slug: string;
   distrito: string | null;
   /** Single apartments for immediate delivery live under another route than projects. */
   immediate: boolean;
+  moneda: string | null;
+  facade: string | null;
 }
 
 function parseList(body: string): ListedProject[] {
@@ -73,7 +96,17 @@ function parseList(body: string): ListedProject[] {
     if (typeof slug !== 'string' || !slug) return [];
     const distrito = (item as { distrito?: unknown }).distrito;
     const tipo = (item as { tipo?: unknown }).tipo;
-    return [{ slug, distrito: typeof distrito === 'string' ? distrito : null, immediate: tipo === 'departamento alquiler' }];
+    const moneda = (item as { tipo_moneda?: unknown }).tipo_moneda;
+    const facade = (item as { url_fachada?: unknown }).url_fachada;
+    return [
+      {
+        slug,
+        distrito: typeof distrito === 'string' ? distrito : null,
+        immediate: tipo === 'departamento alquiler',
+        moneda: typeof moneda === 'string' ? moneda : null,
+        facade: typeof facade === 'string' && facade ? facade : null,
+      },
+    ];
   });
   if (projects.length === 0) throw new Error('Proper list holds no projects');
   return projects;
@@ -85,9 +118,18 @@ export function properAdapter(overrides: Partial<ProperAdapterDeps> = {}): Sourc
 
   const get = (url: string) =>
     retry(
-      async () => {
+      async (bail) => {
         await wait();
-        return deps.fetchText(url);
+        try {
+          return await deps.fetchText(url);
+        } catch (error) {
+          // A 404 will not change on a retry.
+          if (error instanceof ProperHttpError && error.status === 404) {
+            bail(error);
+            return '';
+          }
+          throw error;
+        }
       },
       { retries, factor: 2, minTimeout: 5_000, maxTimeout: 60_000 }
     );
@@ -99,11 +141,15 @@ export function properAdapter(overrides: Partial<ProperAdapterDeps> = {}): Sourc
     async crawl({ districts, operation, onBatch, maxPages }): Promise<SourceCrawlResult> {
       if (operation !== Operation.SALE) return { districts: [], skippedOutsideLima: 0, incomplete: false };
 
-      // These two failing means nothing can be crawled: the source failed as a whole.
+      // The list failing means nothing can be crawled: the source failed as a whole.
       const projects = parseList(await get(PROPER_LIST_URL));
-      const buildId = parseProperBuildId(await get(PROPERTIES_URL));
-      if (!buildId) throw new Error('Proper: no buildId on /propiedades');
-      log(`proper: ${projects.length} projects, build ${buildId}`);
+      // Only immediate units need the build id; without any, skip the page.
+      let buildId: string | null = null;
+      if (projects.some((p) => p.immediate)) {
+        buildId = parseProperBuildId(await get(PROPERTIES_URL));
+        if (!buildId) throw new Error('Proper: no buildId on /propiedades');
+      }
+      log(`proper: ${projects.length} projects${buildId ? `, build ${buildId}` : ''}`);
 
       const results = new Map<string, SourceDistrictResult>();
       const resultFor = (districtSlug: string): SourceDistrictResult => {
@@ -134,17 +180,37 @@ export function properAdapter(overrides: Partial<ProperAdapterDeps> = {}): Sourc
               )
               .slice(0, maxPages);
 
-      for (const { slug, distrito, immediate } of ordered) {
+      for (const { slug, distrito, immediate, moneda, facade } of ordered) {
         const listedSlug = districtSlugFromName(distrito);
         let cards: ListingCard[];
         try {
-          const route = immediate ? 'entrega-inmediata' : 'proyecto';
-          const url = `${PROPER_BASE_URL}/_next/data/${buildId}/${route}/${slug}.json?slug=${slug}`;
-          const json: unknown = JSON.parse(await get(url));
-          cards = immediate ? parseProperImmediate(json, slug) : parseProperProject(json, slug);
+          if (immediate) {
+            const url = `${PROPER_BASE_URL}/_next/data/${buildId}/entrega-inmediata/${slug}.json?slug=${slug}`;
+            const json: unknown = JSON.parse(await get(url));
+            if (isNotFound(json)) throw new ProperHttpError(404, url);
+            cards = parseProperImmediate(json, slug);
+          } else {
+            const profileUrl = `${PROFILE_URL}/${slug}/`;
+            const profile: unknown = JSON.parse(await get(profileUrl));
+            if (isNotFound(profile)) throw new ProperHttpError(404, profileUrl);
+            let images: string[] = [];
+            try {
+              const gallery = JSON.parse(await get(`${GALLERY_URL}?slug=${slug}`)) as { imagenes?: unknown };
+              if (Array.isArray(gallery.imagenes)) images = gallery.imagenes.filter((v): v is string => typeof v === 'string');
+            } catch (error) {
+              log(`proper ${slug}: gallery failed, ${error instanceof Error ? error.message : String(error)}`);
+            }
+            if (images.length === 0 && facade) images = [facade];
+            cards = parseProperProfile(profile, slug, images, moneda);
+          }
           // Read below for the district; an empty answer is a failed fetch, not a crash.
           if (cards.length === 0) throw new Error('no cards in the answer');
         } catch (error) {
+          if (error instanceof ProperHttpError && error.status === 404) {
+            // Delisted since the list was cached: nothing to fetch, nothing missing.
+            log(`proper ${slug}: ya no publicado`);
+            continue;
+          }
           const message = `proper ${slug}: ${error instanceof Error ? error.message : String(error)}`;
           log(message);
           incomplete = true;
