@@ -37,6 +37,16 @@ const PROFILE_URL = 'https://3nors0yi4b.execute-api.us-east-2.amazonaws.com/prod
 const GALLERY_URL = `${PROPER_BASE_URL}/api/galeria-proyecto`;
 const PROPERTIES_URL = `${PROPER_BASE_URL}/propiedades`;
 
+/** A non-2xx answer, carrying its status so a 404 (delisted) can be told from a failure. */
+export class ProperHttpError extends Error {
+  constructor(
+    readonly status: number,
+    url: string
+  ) {
+    super(`HTTP ${status} for ${url}`);
+  }
+}
+
 /** What the adapter reaches outside itself for, replaceable in tests. */
 export interface ProperAdapterDeps {
   /** GET a URL and return the body text; throws on a non-2xx answer. */
@@ -56,13 +66,17 @@ function defaultDeps(): ProperAdapterDeps {
         // A stalled socket would otherwise hang the whole run.
         signal: AbortSignal.timeout(30_000),
       });
-      if (!response.ok) throw new Error(`HTTP ${response.status} for ${url}`);
+      if (!response.ok) throw new ProperHttpError(response.status, url);
       return response.text();
     },
     wait: () => limiter.wait(),
     retries: Number(process.env.PAGE_RETRIES) || 3,
     log: (message) => console.log(message),
   };
+}
+
+function isNotFound(json: unknown): boolean {
+  return typeof json === 'object' && json !== null && (json as { notFound?: unknown }).notFound === true;
 }
 
 interface ListedProject {
@@ -104,9 +118,18 @@ export function properAdapter(overrides: Partial<ProperAdapterDeps> = {}): Sourc
 
   const get = (url: string) =>
     retry(
-      async () => {
+      async (bail) => {
         await wait();
-        return deps.fetchText(url);
+        try {
+          return await deps.fetchText(url);
+        } catch (error) {
+          // A 404 will not change on a retry.
+          if (error instanceof ProperHttpError && error.status === 404) {
+            bail(error);
+            return '';
+          }
+          throw error;
+        }
       },
       { retries, factor: 2, minTimeout: 5_000, maxTimeout: 60_000 }
     );
@@ -163,9 +186,13 @@ export function properAdapter(overrides: Partial<ProperAdapterDeps> = {}): Sourc
         try {
           if (immediate) {
             const url = `${PROPER_BASE_URL}/_next/data/${buildId}/entrega-inmediata/${slug}.json?slug=${slug}`;
-            cards = parseProperImmediate(JSON.parse(await get(url)) as unknown, slug);
+            const json: unknown = JSON.parse(await get(url));
+            if (isNotFound(json)) throw new ProperHttpError(404, url);
+            cards = parseProperImmediate(json, slug);
           } else {
-            const profile: unknown = JSON.parse(await get(`${PROFILE_URL}/${slug}/`));
+            const profileUrl = `${PROFILE_URL}/${slug}/`;
+            const profile: unknown = JSON.parse(await get(profileUrl));
+            if (isNotFound(profile)) throw new ProperHttpError(404, profileUrl);
             let images: string[] = [];
             try {
               const gallery = JSON.parse(await get(`${GALLERY_URL}?slug=${slug}`)) as { imagenes?: unknown };
@@ -179,6 +206,11 @@ export function properAdapter(overrides: Partial<ProperAdapterDeps> = {}): Sourc
           // Read below for the district; an empty answer is a failed fetch, not a crash.
           if (cards.length === 0) throw new Error('no cards in the answer');
         } catch (error) {
+          if (error instanceof ProperHttpError && error.status === 404) {
+            // Delisted since the list was cached: nothing to fetch, nothing missing.
+            log(`proper ${slug}: ya no publicado`);
+            continue;
+          }
           const message = `proper ${slug}: ${error instanceof Error ? error.message : String(error)}`;
           log(message);
           incomplete = true;

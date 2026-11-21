@@ -65,6 +65,7 @@ export function parseProperProfile(json: unknown, slug: string, images: string[]
 
   const name = str(proyecto.nombre);
   const districtName = str(proyecto.distrito);
+  // Unverified: a `usd` list currency is assumed to apply to the profile's `precio_desde`.
   const from = price(moneda ?? 'pen', proyecto.precio_desde, proyecto.precio_desde);
 
   return [
