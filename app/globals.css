@@ -97,6 +97,9 @@
   html {
     color-scheme: dark;
   }
+  /* Tailwind 4 dropped the pointer cursor on buttons; put it back everywhere. */
+  button:not(:disabled), [role="button"]:not([aria-disabled="true"]), summary, label[for], select { cursor: pointer; }
+  button:disabled, [aria-disabled="true"] { cursor: not-allowed; }
 }
 
 /* The workspace map popup: the card draws its own frame on the dark theme. */
