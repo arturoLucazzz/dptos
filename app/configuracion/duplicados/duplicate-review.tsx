@@ -44,19 +44,21 @@ function ReviewButton({ label, disabled, onClick }: { label: string; disabled: b
  * A refused decision keeps the row and shows the message under it; a saved one drops the
  * row when the page renders again.
  */
-export function DuplicateReview({ row, onDecided }: { row: ReviewRow; onDecided: () => void }) {
+export type Decided = { candidateId: string } | { postingId: string };
+
+export function DuplicateReview({ row, onDecided }: { row: ReviewRow; onDecided: (what: Decided) => void }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const { copies, duplicateFlags } = row;
   const several = copies.length > 1;
 
   // The row leaves the list at once on success. A refusal keeps it, with the message.
-  const run = (action: () => Promise<ReviewResult>) => {
+  const run = (what: Decided, action: () => Promise<ReviewResult>) => {
     setError(null);
     startTransition(async () => {
       try {
         const result = await action();
-        if (result.ok) onDecided();
+        if (result.ok) onDecided(what);
         else setError(result.error);
       } catch {
         setError("No se pudo guardar. Intenta de nuevo.");
@@ -96,7 +98,7 @@ export function DuplicateReview({ row, onDecided }: { row: ReviewRow; onDecided:
                 label="marcar vendido o retirado"
                 disabled={pending}
                 onClick={() =>
-                  run(async () => {
+                  run({ postingId: copy.postingId }, async () => {
                     await markManualRemoved(copy.postingId);
                     return { ok: true };
                   })
@@ -107,7 +109,7 @@ export function DuplicateReview({ row, onDecided }: { row: ReviewRow; onDecided:
               <ReviewButton
                 label="no es el mismo"
                 disabled={pending}
-                onClick={() => run(() => splitPosting(copy.postingId))}
+                onClick={() => run({ postingId: copy.postingId }, () => splitPosting(copy.postingId))}
               />
             )}
           </div>
@@ -122,8 +124,8 @@ export function DuplicateReview({ row, onDecided }: { row: ReviewRow; onDecided:
             <Badge variant="outline" className="border-amber-400 text-amber-400">
               {badge}
             </Badge>
-            <ReviewButton label="es el mismo" disabled={pending} onClick={() => run(() => confirmDuplicate(flag.candidateId))} />
-            <ReviewButton label="no es el mismo" disabled={pending} onClick={() => run(() => rejectDuplicate(flag.candidateId))} />
+            <ReviewButton label="es el mismo" disabled={pending} onClick={() => run({ candidateId: flag.candidateId }, () => confirmDuplicate(flag.candidateId))} />
+            <ReviewButton label="no es el mismo" disabled={pending} onClick={() => run({ candidateId: flag.candidateId }, () => rejectDuplicate(flag.candidateId))} />
           </div>
         );
       })}
