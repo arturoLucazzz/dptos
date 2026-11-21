@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useInicioInversion } from "./inicio-inversion";
 import { grossYieldPct } from "@/lib/gross-yield";
+import { COLS_MAX, COLS_MIN, nextCols, parseCols } from "@/lib/inicio-cols";
 import { moneyLine, RECO_TABS, type RecoMode } from "@/lib/home";
 import type { HomeRow } from "@/lib/home-rows";
 
@@ -31,7 +32,6 @@ const FIRST = 16;
 const STEP = 8;
 const VIEW_KEY = "dptos.inicio.view";
 const COLS_KEY = "dptos.inicio.cols";
-const COLS = [2, 3, 4, 5, 6];
 
 type View = "cards" | "table";
 
@@ -109,8 +109,9 @@ export function Recommendations({ initial }: { initial: Reco }) {
   const [failed, setFailed] = useState(false);
   const storedView = usePref(VIEW_KEY);
   const view: View = storedView === "table" ? "table" : "cards";
-  const storedCols = Number(usePref(COLS_KEY));
-  const cols = COLS.includes(storedCols) ? storedCols : 4;
+  const cols = parseCols(usePref(COLS_KEY));
+  // While the person types, the field shows their text; the grid uses the last valid value.
+  const [colsDraft, setColsDraft] = useState<string | null>(null);
 
   async function load(nextMode: RecoMode, n: number) {
     setLoading(true);
@@ -156,24 +157,22 @@ export function Recommendations({ initial }: { initial: Reco }) {
           </div>
           <div className="flex items-center gap-2">
             {view === "cards" && (
-              <div
-                className="hidden items-center gap-1 sm:flex"
-                aria-label="Columnas"
-              >
-                {COLS.map((c) => (
-                  <button
-                    key={c}
-                    type="button"
-                    aria-pressed={cols === c}
-                    onClick={() => {
-                      remember(COLS_KEY, String(c));
-                    }}
-                    className={`size-7 rounded-md border text-xs ${cols === c ? "border-primary text-foreground" : "border-border text-muted-foreground"}`}
-                  >
-                    {c}
-                  </button>
-                ))}
-              </div>
+              <label className="hidden items-center gap-1.5 text-xs text-muted-foreground sm:flex">
+                Columnas
+                <input
+                  type="number"
+                  min={COLS_MIN}
+                  max={COLS_MAX}
+                  step={1}
+                  value={colsDraft ?? String(cols)}
+                  onChange={(e) => {
+                    setColsDraft(e.target.value);
+                    remember(COLS_KEY, String(nextCols(e.target.value, cols)));
+                  }}
+                  onBlur={() => setColsDraft(null)}
+                  className="h-8 w-14 rounded-md border border-border bg-background px-2 text-sm text-foreground"
+                />
+              </label>
             )}
             {(
               [
