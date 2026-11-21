@@ -19,6 +19,7 @@ export type YieldRow = { slug: string; name: string; yieldPct: number | null; to
 
 export function yieldRows(districts: DistrictMarket[], topSlugs: string[]): YieldRow[] {
   return districts
+    .filter((d) => d.saleCount >= MIN_SALES_FOR_CHART)
     .map((d) => ({ slug: d.slug, name: d.name, yieldPct: d.grossYieldPct, top: topSlugs.includes(d.slug) }))
     .sort((a, b) => (b.yieldPct ?? -Infinity) - (a.yieldPct ?? -Infinity));
 }

@@ -102,3 +102,13 @@ test('parseFeed reads the real Andina RSS shape (media namespace, -0500 dates)',
   assert.equal(items[0].publishedAt?.toISOString(), '2026-11-21T02:00:00.000Z');
   assert.equal(items[0].title, 'Ministerio de Vivienda culmina construcción de cámaras de bombeo');
 });
+
+test('parseFeed keeps only http and https links', () => {
+  const xml = `<rss version="2.0"><channel>
+<item><title>Bueno</title><link>https://a.pe/1</link></item>
+<item><title>Malo js</title><link>javascript:alert(1)</link></item>
+<item><title>Malo data</title><link>data:text/html,x</link></item>
+<item><title>Http</title><link>http://b.pe/2</link></item>
+</channel></rss>`;
+  assert.deepEqual(parseFeed(xml, 'X').map((i) => i.url), ['https://a.pe/1', 'http://b.pe/2']);
+});

@@ -50,6 +50,8 @@ function toDate(v: unknown): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+const isWebUrl = (u: string) => /^https?:\/\//i.test(u);
+
 /** Parses an RSS 2.0 or Atom document. Throws on malformed XML or a document that is not a feed. */
 export function parseFeed(xml: string, _source: string): FeedItem[] {
   const valid = XMLValidator.validate(xml);
@@ -61,13 +63,13 @@ export function parseFeed(xml: string, _source: string): FeedItem[] {
     for (const it of asArray(doc.rss.channel?.item)) {
       const url = textOf(it.link);
       const title = cleanTitle(it.title);
-      if (url && title) out.push({ url, title, publishedAt: toDate(it.pubDate ?? it['dc:date']) });
+      if (isWebUrl(url) && title) out.push({ url, title, publishedAt: toDate(it.pubDate ?? it['dc:date']) });
     }
   } else if (doc.feed) {
     for (const it of asArray(doc.feed.entry)) {
       const url = atomLink(it.link);
       const title = cleanTitle(it.title);
-      if (url && title) out.push({ url, title, publishedAt: toDate(it.published ?? it.updated) });
+      if (isWebUrl(url) && title) out.push({ url, title, publishedAt: toDate(it.published ?? it.updated) });
     }
   } else {
     throw new Error('No es un feed RSS ni Atom');

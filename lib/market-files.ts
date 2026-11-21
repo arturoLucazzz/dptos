@@ -6,7 +6,7 @@
 
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { csvLines, splitCsvLine } from './stats/csv';
+import { splitCsvLine } from './stats/csv';
 
 export const ESTUDIOS_HEADER = 'titulo,autor,url,frecuencia,precios_de_aviso,nota';
 export const VOCES_HEADER = 'nombre,plataforma,url,tema,vende_asesoria,revisado';
@@ -19,12 +19,13 @@ export type Feed = { nombre: string; url: string; prioridad: number };
 
 /** Data rows with their file row number (the header is row 1). Throws on a wrong header or cell count. */
 function rowsOf(file: string, text: string, header: string): { cells: string[]; row: number }[] {
-  const lines = csvLines(text);
-  if (lines[0]?.trim() !== header) throw new Error(`Encabezado inválido en ${file}. Debe ser: ${header}`);
+  // Row numbers count real file lines (blank lines too), so the owner can find the row.
+  const lines = text.replace(/^﻿/, '').split(/\r?\n/).map((line, i) => ({ line, row: i + 1 }));
+  const nonBlank = lines.filter((l) => l.line.trim() !== '');
+  if (nonBlank[0]?.line.trim() !== header) throw new Error(`Encabezado inválido en ${file}. Debe ser: ${header}`);
   const n = header.split(',').length;
-  return lines.slice(1).map((line, i) => {
+  return nonBlank.slice(1).map(({ line, row }) => {
     const cells = splitCsvLine(line);
-    const row = i + 2;
     if (cells.length !== n) {
       throw new Error(`Fila inválida en ${file}, fila ${row}: tiene ${cells.length} columnas y deben ser ${n}. ¿Una coma sin comillas?`);
     }
@@ -50,8 +51,9 @@ function httpsUrl(file: string, row: number, value: string): string {
 }
 
 function flag(file: string, row: number, field: string, value: string): boolean {
-  if (value !== 'si' && value !== 'no') throw new Error(`Valor inválido en ${file}, fila ${row}: ${field} debe ser si o no (dice "${value}")`);
-  return value === 'si';
+  const v = value === 'sí' ? 'si' : value;
+  if (v !== 'si' && v !== 'no') throw new Error(`Valor inválido en ${file}, fila ${row}: ${field} debe ser si o no (dice "${value}")`);
+  return v === 'si';
 }
 
 export function parseEstudios(text: string): Estudio[] {
@@ -106,3 +108,12 @@ export const loadEstudios = (): Estudio[] => parseEstudios(read('estudios.csv'))
 export const loadVoces = (opts: { onlyReviewed: boolean }): Voz[] => parseVoces(read('voces.csv'), opts);
 export const loadFeeds = (): Feed[] => parseFeeds(read('feeds.csv'));
 export const loadNewsKeywords = (): string[] => parseNewsKeywords(read('news-keywords.csv'));
+
+/** Runs a loader so one bad file hides only its own section: data, or the Spanish error message. */
+export function tryLoad<T>(load: () => T): { ok: true; data: T } | { ok: false; message: string } {
+  try {
+    return { ok: true, data: load() };
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : String(e) };
+  }
+}

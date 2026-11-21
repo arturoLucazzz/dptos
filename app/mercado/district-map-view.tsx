@@ -7,6 +7,7 @@
  */
 
 import "maplibre-gl/dist/maplibre-gl.css";
+import { RAMP } from "@/lib/map-ramp";
 import { useMemo, useState } from "react";
 import Map, { Layer, NavigationControl, Popup, Source, type MapLayerMouseEvent } from "react-map-gl/maplibre";
 import type { ExpressionSpecification, GeoJSONSourceSpecification } from "maplibre-gl";
@@ -24,7 +25,6 @@ import {
 type Districts = FeatureCollection<{ type: "MultiPolygon"; coordinates: [number, number][][][] }, DistrictProps>;
 
 // One hue, dark to light: on a dark surface more of the statistic reads as brighter.
-const RAMP = ["#1d3557", "#2a5a8f", "#3d82c4", "#6aa9e6", "#a9d0f7"];
 const NO_DATA = "#3b4048";
 const OUTLINE = "#ffffff";
 const LIMA_VIEW = { longitude: -77.03, latitude: -12.05, zoom: 9.6 };

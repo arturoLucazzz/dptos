@@ -3,7 +3,7 @@ import { constructionRows, rentVsSaleRows, yieldRows } from "@/lib/market-chart-
 import { loadMarketDashboard } from "@/lib/market-dashboard";
 import { loadDistrictMap } from "@/lib/district-map-load";
 import { prisma } from "@/lib/db";
-import { loadEstudios, loadFeeds, loadVoces } from "@/lib/market-files";
+import { loadEstudios, loadFeeds, loadVoces, tryLoad } from "@/lib/market-files";
 import { orderNews, sourcePriorities, type NewsRow } from "@/lib/news-order";
 import { KpiStrip } from "../inicio/kpi-strip";
 import { ChartCard, ConstructionChart, HistogramChart, RentVsSaleChart, YieldChart } from "./market-charts";
@@ -29,18 +29,32 @@ function Section({ title, explain, children }: { title: string; explain: string;
   );
 }
 
+/** A file problem shown inside its own section, so one bad row never hides the rest of the page. */
+function FileError({ message }: { message: string }) {
+  return <p className="rounded-md border border-border bg-card p-3 text-sm text-muted-foreground">{message}</p>;
+}
+
+/** The 200 newest headlines by their own date, or by fetch date when the feed gave none. */
+async function recentNews() {
+  const ids = await prisma.$queryRaw<{ id: string }[]>`SELECT id FROM "NewsItem" ORDER BY COALESCE("publishedAt", "fetchedAt") DESC LIMIT 200`;
+  return prisma.newsItem.findMany({ where: { id: { in: ids.map((r) => r.id) } } });
+}
+
 export default async function MercadoPage() {
-  const m = await loadMarketDashboard();
-  const map = await loadDistrictMap(m.districts.map((d) => d.slug));
-  const [recent, savedRows] = await Promise.all([
-    prisma.newsItem.findMany({ orderBy: [{ publishedAt: { sort: "desc", nulls: "last" } }, { fetchedAt: "desc" }], take: 200 }),
+  const [m, recent, savedRows] = await Promise.all([
+    loadMarketDashboard(),
+    recentNews(),
     prisma.newsItem.findMany({ where: { saved: true }, orderBy: { savedAt: "desc" } }),
   ]);
+  const map = await loadDistrictMap(m.districts.map((d) => d.slug));
+  const estudios = tryLoad(loadEstudios);
+  const voces = tryLoad(() => loadVoces({ onlyReviewed: true }));
+  const feeds = tryLoad(loadFeeds);
   const toRow = (n: (typeof recent)[number]): NewsRow => ({
     id: n.id, title: n.title, source: n.source, url: n.url, saved: n.saved,
     publishedAt: n.publishedAt?.toISOString() ?? null, fetchedAt: n.fetchedAt.toISOString(),
   });
-  const news = orderNews(recent.map(toRow), sourcePriorities(loadFeeds()), 20);
+  const news = orderNews(recent.map(toRow), sourcePriorities(feeds.ok ? feeds.data : []), 20);
   const SRC = "Avisos de Urbania, Adondevivir, Proper y Nexo en las últimas corridas.";
 
   return (
@@ -73,7 +87,7 @@ export default async function MercadoPage() {
           <ChartCard
             title="Dónde se construye"
             explain="Proyectos por etapa en cada distrito."
-            source="Proyectos con avisos vigentes en Urbania, según la etapa que publica el proyecto."
+            source="Proyectos con avisos vigentes en Nexo y Proper, según la etapa que publica el proyecto."
           >
             <ConstructionChart rows={constructionRows(m.construction)} />
           </ChartCard>
@@ -98,11 +112,11 @@ export default async function MercadoPage() {
       </Section>
 
       <Section title="Estudios" explain="Informes de mercado que vale la pena leer, con su autor y cada cuánto salen.">
-        <Estudios estudios={loadEstudios()} />
+        {estudios.ok ? <Estudios estudios={estudios.data} /> : <FileError message={estudios.message} />}
       </Section>
 
       <Section title="Voces del mercado" explain="Personas y canales que opinan del mercado. El dueño de dptos revisa esta lista.">
-        <Voces voces={loadVoces({ onlyReviewed: true })} />
+        {voces.ok ? <Voces voces={voces.data} /> : <FileError message={voces.message} />}
       </Section>
 
       <Section title="Noticias" explain="Los titulares más recientes. Solo guardamos el titular, la fuente, la fecha y el enlace.">

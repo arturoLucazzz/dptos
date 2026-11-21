@@ -37,6 +37,13 @@ describe('yieldRows', () => {
   });
 });
 
+describe('yieldRows thin districts', () => {
+  it('leaves out districts with fewer than 20 sales', () => {
+    const rows = yieldRows([d('a', { grossYieldPct: 5 }), d('thin', { grossYieldPct: 12, saleCount: 19 }), d('c', { grossYieldPct: 7, saleCount: 20 })], ['c']);
+    assert.deepEqual(rows.map((r) => r.slug), ['c', 'a']);
+  });
+});
+
 describe('constructionRows', () => {
   it('maps the three stages and drops districts with none', () => {
     const rows = constructionRows([

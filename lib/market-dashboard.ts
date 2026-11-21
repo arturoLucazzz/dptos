@@ -33,10 +33,18 @@ export function districtMarket(
   rents: { districtSlug: string; pricePen: number }[],
 ): DistrictMarket[] {
   const rentsBySlug = new Map<string, number[]>();
-  for (const r of rents) rentsBySlug.set(r.districtSlug, [...(rentsBySlug.get(r.districtSlug) ?? []), r.pricePen]);
+  for (const r of rents) {
+    const list = rentsBySlug.get(r.districtSlug);
+    if (list) list.push(r.pricePen);
+    else rentsBySlug.set(r.districtSlug, [r.pricePen]);
+  }
 
   const salesBySlug = new Map<string, typeof sales>();
-  for (const s of sales) salesBySlug.set(s.districtSlug, [...(salesBySlug.get(s.districtSlug) ?? []), s]);
+  for (const s of sales) {
+    const list = salesBySlug.get(s.districtSlug);
+    if (list) list.push(s);
+    else salesBySlug.set(s.districtSlug, [s]);
+  }
 
   return [...salesBySlug.entries()]
     .map(([slug, group]) => {

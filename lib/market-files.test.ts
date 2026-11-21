@@ -9,6 +9,7 @@ import {
   loadVoces,
   loadFeeds,
   loadNewsKeywords,
+  tryLoad,
 } from './market-files';
 
 const EH = 'titulo,autor,url,frecuencia,precios_de_aviso,nota';
@@ -75,4 +76,19 @@ test('the committed market files parse', () => {
   assert.ok(loadVoces({ onlyReviewed: false }).every((v) => !v.revisado));
   assert.deepEqual(loadFeeds().map((f) => f.nombre), ['Gestión', 'El Comercio', 'Andina']);
   assert.ok(loadNewsKeywords().includes('techo propio'));
+});
+
+test('flags accept an accented sí', () => {
+  const rows = parseEstudios(`${EH}\nÍndice,Urbania,https://urbania.pe/x,mensual,sí,nota\n`);
+  assert.equal(rows[0].preciosDeAviso, true);
+});
+
+test('error row numbers count real file lines, blank lines included', () => {
+  const text = `${EH}\nA,B,https://a.pe/x,mensual,si,n\n\n\nC,D,http://bad.pe,mensual,si,n\n`;
+  assert.throws(() => parseEstudios(text), /fila 5/);
+});
+
+test('tryLoad returns data, or the Spanish message when the loader throws', () => {
+  assert.deepEqual(tryLoad(() => [1]), { ok: true, data: [1] });
+  assert.deepEqual(tryLoad(() => { throw new Error('Fila inválida en x.csv, fila 3'); }), { ok: false, message: 'Fila inválida en x.csv, fila 3' });
 });
