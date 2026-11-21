@@ -126,9 +126,16 @@ export function legendClasses(values: (number | null)[], steps = 5): LegendClass
   const distinct = [...new Set(nums)].sort((a, b) => a - b);
   if (distinct.length === 0) return { breaks: [], classes: [] };
   if (distinct.length <= steps) return { breaks: distinct.slice(1), classes: distinct.map((v) => ({ label: fmtNum(v) })) };
+  const max = distinct[distinct.length - 1];
   const breaks: number[] = [];
-  // A cut at or below the smallest value would leave the first class empty.
-  for (const b of metricScale(nums, steps).map(roundBreak).filter((b) => b > distinct[0])) if (breaks.length === 0 || b > breaks[breaks.length - 1]) breaks.push(b);
+  // A cut at or below the smallest value would leave the first class empty; one above the largest, the last.
+  for (const b of metricScale(nums, steps).map((v) => Math.min(roundBreak(v), max))) {
+    if (b > distinct[0] && (breaks.length === 0 || b > breaks[breaks.length - 1])) breaks.push(b);
+  }
+  // Every rounded cut fell on the minimum (mostly one value): split the minimum from the rest.
+  if (breaks.length === 0) {
+    return { breaks: [distinct[1]], classes: [{ label: fmtNum(distinct[0]) }, { label: `${fmtNum(distinct[1])} o más` }] };
+  }
   const classes = [`Menos de ${fmtNum(breaks[0])}`];
   for (let i = 1; i < breaks.length; i++) classes.push(`${fmtNum(breaks[i - 1])} a ${fmtNum(breaks[i])}`);
   classes.push(`${fmtNum(breaks[breaks.length - 1])} o más`);

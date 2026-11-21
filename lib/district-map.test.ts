@@ -154,3 +154,19 @@ test('legendClasses: a cut at the smallest value (many zeros) does not make an e
   assert.ok(!l.classes.some((c) => c.label === 'Menos de 0'));
   assert.equal(l.classes.length, l.breaks.length + 1);
 });
+
+test('legendClasses: many zeros and six other values (every cut at or below the minimum) does not throw', () => {
+  const values = [...Array(30).fill(0), 1, 2, 3, 4, 5, 6];
+  const l = legendClasses(values);
+  assert.deepEqual(l.breaks, [1]);
+  assert.equal(l.classes.length, 2);
+  assert.equal(l.classes[0].label, '0');
+  assert.match(l.classes[1].label, /^1 o más$/);
+});
+
+test('legendClasses: a rounded cut never goes above the maximum value', () => {
+  const values = [...Array(30).fill(100.2), 100.3, 100.4, 100.45, 100.46, 100.47, 100.48];
+  const l = legendClasses(values);
+  assert.ok(l.breaks.every((b) => b <= 100.48));
+  assert.equal(l.classes.length, l.breaks.length + 1);
+});
