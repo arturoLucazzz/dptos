@@ -1,4 +1,7 @@
 nombre,url,prioridad
 Gestión,https://gestion.pe/arc/outboundfeeds/rss/?outputType=xml,1
-El Comercio,https://elcomercio.pe/arc/outboundfeeds/rss/?outputType=xml,2
-Andina,https://andina.pe/agencia/rss/3.xml,3
+Gestión Economía,https://gestion.pe/arc/outboundfeeds/rss/category/economia/?outputType=xml,2
+Gestión Tu Dinero,https://gestion.pe/arc/outboundfeeds/rss/category/tu-dinero/?outputType=xml,3
+El Comercio,https://elcomercio.pe/arc/outboundfeeds/rss/?outputType=xml,4
+El Comercio Economía,https://elcomercio.pe/arc/outboundfeeds/rss/category/economia/?outputType=xml,5
+Andina,https://andina.pe/agencia/rss/3.xml,6
