@@ -7,6 +7,7 @@ dist/
 data/*
 !data/location/
 !data/stats/
+!data/market/
 # Downloaded by pnpm location:places: large and refreshed monthly.
 data/location/places-lima.json
 data/location/boundaries-lima.json

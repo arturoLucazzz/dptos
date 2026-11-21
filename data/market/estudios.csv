@@ -1,0 +1,6 @@
+titulo,autor,url,frecuencia,precios_de_aviso,nota
+Índice de Venta y Alquiler Lima (Index Lima),Urbania,https://urbania.pe/blog/wp-content/uploads/2025/12/INDEX_LIMA_REPORTE_2025-11.pdf,mensual,si,Precio por m² y rentabilidad bruta de alquiler según los avisos publicados en Urbania.
+Data Analytics inmobiliario,CODIP,https://codip.pe/data-analytics/,mensual,no,Ventas de proyectos nuevos en Lima y Callao: unidades vendidas y precio por zona; recoge datos de desarrolladores y de Nexo Inmobiliario.
+Indicadores de precios de inmuebles,BCRP,https://www.bcrp.gob.pe/estadisticas/indicadores-de-precios-de-inmuebles.html,trimestral,no,Índice de precios de departamentos en Lima del Banco Central; no parte de avisos publicados.
+Notas de Estudios,BCRP,https://www.bcrp.gob.pe/publicaciones/notas-de-estudios.html,irregular,no,Índice con las notas de estudios del Banco Central; incluye análisis de precios de vivienda.
+Publicaciones del sector construcción,CAPECO,https://capeco.org/publicaciones/,trimestral,no,Informe Económico de la Construcción: oferta y ventas de vivienda nueva en Lima Metropolitana.
