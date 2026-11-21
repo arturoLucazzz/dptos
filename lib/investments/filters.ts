@@ -109,3 +109,23 @@ export function normalizeName(name: string, previous: string): string {
   const trimmed = name.trim().slice(0, NAME_MAX).trim();
   return trimmed === '' ? previous : trimmed;
 }
+
+/** "1 elegido", "3 elegidos". */
+export function picksLabel(n: number): string {
+  return n === 1 ? '1 elegido' : `${n} elegidos`;
+}
+
+export type PickTarget = { propertyId: string } | { projectId: string };
+
+const isId = (value: unknown): value is string => typeof value === 'string' && value.trim() !== '';
+
+/** A pick target from the browser: exactly one of propertyId and projectId, a non-empty string. */
+export function parsePickTarget(raw: unknown): PickTarget | null {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const o = raw as Record<string, unknown>;
+  const hasProperty = o.propertyId !== undefined;
+  const hasProject = o.projectId !== undefined;
+  if (hasProperty === hasProject) return null;
+  if (hasProperty) return isId(o.propertyId) ? { propertyId: o.propertyId } : null;
+  return isId(o.projectId) ? { projectId: o.projectId } : null;
+}

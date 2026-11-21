@@ -44,7 +44,7 @@ export default async function CompararPage({ params }: { params: Promise<{ id: s
         <p className="py-10 text-center text-sm text-muted-foreground">Aún no hay propiedades para comparar. Agrega algunas desde la inversión.</p>
       ) : (
         <CompareView
-          columns={picks.map((p) => ({ itemId: p.itemId, title: p.title, districtName: p.districtName, imageUrl: p.imageUrl, note: p.note, url: p.url, gone: p.gone }))}
+          columns={picks.map((p) => ({ itemId: p.itemId, title: p.title, districtName: p.districtName, imageUrl: p.imageUrl, note: p.note, url: p.url, gone: p.gone, statusLabel: p.statusLabel }))}
           table={buildCompareTable(picks)}
         />
       )}

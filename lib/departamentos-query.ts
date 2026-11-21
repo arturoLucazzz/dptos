@@ -7,7 +7,7 @@ import { DEFAULT_PANEL, type FixedAssumptions, type PanelAssumptions } from './a
 import { financeForListing, loanForListing } from './listing-finance';
 import type { SourceId } from './listing-card';
 import type { ListingRow } from './listing-row';
-import { grossYieldPct } from './gross-yield';
+import { grossYieldPct, pricePerM2 } from './gross-yield';
 import { median } from './linalg';
 import { pointInPolygon, type Ring } from './location/geo';
 import { isSourceId } from './official-price';
@@ -173,7 +173,7 @@ function sortValue(row: DepartamentosRow, sort: DepartamentosSortId): number {
     case 'cashReturn':
       return row.yearlyGainPctOnCash ?? Number.NaN;
     case 'pricePerM2':
-      return row.areaM2 != null && row.areaM2 > 0 ? row.pricePen / row.areaM2 : Number.NaN;
+      return pricePerM2(row.pricePen, row.areaM2) ?? Number.NaN;
     case 'entryCost':
       return row.entryCostPen ?? Number.NaN;
     case 'newest':
@@ -181,16 +181,17 @@ function sortValue(row: DepartamentosRow, sort: DepartamentosSortId): number {
   }
 }
 
+/** The filters that read the listing itself, before any finance. */
+export type ListingFilterInput = Pick<
+  DepartamentosQueryInput,
+  'districts' | 'sources' | 'priceMin' | 'priceMax' | 'bedroomsMin' | 'bedroomsMax' | 'locationMin' | 'area'
+>;
+
 /**
- * One-pass finance over the SQL/client-filtered candidates, then coverage filter,
- * sort, stats, and page slice.
+ * Districts, sources, price, bedrooms, location and area: the rows queryDepartamentos keeps
+ * before its finance step. The map points use it alone, with no finance beyond the gain.
  */
-export function queryDepartamentos(
-  listings: ListingRow[],
-  fixed: FixedAssumptions,
-  input: DepartamentosQueryInput
-): DepartamentosQueryResult {
-  const pageSize = input.pageSize ?? DEPARTAMENTOS_PAGE_SIZE;
+export function filterListings<T extends ListingRow>(listings: T[], input: ListingFilterInput): T[] {
   let list = listings;
 
   if (input.districts.length > 0) {
@@ -217,21 +218,47 @@ export function queryDepartamentos(
     list = list.filter((r) => r.lat != null && r.lon != null && pointInPolygon({ lat: r.lat, lon: r.lon }, rings));
   }
 
+  return list;
+}
+
+/**
+ * The finance for one listing, and whether the cash reaches it. Out of reach: the cash does
+ * not cover the purchase costs, so every money number would describe a purchase the
+ * investor cannot make.
+ */
+function listingMoney(listing: ListingRow, panel: PanelAssumptions, fixed: FixedAssumptions) {
+  const finance = financeForListing(listing, panel, fixed);
+  const loan = finance?.loan ?? loanForListing(listing, panel, fixed);
+  return { finance, loan, reachable: isReachable(loan) };
+}
+
+const isReachable = (loan: { outOfReach: boolean } | null | undefined) => !loan?.outOfReach;
+
+/** The monthly gain queryDepartamentos shows for this listing, without the rest of its finance. */
+export function monthlyGainFor(listing: ListingRow, panel: PanelAssumptions, fixed: FixedAssumptions): number | null {
+  // No finance (no rent or no price) means no gain, so the loan alone is not worth computing.
+  const finance = financeForListing(listing, panel, fixed);
+  return finance && isReachable(finance.loan) ? finance.monthlyGainPen : null;
+}
+
+/**
+ * One-pass finance over the SQL/client-filtered candidates, then coverage filter,
+ * sort, stats, and page slice.
+ */
+export function queryDepartamentos(
+  listings: ListingRow[],
+  fixed: FixedAssumptions,
+  input: DepartamentosQueryInput
+): DepartamentosQueryResult {
+  const pageSize = input.pageSize ?? DEPARTAMENTOS_PAGE_SIZE;
+  const list = filterListings(listings, input);
+
+  // Early payment is the costly part and no sort, filter or stat reads it: it is filled in
+  // for the page rows only, from the loan kept here.
+  const loans = new Map<string, { loanPen: number; amortizingPaymentPen: number; reachable: boolean }>();
   const withFinance: DepartamentosRow[] = list.map((listing) => {
-    const finance = financeForListing(listing, input.panel, fixed);
-    const loan = finance?.loan ?? loanForListing(listing, input.panel, fixed);
-    // Out of reach: the cash does not cover the purchase costs, so every money
-    // number would describe a purchase the investor cannot make.
-    const reachable = !loan?.outOfReach;
-    const prepayment =
-      loan && reachable
-        ? prepaymentSavings({
-            loanPen: loan.loanPen,
-            teaPct: input.panel.tea,
-            termYears: input.panel.termYears,
-            extraMonthlyPen: input.panel.extraMonthlyPen,
-          })
-        : null;
+    const { finance, loan, reachable } = listingMoney(listing, input.panel, fixed);
+    if (loan) loans.set(listing.postingId, { loanPen: loan.loanPen, amortizingPaymentPen: loan.amortizingPaymentPen, reachable });
     return {
       ...listing,
       coveragePct: finance?.coveragePct ?? null,
@@ -244,8 +271,8 @@ export function queryDepartamentos(
       totalAddedUntilCrossoverPen: reachable ? (finance?.totalAddedUntilCrossoverPen ?? null) : null,
       belowBankMinimum: finance?.belowBankMinimum ?? false,
       outOfReach: loan?.outOfReach ?? false,
-      prepayment,
-      prepaymentLines: loan ? prepaymentLines(prepayment, loan.amortizingPaymentPen) : null,
+      prepayment: null,
+      prepaymentLines: null,
     };
   });
 
@@ -286,7 +313,19 @@ export function queryDepartamentos(
   const pageCount = Math.max(1, Math.ceil(sorted.length / pageSize) || 1);
   const page = Math.min(Math.max(1, input.page), pageCount);
   const start = (page - 1) * pageSize;
-  const rows = sorted.slice(start, start + pageSize);
+  const rows = sorted.slice(start, start + pageSize).map((row) => {
+    const loan = loans.get(row.postingId);
+    if (!loan) return row;
+    const prepayment = loan.reachable
+      ? prepaymentSavings({
+          loanPen: loan.loanPen,
+          teaPct: input.panel.tea,
+          termYears: input.panel.termYears,
+          extraMonthlyPen: input.panel.extraMonthlyPen,
+        })
+      : null;
+    return { ...row, prepayment, prepaymentLines: prepaymentLines(prepayment, loan.amortizingPaymentPen) };
+  });
 
   return { rows, total: sorted.length, page, pageSize, stats };
 }

@@ -9,9 +9,8 @@
  * inversiones is force-dynamic, so the next navigation reads fresh data anyway.
  */
 
-import type { InvestmentFilters } from '@/lib/investments/filters';
+import { parseInvestmentFilters, parsePickTarget, type InvestmentFilters, type PickTarget } from '@/lib/investments/filters';
 import * as store from '@/lib/investments/store';
-import type { PickTarget } from '@/lib/investments/store';
 
 export async function listInvestments() {
   return store.listInvestments();
@@ -42,11 +41,14 @@ export async function touchInvestment(id: string) {
 }
 
 export async function saveInvestmentFilters(id: string, filters: InvestmentFilters) {
-  return store.saveInvestmentFilters(id, filters);
+  // An action is a public endpoint: the browser can send anything.
+  return store.saveInvestmentFilters(id, parseInvestmentFilters(filters));
 }
 
 export async function addPick(id: string, target: PickTarget) {
-  return store.addPick(id, target);
+  const parsed = parsePickTarget(target);
+  if (!parsed) throw new Error('Elegido inválido');
+  return store.addPick(id, parsed);
 }
 
 export async function removePick(itemId: string) {

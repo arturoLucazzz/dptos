@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { DEFAULT_FILTERS, normalizeName, normalizeNote, parseInvestmentFilters } from './filters';
+import { DEFAULT_FILTERS, normalizeName, normalizeNote, parseInvestmentFilters, parsePickTarget, picksLabel } from './filters';
 
 test('missing or broken input gives the defaults', () => {
   assert.deepEqual(parseInvestmentFilters(undefined), DEFAULT_FILTERS);
@@ -51,4 +51,23 @@ test('normalizeName trims, cuts at 80, and keeps the old name when empty', () =>
   assert.equal(normalizeName('  Mi plan ', 'Old'), 'Mi plan');
   assert.equal(normalizeName('   ', 'Old'), 'Old');
   assert.equal(normalizeName('y'.repeat(100), 'Old').length, 80);
+});
+
+test('picksLabel is singular for one pick', () => {
+  assert.equal(picksLabel(0), '0 elegidos');
+  assert.equal(picksLabel(1), '1 elegido');
+  assert.equal(picksLabel(2), '2 elegidos');
+});
+
+test('parsePickTarget keeps one non-empty string id and rejects the rest', () => {
+  assert.deepEqual(parsePickTarget({ propertyId: 'pr1' }), { propertyId: 'pr1' });
+  assert.deepEqual(parsePickTarget({ projectId: 'pj1' }), { projectId: 'pj1' });
+  assert.equal(parsePickTarget({ propertyId: '' }), null);
+  assert.equal(parsePickTarget({ propertyId: '   ' }), null);
+  assert.equal(parsePickTarget({ propertyId: 5 }), null);
+  assert.equal(parsePickTarget({ projectId: null }), null);
+  assert.equal(parsePickTarget({ propertyId: 'a', projectId: 'b' }), null);
+  assert.equal(parsePickTarget(null), null);
+  assert.equal(parsePickTarget('pr1'), null);
+  assert.equal(parsePickTarget({}), null);
 });

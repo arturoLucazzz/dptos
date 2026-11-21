@@ -136,6 +136,8 @@ export function Workspace({
   const queuedNotes = useRef(new Map<string, string>());
   // Each request takes a number; only the newest one may write the cards.
   const requestId = useRef(0);
+  // The filters the shown cards belong to: a failed first page rolls the chips back to them.
+  const shownFilters = useRef(initialFilters);
   const isDesktop = useIsDesktop();
   const [mapChoice, setMapChoice] = useState<boolean | null>(null);
   const mapOpen = mapChoice ?? isDesktop;
@@ -211,8 +213,12 @@ export function Workspace({
       if (mine !== requestId.current) return;
       setCards((prev) => (nextPage === 1 ? data : { ...data, rows: [...prev.rows, ...data.rows] }));
       setPage(nextPage);
+      if (nextPage === 1) shownFilters.current = next;
     } catch {
-      if (mine === requestId.current) setFailed(true);
+      if (mine !== requestId.current) return;
+      setFailed(true);
+      // The old cards and count stay, so the chips go back to the filters they match.
+      if (nextPage === 1) setFilters(shownFilters.current);
     } finally {
       if (mine === requestId.current) setLoading(false);
     }

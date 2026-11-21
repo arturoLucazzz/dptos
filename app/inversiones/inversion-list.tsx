@@ -17,12 +17,9 @@ import {
 import { CardPhoto } from "@/components/listing-card";
 import { createInvestment, deleteInvestment, renameInvestment } from "./actions";
 import { markInversionesChanged } from "./history-refresh";
+import { picksLabel } from "@/lib/investments/filters";
 
 export type InversionSummary = { id: string; name: string; count: number; thumbs: string[] };
-
-export function picksLabel(n: number): string {
-  return n === 1 ? "1 elegido" : `${n} elegidos`;
-}
 
 function InversionRow({
   inv,

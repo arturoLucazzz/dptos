@@ -5,7 +5,7 @@ import { FileSpreadsheet, X } from "lucide-react";
 import { CardPhoto, pen } from "@/components/listing-card";
 import { Input } from "@/components/ui/input";
 import type { PickView } from "@/lib/investments/pick-view";
-import { NAME_MAX, NOTE_MAX } from "@/lib/investments/filters";
+import { NAME_MAX, NOTE_MAX, normalizeName, normalizeNote, picksLabel } from "@/lib/investments/filters";
 
 function PickRow({
   pick,
@@ -41,8 +41,11 @@ function PickRow({
           </button>
         </div>
         <p className="truncate text-xs text-muted-foreground">
-          {pick.gone ? pick.districtName || "Sin distrito" : `${pick.title} · ${pick.districtName}`}
+          {pick.pricePen == null ? pick.districtName || "Sin distrito" : `${pick.title} · ${pick.districtName || "Sin distrito"}`}
         </p>
+        {pick.statusLabel && pick.statusLabel !== pick.title && (
+          <p className="text-xs font-medium text-muted-foreground">{pick.statusLabel}</p>
+        )}
         {pick.money && (
           <p className={`text-xs font-medium ${pick.money.tone === "gain" ? "text-gain" : "text-loss"}`}>{pick.money.text}</p>
         )}
@@ -52,7 +55,8 @@ function PickRow({
           placeholder="Nota"
           aria-label="Nota"
           onBlur={(e) => {
-            if (e.currentTarget.value.trim() !== (pick.note ?? "")) onNote(e.currentTarget.value);
+            // Compare normalized text, so focusing and leaving an old note is not an edit.
+            if (normalizeNote(e.currentTarget.value) !== normalizeNote(pick.note ?? "")) onNote(e.currentTarget.value);
           }}
           onKeyDown={(e) => {
             if (e.key === "Enter") e.currentTarget.blur();
@@ -88,7 +92,8 @@ export function PickPanel({
   const n = picks.length;
   return (
     <div className="flex max-h-[75vh] lg:max-h-[calc(100vh-6rem)] flex-col rounded-xl border border-border bg-card">
-      <div className="border-b border-border p-3">
+      {/* Below lg the sheet puts its Cerrar button in this corner: the header leaves room for it. */}
+      <div className="border-b border-border p-3 max-lg:pr-11">
         <Input
           // The key resets the field when the saved name comes back different (trimmed or empty).
           key={name}
@@ -96,14 +101,18 @@ export function PickPanel({
           maxLength={NAME_MAX}
           aria-label="Nombre de la inversión"
           onBlur={(e) => {
-            if (e.currentTarget.value !== name) onRename(e.currentTarget.value);
+            // The saved name, by the store's rule: an empty field keeps the old name, so the
+            // field shows it again (the key alone would not reset it: the name did not change).
+            const next = normalizeName(e.currentTarget.value, name);
+            e.currentTarget.value = next;
+            if (next !== name) onRename(next);
           }}
           onKeyDown={(e) => {
             if (e.key === "Enter") e.currentTarget.blur();
           }}
           className="h-8 border-transparent px-1 text-base font-semibold hover:border-input"
         />
-        <p className="px-1 text-xs text-muted-foreground">{n === 1 ? "1 elegido" : `${n} elegidos`}</p>
+        <p className="px-1 text-xs text-muted-foreground">{picksLabel(n)}</p>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-3">
         {n === 0 ? (

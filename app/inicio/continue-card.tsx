@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { createInvestment } from "@/app/inversiones/actions";
 import { markInversionesChanged } from "@/app/inversiones/history-refresh";
 import { Button } from "@/components/ui/button";
+import { picksLabel } from "@/lib/investments/filters";
 import { useInicioInversion } from "./inicio-inversion";
 
 export function ContinueCard() {
@@ -38,7 +39,7 @@ export function ContinueCard() {
           <div className="mt-1 flex flex-wrap items-center justify-between gap-3">
             <div>
               <p className="text-lg font-semibold">{current.name}</p>
-              <p className="text-sm text-muted-foreground">{n} elegidos</p>
+              <p className="text-sm text-muted-foreground">{picksLabel(n)}</p>
             </div>
             <div className="flex items-center gap-3">
               {n > 0 && (

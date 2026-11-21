@@ -13,6 +13,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Map, { Layer, NavigationControl, Popup, Source, type MapLayerMouseEvent, type MapRef } from "react-map-gl/maplibre";
 import { setWorkerUrl, type GeoJSONSource } from "maplibre-gl";
 import { CardPhoto, pen } from "@/components/listing-card";
+import { markInversionesChanged } from "@/app/inversiones/history-refresh";
 import { moneyLine } from "@/lib/home";
 import type { InvestmentFilters } from "@/lib/investments/filters";
 import {
@@ -416,7 +417,9 @@ export function WorkspaceMap({
           onCancel={() => setSaving(false)}
           onSaved={(zone, warning) => {
             setSaving(false);
-            setMessage(warning ?? `Zona "${zone.name}" guardada. Los puntajes ya se recalcularon.`);
+            // A new zone changes /zonas and the location scores: Back must not restore a stale page.
+            markInversionesChanged();
+            setMessage(warning ??`Zona "${zone.name}" guardada. Los puntajes ya se recalcularon.`);
             setLocalToken((n) => n + 1);
             onZoneSaved(zone);
           }}

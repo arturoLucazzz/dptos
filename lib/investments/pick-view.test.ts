@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { DepartamentosRow } from '../departamentos-query';
 import type { ProjectRow } from '../project-rows';
-import { toPickView, GONE_TITLE } from './pick-view';
+import { toPickView, GONE_TITLE, EXCLUDED_TITLE } from './pick-view';
 
 const unit = {
   postingId: 'po1',
@@ -79,10 +79,61 @@ test('a missing row is gone and keeps the note', () => {
   assert.equal(v.url, null);
   assert.equal(v.row, null);
   assert.equal(v.type, 'unit');
+  assert.equal(v.statusLabel, GONE_TITLE);
 });
 
 test('a missing project is gone too', () => {
   const v = toPickView({ id: 'i4', propertyId: null, projectId: 'pj9', note: null }, null, null, { districtName: 'Surco' });
   assert.equal(v.type, 'project');
   assert.equal(v.gone, true);
+});
+
+test('a unit pick outside the analysis with no live posting keeps its last known data, marked gone', () => {
+  const v = toPickView({ id: 'i5', propertyId: 'pr5', projectId: null, note: 'Vi fotos' }, null, null, {
+    districtName: 'Lince',
+    lastKnown: { name: null, pricePen: 280000, bedrooms: 3, areaM2: 72, imageUrl: 'https://img/5.jpg', url: 'https://x/5', live: false },
+  });
+  assert.equal(v.gone, true);
+  assert.equal(v.statusLabel, GONE_TITLE);
+  assert.equal(v.title, '3 dorm · 72 m²');
+  assert.equal(v.pricePen, 280000);
+  assert.equal(v.areaM2, 72);
+  assert.equal(v.imageUrl, 'https://img/5.jpg');
+  assert.equal(v.url, 'https://x/5');
+  assert.equal(v.districtName, 'Lince');
+  assert.equal(v.money, null);
+  assert.equal(v.row, null);
+  assert.equal(v.note, 'Vi fotos');
+});
+
+test('a unit pick with a live posting but outside the analysis is "Fuera del análisis"', () => {
+  const v = toPickView({ id: 'i6', propertyId: 'pr6', projectId: null, note: null }, null, null, {
+    districtName: 'Lince',
+    lastKnown: { name: null, pricePen: 90000, bedrooms: null, areaM2: null, imageUrl: null, url: null, live: true },
+  });
+  assert.equal(v.gone, true);
+  assert.equal(v.statusLabel, EXCLUDED_TITLE);
+  assert.equal(v.statusLabel, 'Fuera del análisis');
+  assert.equal(v.title, '- dorm · - m²');
+  assert.equal(v.pricePen, 90000);
+  assert.equal(v.money, null);
+});
+
+test('a project pick outside the analysis keeps its name and last price', () => {
+  const v = toPickView({ id: 'i7', propertyId: null, projectId: 'pj7', note: null }, null, null, {
+    districtName: 'Surco',
+    lastKnown: { name: 'Torre Luna', pricePen: 500000, bedrooms: null, areaM2: null, imageUrl: null, url: 'https://x/p7', live: false },
+  });
+  assert.equal(v.type, 'project');
+  assert.equal(v.gone, true);
+  assert.equal(v.title, 'Torre Luna');
+  assert.equal(v.statusLabel, GONE_TITLE);
+  assert.equal(v.pricePen, 500000);
+  assert.equal(v.url, 'https://x/p7');
+});
+
+test('a live pick has no status label', () => {
+  const v = toPickView({ id: 'i1', propertyId: 'pr1', projectId: null, note: null }, unit, null, { districtName: 'X' });
+  assert.equal(v.statusLabel, null);
+  assert.equal(v.areaM2, 60);
 });

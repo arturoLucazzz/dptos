@@ -4,7 +4,7 @@
  */
 
 import type { PanelAssumptions } from '../assumption-defaults';
-import { queryDepartamentos } from '../departamentos-query';
+import { filterListings, monthlyGainFor, queryDepartamentos } from '../departamentos-query';
 import { toHomeRow, type HomeRow } from '../home-rows';
 import { getCachedSaleListings } from '../listings';
 import { loadProjectRows, queryProjects, type ProjectRow } from '../project-rows';
@@ -12,7 +12,8 @@ import { filtersToQuery } from '../workspace-sorts';
 import type { Ring } from '../location/geo';
 import type { InvestmentFilters } from './filters';
 import { circleRing, projectPoints, unitPoints, type MapPoint, type ZoneOutlineInput } from './map-features';
-import { toPickView, type PickItemInput, type PickView } from './pick-view';
+import { Operation, PostingKind } from '../generated/prisma/enums';
+import { toPickView, type LastKnown, type PickItemInput, type PickView } from './pick-view';
 
 export const CARDS_PAGE_SIZE = 24;
 
@@ -44,9 +45,15 @@ export async function loadPoints(filters: InvestmentFilters, panel: PanelAssumpt
     const rows = await loadProjectRows();
     return projectPoints(queryProjects(rows, filters, 1, Math.max(1, rows.length)).rows);
   }
+  // The light path: the same filter as the cards, then only the gain per pin. No prepayment, no sort.
   const universe = await getCachedSaleListings();
-  const size = Math.max(1, universe.listings.length);
-  return unitPoints(queryDepartamentos(universe.listings, universe.fixedAssumptions, filtersToQuery(filters, panel, 1, size)).rows);
+  const kept = filterListings(universe.listings, filtersToQuery(filters, panel, 1, 1));
+  const fixed = universe.fixedAssumptions;
+  return unitPoints(
+    kept.flatMap((l) =>
+      l.lat == null || l.lon == null ? [] : [{ postingId: l.postingId, lat: l.lat, lon: l.lon, monthlyGainPen: monthlyGainFor(l, panel, fixed) }]
+    )
+  );
 }
 
 export const CARD_IDS_MAX = 50;
@@ -90,7 +97,7 @@ export async function loadDistrictOptions(): Promise<{ value: string; label: str
   return (await getCachedSaleListings()).districtOptions;
 }
 
-/** The picks with today's numbers; a pick that is no longer live comes back as gone. */
+/** The picks with today's numbers; a pick outside the analysis comes back gone, with its last known data. */
 export async function loadPickViews(items: PickItemInput[], panel: PanelAssumptions): Promise<PickView[]> {
   if (items.length === 0) return [];
   const propertyIds = new Set(items.flatMap((i) => (i.propertyId ? [i.propertyId] : [])));
@@ -116,34 +123,95 @@ export async function loadPickViews(items: PickItemInput[], panel: PanelAssumpti
   );
   const projectById = new Map(projects.map((p) => [p.projectId, p]));
 
-  // Only a gone pick needs its district from the database.
+  // A pick outside the analysis: its district and its last known posting from the database.
   const gone = items.filter((i) => (i.propertyId ? !units.has(i.propertyId) : !projectById.has(i.projectId ?? '')));
-  const slugs = new Map<string, string>();
-  if (gone.length > 0) {
-    const { prisma } = await import('../db');
-    const [props, projs] = await Promise.all([
-      prisma.property.findMany({
-        where: { id: { in: gone.flatMap((i) => (i.propertyId ? [i.propertyId] : [])) } },
-        select: { id: true, districtSlug: true },
-      }),
-      prisma.project.findMany({
-        where: { id: { in: gone.flatMap((i) => (i.projectId ? [i.projectId] : [])) } },
-        select: { id: true, districtSlug: true },
-      }),
-    ]);
-    for (const r of [...props, ...projs]) slugs.set(r.id, r.districtSlug);
-  }
+  const fallbacks = gone.length > 0 ? await loadLastKnown(gone) : new Map<string, { slug: string; lastKnown: LastKnown | null }>();
   const labels = new Map(universe.districtOptions.map((d) => [d.value, d.label]));
 
   return items.map((item) => {
-    const slug = slugs.get(item.propertyId ?? item.projectId ?? '') ?? '';
+    const fallback = fallbacks.get(item.propertyId ?? item.projectId ?? '');
+    const slug = fallback?.slug ?? '';
     return toPickView(
       item,
       item.propertyId ? (units.get(item.propertyId) ?? null) : null,
       item.projectId ? (projectById.get(item.projectId) ?? null) : null,
-      { districtName: labels.get(slug) ?? slug }
+      { districtName: labels.get(slug) ?? slug, lastKnown: fallback?.lastKnown ?? null }
     );
   });
+}
+
+/**
+ * For picks outside the analysis, keyed by property or project id: the district and the
+ * newest sale posting with a snapshot. `live` says whether any sale posting of it is still
+ * published, by the same rule as the listings (possiblySoldCutoffs + livePostingWhere).
+ */
+async function loadLastKnown(items: PickItemInput[]): Promise<Map<string, { slug: string; lastKnown: LastKnown | null }>> {
+  const [{ prisma }, { possiblySoldCutoffs }, { livePostingWhere }, { postingSource, postingUrl }] = await Promise.all([
+    import('../db'),
+    import('../market'),
+    import('../possibly-sold'),
+    import('../official-price'),
+  ]);
+  const propertyIds = items.flatMap((i) => (i.propertyId ? [i.propertyId] : []));
+  const projectIds = items.flatMap((i) => (i.projectId ? [i.projectId] : []));
+  const cutoffs = await possiblySoldCutoffs();
+  const live = livePostingWhere(cutoffs);
+  const snapshot = { select: { pricePen: true, bedrooms: true, areaTotal: true, areaCovered: true, imageUrl: true, sourceUrl: true } };
+  const posting = { source: true, sourcePath: true, propertyId: true, projectId: true, currentSnapshot: snapshot };
+  const sale = { operation: Operation.SALE, currentSnapshot: { isNot: null } };
+
+  const [props, projs, postings, livePostings] = await Promise.all([
+    propertyIds.length ? prisma.property.findMany({ where: { id: { in: propertyIds } }, select: { id: true, districtSlug: true } }) : [],
+    projectIds.length ? prisma.project.findMany({ where: { id: { in: projectIds } }, select: { id: true, districtSlug: true, name: true } }) : [],
+    prisma.posting.findMany({
+      where: { ...sale, OR: [{ propertyId: { in: propertyIds }, kind: PostingKind.UNIT }, { projectId: { in: projectIds }, kind: PostingKind.PROJECT }] },
+      orderBy: [{ lastSeenAt: 'desc' }, { id: 'asc' }],
+      select: posting,
+    }),
+    prisma.posting.findMany({
+      where: {
+        ...sale,
+        AND: [live],
+        OR: [{ propertyId: { in: propertyIds }, kind: PostingKind.UNIT }, { projectId: { in: projectIds }, kind: PostingKind.PROJECT }],
+      },
+      orderBy: [{ lastSeenAt: 'desc' }, { id: 'asc' }],
+      select: posting,
+    }),
+  ]);
+
+  const keyOf = (p: { propertyId: string | null; projectId: string | null }) => p.propertyId ?? p.projectId ?? '';
+  // A live posting describes it best; else the newest one seen.
+  const newest = new Map<string, (typeof postings)[number]>();
+  for (const p of postings) if (!newest.has(keyOf(p))) newest.set(keyOf(p), p);
+  const liveKeys = new Set<string>();
+  for (const p of livePostings) {
+    if (!liveKeys.has(keyOf(p))) newest.set(keyOf(p), p);
+    liveKeys.add(keyOf(p));
+  }
+  const names = new Map(projs.map((p) => [p.id, p.name]));
+  const num = (v: unknown) => (v == null ? null : Number(v));
+
+  const out = new Map<string, { slug: string; lastKnown: LastKnown | null }>();
+  for (const r of [...props, ...projs]) {
+    const p = newest.get(r.id);
+    const snap = p?.currentSnapshot ?? null;
+    out.set(r.id, {
+      slug: r.districtSlug,
+      lastKnown:
+        p && snap
+          ? {
+              name: names.get(r.id) ?? null,
+              pricePen: num(snap.pricePen),
+              bedrooms: snap.bedrooms,
+              areaM2: num(snap.areaTotal ?? snap.areaCovered),
+              imageUrl: snap.imageUrl,
+              url: postingUrl(postingSource(p.source), p.sourcePath, snap.sourceUrl),
+              live: liveKeys.has(r.id),
+            }
+          : null,
+    });
+  }
+  return out;
 }
 
 /** Photo lookup for the list page thumbnails, built once per request. */

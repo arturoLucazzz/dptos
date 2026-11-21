@@ -4,7 +4,7 @@ import { useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { CardPhoto } from "@/components/listing-card";
 
-export type CompareColumn = { itemId: string; title: string; districtName: string; imageUrl: string | null; note: string | null; url: string | null; gone: boolean };
+export type CompareColumn = { itemId: string; title: string; districtName: string; imageUrl: string | null; note: string | null; url: string | null; gone: boolean; statusLabel: string | null };
 export type CompareTableRows = { label: string; cells: { text: string; best: boolean }[] }[];
 
 export function CompareView({ columns, table }: { columns: CompareColumn[]; table: CompareTableRows }) {
@@ -54,6 +54,9 @@ export function CompareView({ columns, table }: { columns: CompareColumn[]; tabl
                     )}
                   </span>
                   {c.districtName && <span className="block text-xs text-muted-foreground">{c.districtName}</span>}
+                  {c.statusLabel && c.statusLabel !== c.title && (
+                    <span className="block text-xs font-medium text-muted-foreground">{c.statusLabel}</span>
+                  )}
                 </th>
               ))}
             </tr>
