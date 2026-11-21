@@ -38,9 +38,9 @@ export function toHomeRow(row: DepartamentosRow): HomeRow {
 export const RECO_FIRST = 16;
 export const RECO_MAX = 200;
 
-/** Read `mode` and `n` from the recommendations route; bad values fall back, n is capped. */
+/** Read the tab (`orden`, or the older `mode`) and `n`; bad values fall back, n is capped. */
 export function parseRecoParams(params: URLSearchParams): { mode: RecoMode; n: number } {
-  const rawMode = params.get('mode');
+  const rawMode = params.get('orden') ?? params.get('mode');
   const mode = RECO_TABS.find((t) => t.mode === rawMode)?.mode ?? 'gain';
   const raw = Number(params.get('n'));
   const n = Number.isFinite(raw) && raw >= 1 ? Math.min(RECO_MAX, Math.round(raw)) : RECO_FIRST;
