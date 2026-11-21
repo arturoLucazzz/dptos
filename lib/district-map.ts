@@ -110,6 +110,53 @@ export function formatMetricValue(value: number | null, unit: string | null): st
   return `${n} ${unit}`;
 }
 
+const fmtNum = (n: number) => n.toLocaleString('es-PE', { maximumFractionDigits: 1 });
+/** Whole numbers from 100 up, one decimal below: enough to tell groups apart without false precision. */
+const roundBreak = (v: number) => (Math.abs(v) >= 100 ? Math.round(v) : Math.round(v * 10) / 10);
+
+export type LegendClasses = { breaks: number[]; classes: { label: string }[] };
+
+/**
+ * The legend and the paint steps for one statistic. classes.length is breaks.length + 1, or 0 when
+ * no district has a value. With 5 or fewer distinct values each gets its own class labeled with the
+ * real value; otherwise rounded, deduped quantile bands.
+ */
+export function legendClasses(values: (number | null)[], steps = 5): LegendClasses {
+  const nums = values.filter((v): v is number => v !== null && Number.isFinite(v));
+  const distinct = [...new Set(nums)].sort((a, b) => a - b);
+  if (distinct.length === 0) return { breaks: [], classes: [] };
+  if (distinct.length <= steps) return { breaks: distinct.slice(1), classes: distinct.map((v) => ({ label: fmtNum(v) })) };
+  const breaks: number[] = [];
+  // A cut at or below the smallest value would leave the first class empty.
+  for (const b of metricScale(nums, steps).map(roundBreak).filter((b) => b > distinct[0])) if (breaks.length === 0 || b > breaks[breaks.length - 1]) breaks.push(b);
+  const classes = [`Menos de ${fmtNum(breaks[0])}`];
+  for (let i = 1; i < breaks.length; i++) classes.push(`${fmtNum(breaks[i - 1])} a ${fmtNum(breaks[i])}`);
+  classes.push(`${fmtNum(breaks[breaks.length - 1])} o más`);
+  return { breaks, classes: classes.map((label) => ({ label })) };
+}
+
+/** [[west, south], [east, north]] of the districts with listings; null when none are tracked. */
+export function trackedBounds(fc: FeatureCollection<MultiPolygon, DistrictProps>): [[number, number], [number, number]] | null {
+  let w = Infinity, s = Infinity, e = -Infinity, n = -Infinity;
+  for (const f of fc.features) {
+    if (!f.properties.tracked) continue;
+    for (const poly of f.geometry.coordinates) for (const ring of poly) for (const [x, y] of ring) {
+      w = Math.min(w, x); e = Math.max(e, x); s = Math.min(s, y); n = Math.max(n, y);
+    }
+  }
+  return Number.isFinite(w) ? [[w, s], [e, n]] : null;
+}
+
+/** Source and period of the NSE rows, as stored with them. */
+export function nseSource(latest: LatestStats): { source: string; period: string } | null {
+  const lima = latest.get('lima-metropolitana');
+  for (const level of NSE_LEVELS) {
+    const st = lima?.get(`nse_${level.toLowerCase()}_pct`);
+    if (st) return { source: st.source, period: st.period };
+  }
+  return null;
+}
+
 const NSE_LEVELS = ['A', 'B', 'C', 'D', 'E'] as const;
 
 /** Household share by socioeconomic level for Lima Metropolitana; empty when the data is not loaded. */

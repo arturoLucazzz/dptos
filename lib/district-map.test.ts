@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { MAP_METRICS, buildDistrictFeatures, formatMetricValue, metricScale, nseLima, roundCoordinates } from './district-map';
+import { MAP_METRICS, buildDistrictFeatures, formatMetricValue, metricScale, legendClasses, nseLima, nseSource, roundCoordinates, trackedBounds } from './district-map';
 import type { LatestStat } from './stats/latest';
 import type { PlaceDef } from './stats/files';
 
@@ -91,4 +91,66 @@ test('formatMetricValue shows sin datos for null and never 0', () => {
   assert.match(formatMetricValue(4000, 'S/ al mes'), /^S\/ 4\D?000 al mes$/);
   assert.match(formatMetricValue(31.2, 'denuncias'), /^31[.,]2 denuncias$/);
   assert.match(formatMetricValue(3.4, null), /^3[.,]4$/);
+});
+
+test('legendClasses: no values or all null gives no classes and no breaks', () => {
+  assert.deepEqual(legendClasses([]), { breaks: [], classes: [] });
+  assert.deepEqual(legendClasses([null, null]), { breaks: [], classes: [] });
+});
+
+test('legendClasses: one distinct value gives one class with its real value', () => {
+  const l = legendClasses([5, 5, null, 5]);
+  assert.deepEqual(l.breaks, []);
+  assert.equal(l.classes.length, 1);
+  assert.match(l.classes[0].label, /^5$/);
+});
+
+test('legendClasses: 5 or fewer distinct values get one class each, labeled with the real value', () => {
+  const l = legendClasses([4307, 4307, 4309, 8258, null, 4069, 4309]);
+  assert.deepEqual(l.breaks, [4307, 4309, 8258]);
+  assert.equal(l.classes.length, l.breaks.length + 1);
+  assert.deepEqual(l.classes.map((c) => c.label.replace(/\D/g, '')), ['4069', '4307', '4309', '8258']);
+  assert.ok(l.classes.every((c) => !/ a |Menos|más/.test(c.label)));
+});
+
+test('legendClasses: many distinct values use rounded quantile bands, deduped, classes = breaks + 1', () => {
+  const values = Array.from({ length: 40 }, (_, i) => i * 1.2345 + 0.0123);
+  const l = legendClasses(values);
+  assert.equal(l.classes.length, l.breaks.length + 1);
+  assert.ok(l.breaks.length >= 1);
+  for (let i = 1; i < l.breaks.length; i++) assert.ok(l.breaks[i] > l.breaks[i - 1]);
+  assert.ok(l.breaks.every((b) => Math.abs(b * 10 - Math.round(b * 10)) < 1e-9));
+  assert.match(l.classes[0].label, /^Menos de /);
+  assert.match(l.classes[l.classes.length - 1].label, / o más$/);
+  assert.ok(l.classes.slice(1, -1).every((c) => / a /.test(c.label)));
+});
+
+test('legendClasses: large values round to whole numbers', () => {
+  const values = Array.from({ length: 30 }, (_, i) => 1000 + i * 137.77);
+  assert.ok(legendClasses(values).breaks.every((b) => Number.isInteger(b)));
+});
+
+test('trackedBounds covers only tracked districts, and is null when none are tracked', () => {
+  const r1: [number, number][] = [[-77.1, -12.1], [-77.0, -12.1], [-77.0, -12.0], [-77.1, -12.1]];
+  const r2: [number, number][] = [[-76.5, -11.5], [-76.4, -11.5], [-76.4, -11.4], [-76.5, -11.5]];
+  const fc = buildDistrictFeatures(
+    [{ slug: 'comas', name: 'COMAS', rings: [r1] }, { slug: 'lince', name: 'LINCE', rings: [r2] }],
+    latest, places, ['comas'],
+  );
+  assert.deepEqual(trackedBounds(fc), [[-77.1, -12.1], [-77.0, -12.0]]);
+  assert.equal(trackedBounds(buildDistrictFeatures([{ slug: 'comas', name: 'COMAS', rings: [r1] }], latest, places, [])), null);
+});
+
+test('nseSource names the source and period of the NSE rows, null when not loaded', () => {
+  const l = new Map([['lima-metropolitana', new Map([['nse_a_pct', stat(2.6, '2025', 'APEIM, NSE 2025')], ['nse_b_pct', stat(18, '2025', 'APEIM, NSE 2025')]])]]);
+  assert.deepEqual(nseSource(l), { source: 'APEIM, NSE 2025', period: '2025' });
+  assert.equal(nseSource(latest), null);
+});
+
+test('legendClasses: a cut at the smallest value (many zeros) does not make an empty first class', () => {
+  const values = [0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 40, 50, 60, 70];
+  const l = legendClasses(values);
+  assert.ok(l.breaks.every((b) => b > 0));
+  assert.ok(!l.classes.some((c) => c.label === 'Menos de 0'));
+  assert.equal(l.classes.length, l.breaks.length + 1);
 });

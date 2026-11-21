@@ -77,7 +77,7 @@ export default async function MercadoPage() {
           <DistrictMap districts={map.features} metrics={map.metrics} />
           <div className="rounded-xl border border-border bg-card p-4">
             <h3 className="mb-3 text-sm font-semibold">Niveles socioeconómicos de Lima Metropolitana</h3>
-            <NseBars nse={map.nse} source="APEIM 2025" />
+            <NseBars nse={map.nse} source={map.nseSource ? `${map.nseSource.source}, ${map.nseSource.period}` : "fuente sin cargar"} />
           </div>
         </div>
       </Section>

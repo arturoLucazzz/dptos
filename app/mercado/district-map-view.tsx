@@ -13,7 +13,8 @@ import type { ExpressionSpecification, GeoJSONSourceSpecification } from "maplib
 import { MAP_STYLE_DARK, useMapStyle } from "@/app/map-setup";
 import {
   formatMetricValue,
-  metricScale,
+  legendClasses,
+  trackedBounds,
   type DistrictProps,
   type FeatureCollection,
   type MapMetric,
@@ -33,16 +34,19 @@ function steps(n: number): string[] {
   return Array.from({ length: n }, (_, i) => RAMP[n === 1 ? 2 : Math.round((i * (RAMP.length - 1)) / (n - 1))]);
 }
 
-function fillColor(key: MapMetricKey, breaks: number[]): ExpressionSpecification {
-  const colors = steps(breaks.length + 1);
-  const byValue: ExpressionSpecification =
+function fillColor(key: MapMetricKey, breaks: number[], classCount: number): ExpressionSpecification {
+  if (classCount === 0) return ["literal", NO_DATA] as unknown as ExpressionSpecification;
+  const colors = steps(classCount);
+  const byValue = (
     breaks.length === 0
-      ? ["literal", colors[0]] as unknown as ExpressionSpecification
-      : (["step", ["get", key], colors[0], ...breaks.flatMap((b, i) => [b, colors[i + 1]])] as unknown as ExpressionSpecification);
+      ? ["literal", colors[0]]
+      : ["step", ["get", key], colors[0], ...breaks.flatMap((b, i) => [b, colors[i + 1]])]
+  ) as unknown as ExpressionSpecification;
   return ["case", ["==", ["typeof", ["get", key]], "number"], byValue, NO_DATA];
 }
 
-const num = (n: number) => n.toLocaleString("es-PE", { maximumFractionDigits: 1 });
+/** MapLibre may hand back a null property as null, undefined, or a string: only a number is a value. */
+const asNumber = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
 
 export function DistrictMapView({ districts, metrics }: { districts: Districts; metrics: MapMetric[] }) {
   const { style, onStyleData, onError } = useMapStyle();
@@ -50,21 +54,18 @@ export function DistrictMapView({ districts, metrics }: { districts: Districts; 
   const [hover, setHover] = useState<{ props: DistrictProps; lng: number; lat: number } | null>(null);
 
   const metric = metrics.find((m) => m.key === key) ?? metrics[0];
-  const breaks = useMemo(() => metricScale(districts.features.map((f) => f.properties[key]), 5), [districts, key]);
-  const colors = steps(breaks.length + 1);
-  const paint = useMemo(() => fillColor(key, breaks), [key, breaks]);
+  const { breaks, classes } = useMemo(() => legendClasses(districts.features.map((f) => asNumber(f.properties[key])), 5), [districts, key]);
+  const colors = steps(classes.length);
+  const paint = useMemo(() => fillColor(key, breaks, classes.length), [key, breaks, classes.length]);
+  const bounds = useMemo(() => trackedBounds(districts), [districts]);
 
   const onMove = (e: MapLayerMouseEvent) => {
     const f = e.features?.[0];
     setHover(f ? { props: f.properties as DistrictProps, lng: e.lngLat.lng, lat: e.lngLat.lat } : null);
   };
 
-  const legend = colors.map((color, i) => {
-    const lo = i === 0 ? null : breaks[i - 1];
-    const hi = i === breaks.length ? null : breaks[i];
-    const label = lo === null ? `Menos de ${num(hi as number)}` : hi === null ? `${num(lo)} o más` : `${num(lo)} a ${num(hi)}`;
-    return { color, label };
-  });
+  const legend = classes.map((c, i) => ({ color: colors[i], label: c.label }));
+  const hoverValue = hover ? asNumber(hover.props[key]) : null;
   const sourceLine = metric.source ? `${metric.source}${metric.period ? `, ${metric.period}` : ""}` : "fuente sin cargar";
 
   return (
@@ -94,7 +95,7 @@ export function DistrictMapView({ districts, metrics }: { districts: Districts; 
         data-metric={key}
       >
         <Map
-          initialViewState={LIMA_VIEW}
+          initialViewState={bounds ? { bounds, fitBoundsOptions: { padding: 40 } } : LIMA_VIEW}
           mapStyle={style}
           style={{ width: "100%", height: "100%" }}
           interactiveLayerIds={["districts-fill"]}
@@ -112,10 +113,10 @@ export function DistrictMapView({ districts, metrics }: { districts: Districts; 
             <Layer id="districts-tracked" type="line" filter={["==", ["get", "tracked"], true]} paint={{ "line-color": OUTLINE, "line-width": 1.6 }} />
           </Source>
           {hover && (
-            <Popup longitude={hover.lng} latitude={hover.lat} offset={12} closeButton={false} closeOnClick={false} maxWidth="none" className="dptos-map-popup">
+            <Popup longitude={hover.lng} latitude={hover.lat} offset={12} closeButton={false} closeOnClick={false} maxWidth="none" className="dptos-map-popup" style={{ pointerEvents: "none" }}>
               <div className="w-56 space-y-0.5 rounded-lg border border-border bg-card p-2.5 text-xs text-card-foreground">
                 <p className="text-sm font-semibold">{hover.props.name}</p>
-                <p className={hover.props[key] === null ? "text-muted-foreground" : "font-medium"}>{formatMetricValue(hover.props[key], metric.unit)}</p>
+                <p className={hoverValue === null ? "text-muted-foreground" : "font-medium"}>{formatMetricValue(hoverValue, metric.unit)}</p>
                 {key === "zone_household_income_pen" && hover.props.zone && <p className="text-muted-foreground">Zona: {hover.props.zone}</p>}
                 <p className="text-muted-foreground">Fuente: {sourceLine}</p>
                 {hover.props.tracked && <p className="text-muted-foreground">Con avisos en dptos</p>}
@@ -144,7 +145,8 @@ export function DistrictMapView({ districts, metrics }: { districts: Districts; 
         </ul>
         <p>
           {metric.label}
-          {metric.unit ? ` (${metric.unit})` : ""}. Fuente: {sourceLine}. Los cortes dividen los distritos con dato en cinco grupos parejos.
+          {metric.unit ? ` (${metric.unit})` : ""}
+          {key === "zone_household_income_pen" ? " (los distritos de una zona comparten el valor)" : ""}. Fuente: {sourceLine}.
         </p>
       </div>
     </div>

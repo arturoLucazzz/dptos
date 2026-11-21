@@ -1,6 +1,6 @@
 /** Loads the /mercado district map data. Server only: kept apart from the pure helpers so client code never pulls in the database. */
 
-import { buildDistrictFeatures, mapMetrics, nseLima, roundCoordinates, type Ring } from './district-map';
+import { buildDistrictFeatures, mapMetrics, nseLima, nseSource, roundCoordinates, type Ring } from './district-map';
 
 /** Everything the page needs, read once. The database modules load here so the rest stays pure. */
 export async function loadDistrictMap(trackedSlugs: string[]) {
@@ -23,5 +23,6 @@ export async function loadDistrictMap(trackedSlugs: string[]) {
     features: roundCoordinates(buildDistrictFeatures(boundaries, latest, places, trackedSlugs)),
     metrics: mapMetrics(latest, parseIndicators(indicatorsText)),
     nse: nseLima(latest),
+    nseSource: nseSource(latest),
   };
 }
