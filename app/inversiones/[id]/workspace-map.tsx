@@ -11,7 +11,8 @@
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Map, { Layer, NavigationControl, Popup, Source, type MapLayerMouseEvent, type MapRef } from "react-map-gl/maplibre";
-import { setWorkerUrl, type GeoJSONSource } from "maplibre-gl";
+import type { GeoJSONSource } from "maplibre-gl";
+import { MAP_STYLE_DARK, useMapStyle } from "@/app/map-setup";
 import { CardPhoto, pen } from "@/components/listing-card";
 import { markInversionesChanged } from "@/app/inversiones/history-refresh";
 import { moneyLine } from "@/lib/home";
@@ -28,13 +29,6 @@ import {
 import type { CardRow } from "@/lib/investments/workspace-data";
 import type { Ring } from "@/lib/location/geo";
 import { POLYGON_MAX_POINTS, validatePolygon } from "@/lib/location/polygon-input";
-
-// maplibre looks for its worker next to its own file, which the bundler moves. Point it at
-// the worker file the bundler emits instead.
-setWorkerUrl(new URL("maplibre-gl/dist/maplibre-gl-worker.mjs", import.meta.url).href);
-
-export const MAP_STYLE_DARK = "https://tiles.openfreemap.org/styles/dark";
-export const MAP_STYLE_LIGHT = "https://tiles.openfreemap.org/styles/positron";
 
 const LIMA_VIEW = { longitude: -77.03, latitude: -12.1, zoom: 11 };
 // Theme tokens from app/globals.css; the map paints with plain colors, not CSS variables.
@@ -199,8 +193,7 @@ export function WorkspaceMap({
   saveZone: React.ComponentProps<typeof SaveZoneForm>["save"];
 }) {
   const mapRef = useRef<MapRef>(null);
-  const [style, setStyle] = useState(MAP_STYLE_DARK);
-  const styleSeen = useRef(false);
+  const { style, onStyleData, onError } = useMapStyle();
   const [points, setPoints] = useState<MapPoint[]>([]);
   const [pointsFailed, setPointsFailed] = useState(false);
   const [selected, setSelected] = useState<Selected | null>(null);
@@ -437,15 +430,8 @@ export function WorkspaceMap({
           doubleClickZoom={!drawing}
           onClick={onClick}
           attributionControl={{ compact: true }}
-          onStyleData={() => {
-            styleSeen.current = true;
-          }}
-          onError={(e) => {
-            // The dark style itself did not load: fall back to positron, still OpenFreeMap.
-            const url = (e.error as { url?: unknown } | undefined)?.url;
-            if (!styleSeen.current && style === MAP_STYLE_DARK && url === MAP_STYLE_DARK) setStyle(MAP_STYLE_LIGHT);
-            else console.warn("map error", e.error);
-          }}
+          onStyleData={onStyleData}
+          onError={onError}
         >
           <NavigationControl position="top-right" showCompass={false} />
 

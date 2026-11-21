@@ -473,6 +473,7 @@ export function invalidateSaleListings(): void {
   memoHolder.__saleListingsMemo = undefined;
   // The project rows come from the same scrape and the same writes.
   (globalThis as { __projectRowsMemo?: unknown }).__projectRowsMemo = undefined;
+  (globalThis as { __marketDashboardMemo?: unknown }).__marketDashboardMemo = undefined;
 }
 
 /**

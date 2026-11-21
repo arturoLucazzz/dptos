@@ -531,3 +531,17 @@ model InvestmentItem {
   @@unique([investmentId, projectId])
   @@index([investmentId, position])
 }
+
+/// A news headline from an RSS feed. Only headline, source, date and link are stored, never article text.
+model NewsItem {
+  id          String    @id @default(cuid())
+  url         String    @unique
+  title       String
+  source      String
+  publishedAt DateTime?
+  fetchedAt   DateTime  @default(now())
+  saved       Boolean   @default(false)
+  savedAt     DateTime?
+
+  @@index([publishedAt])
+}
