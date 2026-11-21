@@ -49,7 +49,7 @@
     "lucide-react": "^0.563.0",
     "maplibre-gl": "^6.19.0",
     "next": "16.1.6",
-    "nuqs": "^2.9.4",
+    "nuqs": "2.10.2",
     "playwright": "^1.49.0",
     "puppeteer": "^23.0.0",
     "radix-ui": "^1.4.3",

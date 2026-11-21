@@ -2,16 +2,19 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { ASSUMPTIONS_COOKIE, parseAssumptionsCookie } from '@/lib/assumptions-cookie';
 import { parseRecoParams } from '@/lib/home-rows';
-import { loadHomeRows, recommendHome } from '@/lib/home-universe';
+import { loadHomeFilters } from '@/lib/home-filters';
+import { filterHomeRows, loadHomeRows, recommendHome } from '@/lib/home-universe';
 
 export const dynamic = 'force-dynamic';
 
-/** The first `n` recommendations for one tab: `?mode=gain&n=24`. */
+/** The first `n` recommendations for one tab, with the Inicio filters: `?orden=gain&n=24&dorm_min=2`. */
 export async function GET(request: Request) {
   try {
-    const { mode, n } = parseRecoParams(new URL(request.url).searchParams);
+    const url = new URL(request.url);
+    const { mode, n } = parseRecoParams(url.searchParams);
     const panel = parseAssumptionsCookie((await cookies()).get(ASSUMPTIONS_COOKIE)?.value);
-    return NextResponse.json(recommendHome(await loadHomeRows(panel), mode, n));
+    const rows = filterHomeRows(await loadHomeRows(panel), loadHomeFilters(url.searchParams));
+    return NextResponse.json(recommendHome(rows, mode, n));
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return NextResponse.json({ error: message }, { status: 500 });

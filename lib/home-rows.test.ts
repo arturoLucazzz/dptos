@@ -25,8 +25,18 @@ test('toHomeRow keeps only the fields Inicio shows or sorts by', () => {
     prepayment: {},
   } as unknown as DepartamentosRow;
   const out = toHomeRow(full);
-  assert.deepEqual(Object.keys(out).sort(), [...HOME_ROW_KEYS].sort());
+  assert.deepEqual(Object.keys(out).sort(), [...HOME_ROW_KEYS, 'sources'].sort());
   assert.equal(out.postingId, 'p1');
   assert.equal(out.locationScore, 7.25);
   assert.equal('copies' in out, false);
+});
+
+test('toHomeRow gives one badge per portal, Urbania first', () => {
+  const row = {
+    copies: [
+      { postingId: 'a', source: 'adondevivir', url: 'https://a/1', pricePen: 1 },
+      { postingId: 'u', source: 'urbania', url: 'https://u/1', pricePen: 1 },
+    ],
+  } as unknown as DepartamentosRow;
+  assert.deepEqual(toHomeRow(row).sources.map((b) => b.source), ['urbania', 'adondevivir']);
 });

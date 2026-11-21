@@ -28,6 +28,7 @@ function prow(partial: Partial<ProjectRow> & { projectId: string }): ProjectRow 
     lon: null,
     postingIds: [],
     newestAt: null,
+    sources: [],
     ...partial,
   };
 }
@@ -47,6 +48,14 @@ describe('groupProjectPostings', () => {
     assert.equal(rows[0].url, 'https://b');
     assert.equal(rows[0].districtName, 'Miraflores');
     assert.equal(rows[0].lat, -12.1);
+  });
+
+  it('gives one badge per portal of the project', () => {
+    const rows = groupProjectPostings([
+      posting({ id: 'a', source: 'nexo', currentSnapshot: { pricePen: 600000, imageUrl: null, sourceUrl: 'https://n', firstDateOnline: null } }),
+      posting({ id: 'b', source: 'proper', currentSnapshot: { pricePen: 500000, imageUrl: null, sourceUrl: 'https://p', firstDateOnline: null } }),
+    ]);
+    assert.deepEqual(rows[0].sources.map((b) => b.label), ['Proper', 'Nexo']);
   });
 
   it('drops a posting with no project', () => {

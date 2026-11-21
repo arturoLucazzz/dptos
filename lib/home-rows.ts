@@ -5,6 +5,7 @@
 
 import type { DepartamentosRow } from './departamentos-query';
 import { RECO_TABS, type RecoMode } from './home';
+import { sourceBadges, type SourceBadge } from './source-badges';
 
 export const HOME_ROW_KEYS = [
   'postingId',
@@ -25,20 +26,21 @@ export const HOME_ROW_KEYS = [
   'locationReasons',
 ] as const;
 
-export type HomeRow = Pick<DepartamentosRow, (typeof HOME_ROW_KEYS)[number]>;
+export type HomeRow = Pick<DepartamentosRow, (typeof HOME_ROW_KEYS)[number]> & { sources: SourceBadge[] };
 
 export function toHomeRow(row: DepartamentosRow): HomeRow {
   const out: Record<string, unknown> = {};
   for (const key of HOME_ROW_KEYS) out[key] = row[key];
+  out.sources = sourceBadges(row.copies ?? []);
   return out as HomeRow;
 }
 
 export const RECO_FIRST = 16;
 export const RECO_MAX = 200;
 
-/** Read `mode` and `n` from the recommendations route; bad values fall back, n is capped. */
+/** Read the tab (`orden`, or the older `mode`) and `n`; bad values fall back, n is capped. */
 export function parseRecoParams(params: URLSearchParams): { mode: RecoMode; n: number } {
-  const rawMode = params.get('mode');
+  const rawMode = params.get('orden') ?? params.get('mode');
   const mode = RECO_TABS.find((t) => t.mode === rawMode)?.mode ?? 'gain';
   const raw = Number(params.get('n'));
   const n = Number.isFinite(raw) && raw >= 1 ? Math.min(RECO_MAX, Math.round(raw)) : RECO_FIRST;

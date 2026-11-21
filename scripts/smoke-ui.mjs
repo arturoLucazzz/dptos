@@ -132,6 +132,43 @@ const CHECKS = [
       if (cursor !== 'pointer') fail(`button cursor is ${cursor}`);
     },
   },
+  {
+    name: 'filters-from-url',
+    path: '/?dorm_min=2&dorm_max=2',
+    async run(page, fail) {
+      const cards = page.locator('[style*="--cols"] > div');
+      const before = await cards.allInnerTexts();
+      if (before.length === 0) fail('no cards for 2 dorm');
+      for (const t of before) if (!t.includes('2 dorm')) fail(`card outside the filter: ${t.split('\n').slice(0, 2).join(' ')}`);
+      const more = page.getByRole('button', { name: 'Ver más' });
+      if (await more.count()) {
+        await more.click();
+        await page.waitForFunction((n) => document.querySelectorAll('[style*="--cols"] > div').length > n, before.length, { timeout: 30_000 });
+        for (const t of await cards.allInnerTexts()) if (!t.includes('2 dorm')) fail(`"Ver más" card outside the filter: ${t.split('\n').slice(0, 2).join(' ')}`);
+      }
+      if (!(await page.getByRole('button', { name: 'Limpiar filtros' }).count())) fail('no "Limpiar filtros" with a filter on');
+    },
+  },
+  {
+    name: 'filters-junk',
+    path: '/?precio_min=abc&distrito=nowhere&dorm_min=-3',
+    async run(page, fail) {
+      const body = await page.locator('body').innerText();
+      if (!body.includes('Recomendados')) fail('no "Recomendados"');
+      if ((await page.locator('[style*="--cols"] > div').count()) === 0) fail('junk values hid every card');
+    },
+  },
+  {
+    name: 'filters-empty',
+    path: '/?precio_min=999999999',
+    async run(page, fail) {
+      if (!(await page.getByText('Ningún departamento cumple estos filtros.').count())) fail('no empty-state text');
+      const clear = page.getByRole('button', { name: 'Limpiar filtros' }).first();
+      await clear.click();
+      await page.waitForFunction(() => !location.search.includes('precio_min'), null, { timeout: 30_000 });
+      await page.waitForSelector('[style*="--cols"] > div', { timeout: 30_000 });
+    },
+  },
 ];
 
 for (const check of CHECKS) {

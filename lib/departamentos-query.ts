@@ -45,6 +45,9 @@ export interface DepartamentosQueryInput {
   locationMin?: number | null;
   /** Keep only rows with coordinates inside this polygon. Null or absent keeps all. */
   area?: Ring | null;
+  /** Floor area range in m²; rows with no area drop out when either bound is set. */
+  areaM2Min?: number | null;
+  areaM2Max?: number | null;
   panel: PanelAssumptions;
   sort: DepartamentosSortId;
   order: 'asc' | 'desc';
@@ -121,7 +124,7 @@ function sortValue(row: DepartamentosRow, sort: DepartamentosSortId): number {
 /** The filters that read the listing itself, before any finance. */
 export type ListingFilterInput = Pick<
   DepartamentosQueryInput,
-  'districts' | 'sources' | 'priceMin' | 'priceMax' | 'bedroomsMin' | 'bedroomsMax' | 'locationMin' | 'area'
+  'districts' | 'sources' | 'priceMin' | 'priceMax' | 'bedroomsMin' | 'bedroomsMax' | 'locationMin' | 'area' | 'areaM2Min' | 'areaM2Max'
 >;
 
 /**
@@ -147,6 +150,8 @@ export function filterListings<T extends ListingRow>(listings: T[], input: Listi
   if (input.bedroomsMax != null) {
     list = list.filter((r) => r.bedrooms != null && r.bedrooms <= input.bedroomsMax!);
   }
+  if (input.areaM2Min != null) list = list.filter((r) => r.areaM2 != null && r.areaM2 >= input.areaM2Min!);
+  if (input.areaM2Max != null) list = list.filter((r) => r.areaM2 != null && r.areaM2 <= input.areaM2Max!);
   if (input.locationMin != null) {
     list = list.filter((r) => r.locationScore != null && r.locationScore >= input.locationMin!);
   }
