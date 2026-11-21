@@ -31,6 +31,7 @@
   --color-ring: var(--ring);
   --color-gain: var(--gain);
   --color-loss: var(--loss);
+  --color-warn: var(--warn);
   --color-score: var(--score);
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
   --color-chart-1: var(--chart-1);
@@ -71,6 +72,7 @@
   --ring: #10b981;
   --gain: #34d399;
   --loss: #fb7185;
+  --warn: #fbbf24;
   --score: #8b5cf6;
   --chart-1: #10b981;
   --chart-2: #34d399;
@@ -97,6 +99,9 @@
   html {
     color-scheme: dark;
   }
+  /* Tailwind 4 dropped the pointer cursor on buttons; put it back everywhere. */
+  button:not(:disabled), [role="button"]:not([aria-disabled="true"]), summary, label[for], select { cursor: pointer; }
+  button:disabled, [aria-disabled="true"] { cursor: not-allowed; }
 }
 
 /* The workspace map popup: the card draws its own frame on the dark theme. */

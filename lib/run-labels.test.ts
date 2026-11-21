@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { formatRunDate, runModeLabel, runStatusLabel } from './run-labels';
+import { formatRunDate, runModeLabel, runStatusLabel, runStatusTone } from './run-labels';
+
+test('runStatusTone uses theme tokens', () => {
+  assert.equal(runStatusTone('SUCCESS'), 'bg-gain/15 text-gain');
+  assert.equal(runStatusTone('PARTIAL'), 'bg-warn/15 text-warn');
+  assert.equal(runStatusTone('FAILED'), 'bg-loss/15 text-loss');
+  assert.equal(runStatusTone('RUNNING'), 'bg-primary/15 text-primary');
+  assert.equal(runStatusTone('OTHER'), '');
+});
 
 test('run statuses read in Spanish', () => {
   assert.equal(runStatusLabel('RUNNING'), 'En curso');

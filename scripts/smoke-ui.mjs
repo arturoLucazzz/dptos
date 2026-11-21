@@ -112,6 +112,42 @@ for (const size of SIZES) {
   }
 }
 
+// Checks that act on a page: each gets a fresh desktop page and a fail(message) helper.
+const CHECKS = [
+  {
+    name: 'top-bar',
+    path: '/',
+    async run(page, fail) {
+      const links = await page.locator('header nav a').allInnerTexts();
+      const want = ['Inicio', 'Mis inversiones', 'Mercado', 'Configuración', 'Corridas'];
+      if (JSON.stringify(links.map((t) => t.trim())) !== JSON.stringify(want)) fail(`nav links ${JSON.stringify(links)}`);
+      if (await page.locator('[aria-label="Más"]').count()) fail('the "Más" menu is still there');
+    },
+  },
+  {
+    name: 'pointer-cursor',
+    path: '/',
+    async run(page, fail) {
+      const cursor = await page.locator('main button:not(:disabled)').first().evaluate((el) => getComputedStyle(el).cursor);
+      if (cursor !== 'pointer') fail(`button cursor is ${cursor}`);
+    },
+  },
+];
+
+for (const check of CHECKS) {
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const page = await context.newPage();
+  const label = `check ${check.name}`;
+  page.on('pageerror', (e) => failures.push(`${label}: page error: ${e.message}`));
+  try {
+    await page.goto(baseUrl + check.path, { waitUntil: 'networkidle', timeout: 60_000 });
+    await check.run(page, (m) => failures.push(`${label}: ${m}`));
+  } catch (e) {
+    failures.push(`${label}: ${e.message}`);
+  }
+  await context.close();
+}
+
 await browser.close();
 if (failures.length > 0) {
   console.error(failures.join('\n'));
