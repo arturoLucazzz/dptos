@@ -11,7 +11,7 @@ import type { PanelAssumptions } from "@/lib/assumption-defaults";
 const mainLinks = [
   { href: "/", label: "Inicio" },
   { href: "/inversiones", label: "Mis inversiones" },
-  { href: "/estadisticas", label: "Mercado" },
+  { href: "/mercado", label: "Mercado" },
 ];
 
 const moreLinks = [
