@@ -81,7 +81,12 @@ for (const size of SIZES) {
     try {
       await page.goto(baseUrl + flow.from, { waitUntil: 'networkidle', timeout: 60_000 });
       if ((await page.locator(flow.link).count()) === 0) {
-        console.log(`skip: no hay inversiones (${label})`);
+        // Skip only for a real empty state; a missing link on a page that has inversiones is a failure.
+        if (await page.getByText('Todavía no tienes inversiones.').count()) {
+          console.log(`skip: no hay inversiones (${label})`);
+        } else {
+          failures.push(`${label}: no inversion link and no empty-state text`);
+        }
         await context.close();
         continue;
       }

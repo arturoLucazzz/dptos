@@ -141,7 +141,11 @@ export function exitDate(
 export function sourceStats(postings: SourcePosting[], cutoffs: PossiblySoldCutoffs, now: Date): SourceStats[] {
   const since = now.getTime() - 7 * DAY_MS;
   return SOURCE_IDS.flatMap((source) => {
-    const own = postings.filter((p) => p.source === source);
+    const all = postings.filter((p) => p.source === source);
+    // Proper lists a project card plus a card per apartment; counting both would count the
+    // same inventory twice. Projects count only for a source with no live units (Nexo).
+    const hasLiveUnits = all.some((p) => p.kind === 'UNIT' && isLivePosting(p, cutoffs));
+    const own = hasLiveUnits ? all.filter((p) => p.kind === 'UNIT') : all;
     const live = own.filter((p) => isLivePosting(p, cutoffs));
     const gone = own.filter((p) => {
       const left = exitDate(p, cutoffs)?.getTime();

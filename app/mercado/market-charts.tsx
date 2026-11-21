@@ -109,7 +109,7 @@ export function RentVsSaleChart({ rows }: { rows: RentVsSaleRow[] }) {
               );
             }}
           />
-          <Legend verticalAlign="top" height={24} content={<ChartLegend />} />
+          <Legend verticalAlign="top" content={<ChartLegend />} />
           <Bar yAxisId="sale" dataKey="sale" name="Precio de venta (S/, eje izquierdo)" fill="var(--chart-1)" radius={[4, 4, 0, 0]} maxBarSize={28} />
           <Line yAxisId="rent" dataKey="rent" name="Alquiler mensual (S/, eje derecho)" stroke="var(--chart-4)" strokeWidth={2} dot={{ r: 4, fill: "var(--chart-4)", stroke: SURFACE, strokeWidth: 2 }} connectNulls={false} />
         </ComposedChart>
@@ -175,7 +175,7 @@ export function ConstructionChart({ rows }: { rows: ConstructionRow[] }) {
               return <TipBox title={r.name} lines={STAGES.map((s) => ({ label: s.label, value: `${r[s.key]} proyectos`, color: s.color }))} />;
             }}
           />
-          <Legend verticalAlign="top" height={24} content={<ChartLegend />} />
+          <Legend verticalAlign="top" content={<ChartLegend />} />
           {STAGES.map((s) => (
             <Bar key={s.key} dataKey={s.key} name={s.label} stackId="stage" fill={s.color} stroke={SURFACE} strokeWidth={2} maxBarSize={32} />
           ))}
