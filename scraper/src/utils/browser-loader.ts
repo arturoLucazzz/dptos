@@ -5,8 +5,7 @@
  * The browser runs headed because Urbania's Cloudflare rule answers 403 to
  * headless Chromium and 200 to the same browser headed, regardless of channel.
  * Set SCRAPER_HEADLESS=1 to check whether that has changed. Running headed means
- * the scheduled job needs a logged-in GUI session, which is why it is a launchd
- * agent in the `gui/` domain rather than a daemon.
+ * a run needs a logged-in GUI session.
  *
  * Channels are tried in order (installed Chrome first, then Playwright's
  * Chromium) so the machine does not need a Chrome install to work.

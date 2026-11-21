@@ -419,7 +419,7 @@ Usage:
   pnpm process [file]                           - Process legacy JSON result files
 
 Environment:
-  SCRAPER_ENABLED=false      Skip the run entirely, without touching launchd
+  SCRAPER_ENABLED=false      Skip the run entirely
   SCRAPER_ENGINE=puppeteer   Use Puppeteer instead of Playwright
   SCRAPER_HEADLESS=1         Run headless (Urbania answers 403 to headless Chromium)
   PLAYWRIGHT_CHANNEL=chrome  Pin a browser channel instead of trying chrome then chromium
