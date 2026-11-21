@@ -169,6 +169,27 @@ const CHECKS = [
       await page.waitForSelector('[style*="--cols"] > div', { timeout: 30_000 });
     },
   },
+  {
+    name: 'district-panel',
+    path: '/mercado',
+    async run(page, fail) {
+      if (!(await page.getByText('Pasa el mouse sobre un distrito').count())) fail('no panel hint before a hover');
+      const canvas = page.locator('canvas.maplibregl-canvas').first();
+      await canvas.waitFor({ timeout: 60_000 });
+      await canvas.scrollIntoViewIfNeeded();
+      await page.waitForTimeout(3_000);
+      const box = await canvas.boundingBox();
+      if (!box) return fail('no map canvas');
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 5 });
+      await page.waitForTimeout(1_000);
+      const panel = page.locator('[data-district-panel]');
+      if (!(await panel.getByText('Población').count())) fail('panel shows no "Población" after a hover');
+      if (!(await panel.getByText('Estratos de ingreso').count())) fail('panel shows no strata after a hover');
+      await page.mouse.move(5, 5);
+      await page.waitForTimeout(500);
+      if (!(await panel.getByText('Población').count())) fail('panel cleared when the mouse left the map');
+    },
+  },
 ];
 
 for (const check of CHECKS) {
