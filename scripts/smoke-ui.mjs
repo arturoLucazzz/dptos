@@ -12,6 +12,8 @@ const PAGES = [
   { path: '/departamentos?tea=7&inicial=20', texts: ['Supuestos: TEA', 'supuestos del enlace'] },
   { path: '/mercado', texts: ['Alquiler mensual vs precio de venta', 'Nuestras fuentes', 'Estudios', 'Voces del mercado', 'Noticias'] },
   { path: '/inversiones', texts: ['Mis inversiones', '+ Nueva inversión'] },
+  { path: '/configuracion', texts: ['Configuración', 'Duplicados'] },
+  { path: '/configuracion/duplicados', texts: ['Duplicados'] },
 ];
 // Steps that click through from a page: open it, click the link, expect the texts on the next page.
 const FLOWS = [
