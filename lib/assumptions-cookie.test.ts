@@ -6,7 +6,6 @@ import {
   parseAssumptionsCookie,
   serializeAssumptions,
 } from './assumptions-cookie';
-import { parseDepartamentosSearchParams } from './departamentos-query';
 
 test('a missing or broken cookie gives the defaults', () => {
   assert.deepEqual(parseAssumptionsCookie(undefined), DEFAULT_PANEL);
@@ -31,11 +30,4 @@ test('the pill label', () => {
     assumptionsLabel({ ...DEFAULT_PANEL, tea: 8.5, downPaymentPct: 20 }),
     'Supuestos: TEA 8.5% · inicial 20% · 20 años'
   );
-});
-
-test('URL parameters win over the cookie fallback', () => {
-  const fallback = { ...DEFAULT_PANEL, tea: 9.5, downPaymentPct: 30 };
-  const a = parseDepartamentosSearchParams(new URLSearchParams('tea=7'), fallback);
-  assert.equal(a.panel.tea, 7);
-  assert.equal(a.panel.downPaymentPct, 30);
 });

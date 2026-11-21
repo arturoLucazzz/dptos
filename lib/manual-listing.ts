@@ -307,31 +307,3 @@ export function validateManualListing(raw: unknown, newId: () => string): Result
   const bag = asBag(raw);
   return bag.project !== undefined || bag.mode === 'project' ? validateProject(bag, newId) : validateUnit(bag, newId);
 }
-
-/**
- * Form fields to the shape `validateManualListing` reads: `project.name` goes under
- * `project`, `units.2.price` under `units[2]`, everything else stays flat.
- */
-export function rawFromFormEntries(entries: Iterable<[string, unknown]>): Bag {
-  const raw: Bag = {};
-  const project: Bag = {};
-  const units: Bag[] = [];
-  for (const [key, value] of entries) {
-    if (typeof value !== 'string') continue;
-    const unitMatch = /^units\.(\d+)\.(\w+)$/.exec(key);
-    if (unitMatch) {
-      const index = Number(unitMatch[1]);
-      if (index >= MAX_UNITS) continue;
-      units[index] = { ...units[index], [unitMatch[2]]: value };
-    } else if (key.startsWith('project.')) {
-      project[key.slice('project.'.length)] = value;
-    } else {
-      raw[key] = value;
-    }
-  }
-  if (raw.mode === 'project') {
-    raw.project = project;
-    raw.units = Array.from(units, (unit) => unit ?? {});
-  }
-  return raw;
-}

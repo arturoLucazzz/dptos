@@ -1,5 +1,5 @@
 /**
- * Reads the /zonas form: a Google Maps link or typed coordinates, and the zone fields
+ * Reads the zone form: a Google Maps link or typed coordinates, and the zone fields
  * (for a zone drawn on the map, only the name, rating, and note),
  * with the Spanish errors the form shows next to each field.
  */
