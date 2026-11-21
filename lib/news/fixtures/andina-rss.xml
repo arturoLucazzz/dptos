@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0">
+  <channel xmlns:media="https://search.yahoo.com/mrss/">
+    <title>Agencia Peruana de Noticias Andina</title>
+    <link>https://andina.pe/</link>
+    <item>
+      <guid isPermaLink="true">https://andina.pe/agencia/noticia-vivienda-1.aspx</guid>
+      <link>https://andina.pe/agencia/noticia-vivienda-1.aspx</link>
+      <title>Ministerio de Vivienda culmina construcción de cámaras de bombeo</title>
+      <description>Texto que no se guarda.</description>
+      <pubDate>Fri, 20 Nov 2026 21:00:00 -0500</pubDate>
+    </item>
+    <item>
+      <link>https://andina.pe/agencia/noticia-deporte-2.aspx</link>
+      <title>Deportes: resultados</title>
+      <pubDate>Fri, 20 Nov 2026 20:00:00 -0500</pubDate>
+    </item>
+  </channel>
+</rss>
