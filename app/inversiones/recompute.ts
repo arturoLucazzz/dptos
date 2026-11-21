@@ -1,6 +1,6 @@
 /**
  * The recompute step after a zone change: score every apartment again, then expire the
- * listings memo so the next read shows the new scores. Shared by /zonas and the workspace map.
+ * listings memo so the next read shows the new scores. Used by the workspace map.
  *
  * Not a 'use server' file on purpose: it is a step the actions call, not an action itself.
  * It does not revalidate paths; the caller decides (the workspace must not re-render).

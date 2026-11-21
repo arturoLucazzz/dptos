@@ -8,8 +8,6 @@ const [baseUrl = 'http://localhost:3100', outDir = '/tmp/dptos-smoke'] = process
 
 const PAGES = [
   { path: '/', texts: ['Inicio', 'Continuar', 'Mis inversiones', 'Mercado', 'Supuestos: TEA', 'Recomendados'] },
-  { path: '/departamentos', texts: ['Supuestos: TEA'] },
-  { path: '/departamentos?tea=7&inicial=20', texts: ['Supuestos: TEA', 'supuestos del enlace'] },
   { path: '/mercado', texts: ['Alquiler mensual vs precio de venta', 'Nuestras fuentes', 'Estudios', 'Voces del mercado', 'Noticias'] },
   { path: '/inversiones', texts: ['Mis inversiones', '+ Nueva inversión'] },
   { path: '/configuracion', texts: ['Configuración', 'Duplicados'] },
@@ -21,6 +19,8 @@ const FLOWS = [
   { name: 'inversion-workspace', from: '/inversiones', link: 'main a[href^="/inversiones/"]', texts: ['elegido'], desktopTexts: ['Comparar'], desktopWait: 'canvas.maplibregl-canvas' },
 ];
 FLOWS.push({ name: 'inversion-comparar', from: '/inversiones', link: 'main a[href^="/inversiones/"]', then: '/comparar', texts: ['Comparar', 'Precio por m²', 'Rentabilidad bruta'] });
+// Removed pages: a bookmarked old URL must answer 404 (the Next.js not-found page) with no page error.
+const GONE = ['/departamentos', '/departamentos?tea=7&inicial=20', '/favoritos', '/zonas', '/estadisticas', '/alertas', '/agregar'];
 const SIZES = [
   { name: 'desktop', width: 1440, height: 900 },
   { name: 'phone', width: 390, height: 844 },
@@ -50,6 +50,23 @@ for (const size of SIZES) {
     }
     const file = `${outDir}/${path === '/' ? 'inicio' : path.slice(1).replace(/[^a-z0-9]+/gi, '-')}-${size.name}.png`;
     await page.screenshot({ path: file, fullPage: false }).catch(() => {});
+    await context.close();
+  }
+  for (const path of GONE) {
+    const context = await browser.newContext({ viewport: { width: size.width, height: size.height } });
+    const page = await context.newPage();
+    const label = `${path} (gone) @ ${size.name}`;
+    page.on('pageerror', (e) => failures.push(`${label}: page error: ${e.message}`));
+    page.on('console', (m) => {
+      // The browser logs the 404 document itself as a console error; any other error counts.
+      if (m.type() === 'error' && !m.text().includes('Failed to load resource')) failures.push(`${label}: console error: ${m.text()}`);
+    });
+    try {
+      const response = await page.goto(baseUrl + path, { waitUntil: 'networkidle', timeout: 60_000 });
+      if (response?.status() !== 404) failures.push(`${label}: expected 404, got ${response?.status()}`);
+    } catch (e) {
+      failures.push(`${label}: ${e.message}`);
+    }
     await context.close();
   }
   for (const flow of FLOWS) {

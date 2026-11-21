@@ -30,8 +30,6 @@ import {
  */
 function refreshPages() {
   revalidatePath('/');
-  revalidatePath('/departamentos');
-  revalidatePath('/favoritos');
 }
 
 function refreshListings() {
