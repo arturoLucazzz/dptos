@@ -283,7 +283,8 @@ model Property {
   duplicatesAsA DuplicateCandidate[] @relation("DuplicateA")
   duplicatesAsB DuplicateCandidate[] @relation("DuplicateB")
 
-  location PropertyLocation?
+  location        PropertyLocation?
+  investmentItems InvestmentItem[]
 
   @@index([districtSlug])
   @@index([fingerprint])
@@ -315,8 +316,9 @@ model Project {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  postings   Posting[]
-  properties Property[]
+  postings        Posting[]
+  properties      Property[]
+  investmentItems InvestmentItem[]
 
   @@index([districtSlug])
   @@index([nameNorm])
@@ -374,14 +376,14 @@ model Assumptions {
   usdPen Decimal @db.Decimal(6, 3)
 
   // ---- Financing defaults, all editable in the UI ----
-  downPaymentPct Decimal @db.Decimal(5, 2)
+  downPaymentPct        Decimal @db.Decimal(5, 2)
   /// Lowest down payment, as % of price, that banks usually accept. Drives a warning.
   bankMinDownPaymentPct Decimal @default(20) @db.Decimal(5, 2)
   /// Rate of the loan itself. Splits the payment into interest and principal.
-  tea            Decimal @db.Decimal(5, 2)
+  tea                   Decimal @db.Decimal(5, 2)
   /// Includes life and property insurance and fees, so it is the real cash outflow.
-  tcea           Decimal @db.Decimal(5, 2)
-  termYears      Int
+  tcea                  Decimal @db.Decimal(5, 2)
+  termYears             Int
 
   // ---- Rental assumptions ----
   vacancyMonthsPerYear    Decimal @db.Decimal(4, 2)
@@ -422,6 +424,7 @@ model Assumptions {
 enum ZoneKind {
   DISTRICT
   CIRCLE
+  POLYGON
 }
 
 enum LocationStatus {
@@ -451,6 +454,8 @@ model Zone {
   latitude     Decimal? @db.Decimal(10, 7)
   longitude    Decimal? @db.Decimal(10, 7)
   radiusM      Int?
+  /// POLYGON zones: ring of [lon, lat] pairs, like DistrictStat.boundary.
+  boundary     Json?
   rating       Int
   notes        String?
   createdAt    DateTime @default(now())
@@ -459,10 +464,10 @@ model Zone {
 
 /// Per-district numbers typed from INEI and police reports, with their source and date.
 model DistrictStat {
-  slug               String   @id
-  name               String
+  slug     String @id
+  name     String
   /// District polygon rings from OpenStreetMap, [lon, lat] pairs.
-  boundary           Json?
+  boundary Json?
 }
 
 /// The stored location score and local rent of one apartment, recomputed by the refresh step.
@@ -496,4 +501,33 @@ model Statistic {
 
   @@unique([place, indicator, period])
   @@index([indicator])
+}
+
+/// A named workspace of filters and picked apartments or projects.
+model Investment {
+  id           String           @id @default(cuid())
+  name         String
+  filters      Json             @default("{}")
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  lastOpenedAt DateTime         @default(now())
+  items        InvestmentItem[]
+}
+
+/// One pick in an investment: exactly one of propertyId and projectId is set.
+model InvestmentItem {
+  id           String     @id @default(cuid())
+  investmentId String
+  investment   Investment @relation(fields: [investmentId], references: [id], onDelete: Cascade)
+  propertyId   String?
+  property     Property?  @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  projectId    String?
+  project      Project?   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  note         String?
+  position     Int
+  createdAt    DateTime   @default(now())
+
+  @@unique([investmentId, propertyId])
+  @@unique([investmentId, projectId])
+  @@index([investmentId, position])
 }

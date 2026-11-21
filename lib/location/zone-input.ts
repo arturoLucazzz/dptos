@@ -1,5 +1,6 @@
 /**
- * Reads the /zonas form: a Google Maps link or typed coordinates, and the zone fields,
+ * Reads the /zonas form: a Google Maps link or typed coordinates, and the zone fields
+ * (for a zone drawn on the map, only the name, rating, and note),
  * with the Spanish errors the form shows next to each field.
  */
 
@@ -7,7 +8,7 @@ import type { LatLon } from './geo';
 import { isLimaDistrict } from './lima-districts';
 
 export const DEFAULT_RADIUS_M = 400;
-const LIMA_BOX = { latMin: -12.55, latMax: -11.55, lonMin: -77.25, lonMax: -76.6 };
+export const LIMA_BOX = { latMin: -12.55, latMax: -11.55, lonMin: -77.25, lonMax: -76.6 };
 
 const NUM = '(-?\\d{1,3}(?:\\.\\d+)?)';
 const PATTERNS = [
@@ -31,7 +32,7 @@ export function parseCoordinates(text: string): LatLon | null {
 
 export interface ZoneData {
   name: string;
-  kind: 'DISTRICT' | 'CIRCLE';
+  kind: 'DISTRICT' | 'CIRCLE' | 'POLYGON';
   districtSlug: string | null;
   lat: number | null;
   lon: number | null;
@@ -52,7 +53,13 @@ export function validateZoneInput(
   if (ratingText === '' || !Number.isInteger(rating) || rating < 0 || rating > 10) errors.rating = 'La nota va de 0 a 10';
 
   const notes = (raw.notes ?? '').trim() || null;
-  const kind = raw.kind === 'DISTRICT' ? 'DISTRICT' : 'CIRCLE';
+  const kind = raw.kind === 'DISTRICT' ? 'DISTRICT' : raw.kind === 'POLYGON' ? 'POLYGON' : 'CIRCLE';
+
+  // A drawn zone keeps its shape from the map (validatePolygon); the form edits only the rest.
+  if (kind === 'POLYGON') {
+    if (Object.keys(errors).length > 0) return { ok: false, errors };
+    return { ok: true, zone: { name, kind, districtSlug: null, lat: null, lon: null, radiusM: null, rating, notes } };
+  }
 
   if (kind === 'DISTRICT') {
     const slug = (raw.districtSlug ?? '').trim();

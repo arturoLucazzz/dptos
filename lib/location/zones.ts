@@ -1,5 +1,5 @@
 /**
- * Owner zones: a whole district or a point with a radius, each rated 0 to 10.
+ * Owner zones: a whole district, a point with a radius, or an area drawn on the map, each rated 0 to 10.
  * A zone reaches 1 inside and fades in a straight line to 0 at ZONE_FADE_M past its edge.
  */
 
@@ -10,6 +10,7 @@ export const ZONE_FADE_M = 500;
 export type ZoneShape = { id: string; name: string; rating: number } & (
   | { kind: 'CIRCLE'; lat: number; lon: number; radiusM: number }
   | { kind: 'DISTRICT'; districtSlug: string; rings: Ring[] }
+  | { kind: 'POLYGON'; rings: Ring[] }
 );
 
 export function zoneReach(p: LatLon, zone: ZoneShape): { reach: number; distanceToEdgeM: number } {

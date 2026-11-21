@@ -94,6 +94,11 @@ const SORT_LABELS: Record<DepartamentosSortId, string> = {
   descuento: "% vs precio justo",
   inicial100: "% inicial necesario",
   location: "ubicación",
+  grossYield: "rentabilidad bruta",
+  cashReturn: "rinde sobre efectivo",
+  pricePerM2: "precio por m²",
+  entryCost: "efectivo día 1",
+  newest: "más nuevos",
 };
 
 function SortHeader({

@@ -15,11 +15,17 @@ import {
 import {
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { useInicioInversion } from "./inicio-inversion";
+import { grossYieldPct } from "@/lib/gross-yield";
 import { moneyLine, RECO_TABS, type RecoMode } from "@/lib/home";
 import type { HomeRow } from "@/lib/home-rows";
+
+function yieldText(rent: number | null, price: number): string {
+  const y = grossYieldPct(rent, price);
+  return y == null ? "-" : `${y.toFixed(1)} %`;
+}
 
 const FIRST = 16;
 const STEP = 8;
@@ -96,6 +102,7 @@ function Head({ label }: { label: string }) {
 
 /** The server sends one page of the first tab; the rest is fetched as the person asks. */
 export function Recommendations({ initial }: { initial: Reco }) {
+  const { isAdded, toggle } = useInicioInversion();
   const [mode, setMode] = useState<RecoMode>("gain");
   const [data, setData] = useState<Reco>(initial);
   const [loading, setLoading] = useState(false);
@@ -126,8 +133,7 @@ export function Recommendations({ initial }: { initial: Reco }) {
   const hasMore = data.hasMore;
 
   return (
-    <TooltipProvider>
-      <section className="space-y-3">
+    <section className="space-y-3">
         <h2 className="text-lg font-semibold">Recomendados</h2>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap gap-1.5">
@@ -197,7 +203,12 @@ export function Recommendations({ initial }: { initial: Reco }) {
             style={{ ["--cols" as string]: cols }}
           >
             {list.map((r) => (
-              <ListingCard key={r.postingId} row={r} />
+              <ListingCard
+                key={r.postingId}
+                row={r}
+                added={isAdded(r.propertyId)}
+                onAdd={() => toggle(r)}
+              />
             ))}
           </div>
         ) : (
@@ -268,9 +279,7 @@ export function Recommendations({ initial }: { initial: Reco }) {
                         {money ? money.text : "-"}
                       </TableCell>
                       <TableCell>
-                        {r.grossRentPen != null && r.pricePen > 0
-                          ? `${(((r.grossRentPen * 12) / r.pricePen) * 100).toFixed(1)} %`
-                          : "-"}
+                        {yieldText(r.grossRentPen, r.pricePen)}
                       </TableCell>
                       <TableCell>
                         {r.entryCostPen == null ? "-" : pen(r.entryCostPen)}
@@ -282,7 +291,13 @@ export function Recommendations({ initial }: { initial: Reco }) {
                         />
                       </TableCell>
                       <TableCell className="group">
-                        <AddButton propertyId={r.propertyId} always />
+                        {r.propertyId && (
+                          <AddButton
+                            added={isAdded(r.propertyId)}
+                            onAdd={() => toggle(r)}
+                            always
+                          />
+                        )}
                       </TableCell>
                     </TableRow>
                   );
@@ -310,6 +325,5 @@ export function Recommendations({ initial }: { initial: Reco }) {
           </div>
         )}
       </section>
-    </TooltipProvider>
   );
 }

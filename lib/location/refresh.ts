@@ -34,6 +34,37 @@ function firstCoordinates(
   return null;
 }
 
+/** What zoneShapes reads from a Zone row. Decimals may come as Prisma.Decimal, numbers, or null. */
+export interface ZoneRowInput {
+  id: string;
+  name: string;
+  rating: number;
+  kind: string;
+  districtSlug: string | null;
+  latitude: Prisma.Decimal | number | null;
+  longitude: Prisma.Decimal | number | null;
+  radiusM: number | null;
+  boundary: unknown;
+}
+
+/** Zone rows as score shapes. A zone with nothing to place it by (no boundary) is skipped. */
+export function zoneShapes(rows: readonly ZoneRowInput[], districtBoundaries: Map<string, Ring[] | null>): ZoneShape[] {
+  const zones: ZoneShape[] = [];
+  for (const z of rows) {
+    if (z.kind === ZoneKind.CIRCLE && z.latitude != null && z.longitude != null && z.radiusM != null) {
+      zones.push({ id: z.id, name: z.name, rating: z.rating, kind: 'CIRCLE', lat: Number(z.latitude), lon: Number(z.longitude), radiusM: z.radiusM });
+    } else if (z.kind === ZoneKind.DISTRICT && z.districtSlug) {
+      const rings = districtBoundaries.get(z.districtSlug);
+      // No boundary (location:places never ran): the zone cannot be placed, so it is skipped.
+      if (rings && rings.length > 0) zones.push({ id: z.id, name: z.name, rating: z.rating, kind: 'DISTRICT', districtSlug: z.districtSlug, rings });
+    } else if (z.kind === ZoneKind.POLYGON && Array.isArray(z.boundary) && z.boundary.length > 0) {
+      // A drawn zone takes the same polygon path as a district.
+      zones.push({ id: z.id, name: z.name, rating: z.rating, kind: 'POLYGON', rings: z.boundary as Ring[] });
+    }
+  }
+  return zones;
+}
+
 export async function loadScoreInput(db: PrismaClient): Promise<ScoreInput> {
   const runs = await db.scrapeRun.findMany({
     where: { status: { in: [ScrapeStatus.SUCCESS, ScrapeStatus.PARTIAL] } },
@@ -118,16 +149,7 @@ export async function loadScoreInput(db: PrismaClient): Promise<ScoreInput> {
     readLatestStats(db),
   ]);
   const boundaries = new Map(statRows.map((s) => [s.slug, s.boundary as Ring[] | null]));
-  const zones: ZoneShape[] = [];
-  for (const z of zoneRows) {
-    if (z.kind === ZoneKind.CIRCLE && z.latitude != null && z.longitude != null && z.radiusM != null) {
-      zones.push({ id: z.id, name: z.name, rating: z.rating, kind: 'CIRCLE', lat: Number(z.latitude), lon: Number(z.longitude), radiusM: z.radiusM });
-    } else if (z.kind === ZoneKind.DISTRICT && z.districtSlug) {
-      const rings = boundaries.get(z.districtSlug);
-      // No boundary (location:places never ran): the zone cannot be placed, so it is skipped.
-      if (rings && rings.length > 0) zones.push({ id: z.id, name: z.name, rating: z.rating, kind: 'DISTRICT', districtSlug: z.districtSlug, rings });
-    }
-  }
+  const zones = zoneShapes(zoneRows, boundaries);
 
   return {
     subjects,

@@ -81,3 +81,18 @@ test('pickZone returns null when no zone reaches the point', () => {
   assert.equal(pickZone({ lat: -12.2, lon: -77.0 }, [z]), null);
   assert.equal(pickZone({ lat: -12.2, lon: -77.0 }, []), null);
 });
+
+test('a POLYGON zone scores a point like a DISTRICT zone with the same rings', () => {
+  const rings = [squareRing(-12.1, -77.03)];
+  const district: ZoneShape = { id: 'd', name: 'San Isidro', rating: 9, kind: 'DISTRICT', districtSlug: 'san-isidro', rings };
+  const drawn: ZoneShape = { id: 'p', name: 'Mi zona', rating: 9, kind: 'POLYGON', rings };
+  for (const p of [
+    { lat: -12.1, lon: -77.03 },
+    { lat: -12.1 + 0.0045 + 200 / M_PER_DEG_LAT, lon: -77.03 },
+    { lat: -12.2, lon: -77.03 },
+  ]) {
+    assert.deepEqual(zoneReach(p, drawn), zoneReach(p, district));
+  }
+  assert.equal(zoneReach({ lat: -12.1, lon: -77.03 }, drawn).reach, 1);
+  assert.equal(pickZone({ lat: -12.1, lon: -77.03 }, [drawn])?.zone.id, 'p');
+});

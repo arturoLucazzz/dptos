@@ -3,6 +3,7 @@
  */
 
 import type { DepartamentosRow } from './departamentos-query';
+import { grossYieldPct } from './gross-yield';
 import { median } from './linalg';
 
 export type HomeKpis = {
@@ -16,9 +17,10 @@ export function homeKpis(
   sales: Pick<DepartamentosRow, 'pricePen' | 'grossRentPen'>[],
   rentPrices: number[],
 ): HomeKpis {
-  const yields = sales.flatMap((r) =>
-    r.grossRentPen != null && r.pricePen > 0 ? [((r.grossRentPen * 12) / r.pricePen) * 100] : [],
-  );
+  const yields = sales.flatMap((r) => {
+    const y = grossYieldPct(r.grossRentPen, r.pricePen);
+    return y == null ? [] : [y];
+  });
   return {
     typicalSalePen: sales.length ? median(sales.map((r) => r.pricePen)) : null,
     typicalRentPen: rentPrices.length ? median(rentPrices) : null,
@@ -49,9 +51,7 @@ function sortValue(row: RecoRow, mode: RecoMode): number | null {
     case 'gain':
       return row.monthlyGainPen;
     case 'yield':
-      return row.grossRentPen != null && row.pricePen > 0
-        ? ((row.grossRentPen * 12) / row.pricePen) * 100
-        : null;
+      return grossYieldPct(row.grossRentPen, row.pricePen);
     case 'below':
       return row.discountPct;
     case 'location':

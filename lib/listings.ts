@@ -88,7 +88,7 @@ export async function loadSaleListings(): Promise<ListingsPage> {
       propertyId: true,
       firstSeenAt: true,
       lastSeenAt: true,
-      property: { select: { favorite: true, discarded: true } },
+      property: { select: { favorite: true, discarded: true, latitude: true, longitude: true } },
       currentSnapshot: {
         select: {
           pricePen: true,
@@ -345,6 +345,8 @@ export async function loadSaleListings(): Promise<ListingsPage> {
       address: snapshot.address,
       title: snapshot.title,
       imageUrl: snapshot.imageUrl,
+      lat: posting.property?.latitude == null ? null : Number(posting.property.latitude),
+      lon: posting.property?.longitude == null ? null : Number(posting.property.longitude),
       favorite: posting.property?.favorite ?? false,
       discarded: posting.property?.discarded ?? false,
     });
@@ -428,7 +430,7 @@ async function loadLocations(propertyIds: string[]): Promise<Map<string, StoredL
   );
 }
 
-async function latestScrapeCacheKey(): Promise<string> {
+export async function latestScrapeCacheKey(): Promise<string> {
   const run = await prisma.scrapeRun.findFirst({
     where: { status: { in: [ScrapeStatus.SUCCESS, ScrapeStatus.PARTIAL] } },
     orderBy: { startedAt: 'desc' },
@@ -452,7 +454,7 @@ const memoHolder = globalThis as unknown as {
 };
 
 /** Changes when the row shape does, so a dev reload never serves rows of an older shape. */
-const SHAPE_VERSION = 'rows-v4-location';
+const SHAPE_VERSION = 'rows-v5-coordinates';
 
 /** Flip one favorite in the memoized rows, so a toggle does not drop the whole universe. */
 export async function patchSaleListingFavorite(propertyId: string, favorite: boolean): Promise<void> {
@@ -469,6 +471,8 @@ export async function patchSaleListingFavorite(propertyId: string, favorite: boo
 /** Drop the memo; call it wherever a write changes what the rows show. */
 export function invalidateSaleListings(): void {
   memoHolder.__saleListingsMemo = undefined;
+  // The project rows come from the same scrape and the same writes.
+  (globalThis as { __projectRowsMemo?: unknown }).__projectRowsMemo = undefined;
 }
 
 /**

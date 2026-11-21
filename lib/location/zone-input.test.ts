@@ -71,3 +71,12 @@ test('validateZoneInput rejects a district outside Lima and accepts one inside',
   assert.equal(good.ok, true);
   if (good.ok) assert.deepEqual(good.zone, { name: 'San Isidro', kind: 'DISTRICT', districtSlug: 'san-isidro', lat: null, lon: null, radiusM: null, rating: 9, notes: 'Casi siempre bonito' });
 });
+
+test('validateZoneInput for a drawn zone reads only the name, rating, and note', () => {
+  const r = validateZoneInput({ name: ' Mi zona ', kind: 'POLYGON', rating: '7', notes: ' tranquila ', coordinates: 'x', radiusM: '1' });
+  assert.equal(r.ok, true);
+  if (r.ok) assert.deepEqual(r.zone, { name: 'Mi zona', kind: 'POLYGON', districtSlug: null, lat: null, lon: null, radiusM: null, rating: 7, notes: 'tranquila' });
+  const bad = validateZoneInput({ name: '', kind: 'POLYGON', rating: '12' });
+  assert.equal(bad.ok, false);
+  if (!bad.ok) assert.deepEqual(Object.keys(bad.errors).sort(), ['name', 'rating']);
+});

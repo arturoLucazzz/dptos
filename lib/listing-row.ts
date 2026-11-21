@@ -92,6 +92,9 @@ export interface ListingRow {
   /** 0–100 shortlist score for likelihood of a price cut. */
   priceCutScore: number;
   qualityFlags: string[];
+  /** Property coordinates, when known. */
+  lat: number | null;
+  lon: number | null;
   address: string | null;
   title: string | null;
   imageUrl: string | null;
