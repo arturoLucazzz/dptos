@@ -1,8 +1,11 @@
 import type { ReactNode } from "react";
 import { constructionRows, rentVsSaleRows, yieldRows } from "@/lib/market-chart-rows";
 import { loadMarketDashboard } from "@/lib/market-dashboard";
+import { loadDistrictMap } from "@/lib/district-map-load";
 import { KpiStrip } from "../inicio/kpi-strip";
 import { ChartCard, ConstructionChart, HistogramChart, RentVsSaleChart, YieldChart } from "./market-charts";
+import { DistrictMap } from "./district-map";
+import { NseBars } from "./nse-bars";
 import { SourcesTable } from "./sources-table";
 
 export const dynamic = "force-dynamic";
@@ -22,6 +25,7 @@ function Section({ title, explain, children }: { title: string; explain: string;
 
 export default async function MercadoPage() {
   const m = await loadMarketDashboard();
+  const map = await loadDistrictMap(m.districts.map((d) => d.slug));
   const SRC = "Avisos de Urbania, Adondevivir, Proper y Nexo en las últimas corridas.";
 
   return (
@@ -65,6 +69,16 @@ export default async function MercadoPage() {
           >
             <HistogramChart bins={m.histogram} />
           </ChartCard>
+        </div>
+      </Section>
+
+      <Section title="Cómo se reparte Lima" explain="Los 43 distritos pintados por un dato a la vez, y los niveles socioeconómicos de la ciudad.">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[2fr_1fr]">
+          <DistrictMap districts={map.features} metrics={map.metrics} />
+          <div className="rounded-xl border border-border bg-card p-4">
+            <h3 className="mb-3 text-sm font-semibold">Niveles socioeconómicos de Lima Metropolitana</h3>
+            <NseBars nse={map.nse} source="APEIM 2025" />
+          </div>
         </div>
       </Section>
 

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { MAP_METRICS, buildDistrictFeatures, metricScale, nseLima } from './district-map';
+import { MAP_METRICS, buildDistrictFeatures, formatMetricValue, metricScale, nseLima, roundCoordinates } from './district-map';
 import type { LatestStat } from './stats/latest';
 import type { PlaceDef } from './stats/files';
 
@@ -70,4 +70,25 @@ test('nseLima returns the five levels A to E from lima-metropolitana', () => {
     { level: 'A', pct: 5 }, { level: 'B', pct: 20 }, { level: 'C', pct: 40 }, { level: 'D', pct: 25 }, { level: 'E', pct: 10 },
   ]);
   assert.deepEqual(nseLima(latest), []);
+});
+
+test('roundCoordinates rounds to 5 decimals, keeps properties, and does not change the input', () => {
+  const fc = buildDistrictFeatures(
+    [{ slug: 'comas', name: 'COMAS', rings: [[[-77.123456789, -12.987654321], [-77.1, -12.9], [-77.2, -12.8], [-77.123456789, -12.987654321]]] }],
+    latest, places, [],
+  );
+  const out = roundCoordinates(fc);
+  assert.deepEqual(out.features[0].geometry.coordinates[0][0][0], [-77.12346, -12.98765]);
+  assert.equal(out.features[0].properties!.slug, 'comas');
+  assert.equal(fc.features[0].geometry.coordinates[0][0][0][0], -77.123456789);
+  assert.ok(JSON.stringify(out).length < JSON.stringify(fc).length);
+});
+
+test('formatMetricValue shows sin datos for null and never 0', () => {
+  assert.equal(formatMetricValue(null, '%'), 'sin datos');
+  assert.equal(formatMetricValue(0, '%'), '0 %');
+  assert.match(formatMetricValue(12.5, '%'), /^12[.,]5 %$/);
+  assert.match(formatMetricValue(4000, 'S/ al mes'), /^S\/ 4\D?000 al mes$/);
+  assert.match(formatMetricValue(31.2, 'denuncias'), /^31[.,]2 denuncias$/);
+  assert.match(formatMetricValue(3.4, null), /^3[.,]4$/);
 });

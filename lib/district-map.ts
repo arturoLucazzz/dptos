@@ -88,6 +88,28 @@ export function metricScale(values: (number | null)[], steps = 5): number[] {
   return breaks;
 }
 
+/** A copy of the districts with coordinates rounded (5 decimals is about 1 m), so less goes to the browser. */
+export function roundCoordinates<P>(fc: FeatureCollection<MultiPolygon, P>, decimals = 5): FeatureCollection<MultiPolygon, P> {
+  const k = 10 ** decimals;
+  const r = (n: number) => Math.round(n * k) / k;
+  return {
+    ...fc,
+    features: fc.features.map((f) => ({
+      ...f,
+      geometry: { ...f.geometry, coordinates: f.geometry.coordinates.map((poly) => poly.map((ring) => ring.map(([x, y]) => [r(x), r(y)] as [number, number]))) },
+    })),
+  };
+}
+
+/** A statistic for screen: "sin datos" for null (never 0), the number with its unit otherwise. */
+export function formatMetricValue(value: number | null, unit: string | null): string {
+  if (value === null) return 'sin datos';
+  const n = value.toLocaleString('es-PE', { maximumFractionDigits: 1 });
+  if (!unit) return n;
+  if (unit.startsWith('S/')) return `S/ ${n}${unit.slice(2)}`;
+  return `${n} ${unit}`;
+}
+
 const NSE_LEVELS = ['A', 'B', 'C', 'D', 'E'] as const;
 
 /** Household share by socioeconomic level for Lima Metropolitana; empty when the data is not loaded. */
@@ -99,28 +121,4 @@ export function nseLima(latest: LatestStats): { level: (typeof NSE_LEVELS)[numbe
     if (s) out.push({ level, pct: s.value });
   }
   return out;
-}
-
-/** Everything the page needs, read once. The database modules load here so the rest stays pure. */
-export async function loadDistrictMap(trackedSlugs: string[]) {
-  const [{ readFile }, { prisma }, { readLatestStats }, { parseIndicators, parsePlaces }, { STATS_DIR }] = await Promise.all([
-    import('node:fs/promises'),
-    import('./db'),
-    import('./stats/store'),
-    import('./stats/files'),
-    import('./stats/store'),
-  ]);
-  const [rows, latest, placesText, indicatorsText] = await Promise.all([
-    prisma.districtStat.findMany({ select: { slug: true, name: true, boundary: true } }),
-    readLatestStats(prisma),
-    readFile(`${STATS_DIR}/places.csv`, 'utf8'),
-    readFile(`${STATS_DIR}/indicators.csv`, 'utf8'),
-  ]);
-  const boundaries = rows.map((r) => ({ slug: r.slug, name: r.name, rings: (r.boundary as Ring[] | null) ?? [] }));
-  const places = parsePlaces(placesText);
-  return {
-    features: buildDistrictFeatures(boundaries, latest, places, trackedSlugs),
-    metrics: mapMetrics(latest, parseIndicators(indicatorsText)),
-    nse: nseLima(latest),
-  };
 }
