@@ -1,9 +1,9 @@
 /**
- * Proper's JSON into cards: one PROJECT card per project and one UNIT card per
- * apartment, so each unit ranks at its own price.
+ * Proper's JSON into cards: one PROJECT card per project, and one UNIT card per
+ * apartment for immediate delivery.
  *
- * Proper's own expected rent, ROI and TIR per unit are the source's estimate,
- * not an observed rent. They stay in `raw` and feed nothing else.
+ * Proper's own expected rent and ROI are the source's estimate, not an observed
+ * rent. They stay in `raw` and feed nothing else.
  */
 
 import { districtSlugFromName } from '../../config/districts';
@@ -54,73 +54,46 @@ function price(moneda: unknown, pen: unknown, usd: unknown): { amount: number | 
 }
 
 /**
- * Cards of one project from its `/_next/data` answer: the project first, then
- * its units. Throws when the answer holds no project, so the caller can count
- * the fetch as failed instead of the project as empty.
+ * The PROJECT card from a `proyecto_profile/<slug>/` answer (`{proyecto}`).
+ * Proper no longer publishes per-unit prices, so a project is one card. The
+ * profile has no currency: the list's `tipo_moneda` says it, "pen" when absent.
+ * Throws when the answer holds no project, so the caller counts a failed fetch.
  */
-export function parseProperProject(json: unknown, slug: string): ListingCard[] {
-  const props = isRecord(json) && isRecord(json.pageProps) ? json.pageProps.props : null;
-  const proyecto = isRecord(props) && isRecord(props.proyecto) ? props.proyecto : null;
-  if (!isRecord(props) || !proyecto) throw new Error(`Proper project ${slug}: no proyecto in the answer`);
+export function parseProperProfile(json: unknown, slug: string, images: string[], moneda?: string | null): ListingCard[] {
+  const proyecto = isRecord(json) && isRecord(json.proyecto) ? json.proyecto : null;
+  if (!proyecto) throw new Error(`Proper project ${slug}: no proyecto in the answer`);
 
   const name = str(proyecto.nombre);
   const districtName = str(proyecto.distrito);
-  const districtSlug = districtSlugFromName(districtName);
-  const url = properProjectUrl(slug);
-  const units = Array.isArray(props.departamentos) ? props.departamentos.filter(isRecord) : [];
-  const unitMoneda = units[0]?.tipo_moneda;
-  const from = price(unitMoneda ?? proyecto.tipo_moneda, proyecto.precio_desde, proyecto.precio_desde_dolar);
-  const images = imageUrlsOf(props.imagenes);
+  const from = price(moneda ?? 'pen', proyecto.precio_desde, proyecto.precio_desde);
 
-  const shared = { buildingName: name, districtName, districtSlug, url };
-
-  const project = emptyCard('proper', {
-    ...shared,
-    kind: 'PROJECT',
-    sourcePostingId: slug,
-    operation: 'SALE',
-    priceAmount: from.amount,
-    priceCurrency: from.currency,
-    priceIsFrom: true,
-    areaMin: num(proyecto.area_desde),
-    areaMax: num(proyecto.area_hasta),
-    bedroomsMin: num(proyecto.dorms_desde),
-    bedroomsMax: num(proyecto.dorms_hasta),
-    unitsCount: num(proyecto.nro_dptos),
-    developmentStage: str(proyecto.etapa),
-    deliveryDate: str(proyecto.fecha_entrega),
-    // coordenada_A is the latitude (about -12 in Lima), coordenada_B the longitude.
-    latitude: num(proyecto.coordenada_A),
-    longitude: num(proyecto.coordenada_B),
-    imageUrls: images,
-    imageUrl: images[0] ?? null,
-    raw: proyecto,
-  });
-
-  const unitCards = units.map((unit) => {
-    const unitPrice = price(unit.tipo_moneda, unit.precio, unit.precio_dolar);
-    const id = String(unit.id);
-    return emptyCard('proper', {
-      ...shared,
-      kind: 'UNIT',
-      sourcePostingId: `${slug}-${id}`,
-      projectSourceId: slug,
+  return [
+    emptyCard('proper', {
+      buildingName: name,
+      districtName,
+      districtSlug: districtSlugFromName(districtName),
+      url: properProjectUrl(slug),
+      kind: 'PROJECT',
+      sourcePostingId: slug,
       operation: 'SALE',
-      unitNumber: str(unit.nro_depa) ?? (typeof unit.nro_depa === 'number' ? String(unit.nro_depa) : null),
-      priceAmount: unitPrice.amount,
-      priceCurrency: unitPrice.currency,
-      areaTotal: num(unit.unit_area),
-      bedrooms: num(unit.nro_dormitorios),
-      bathrooms: num(unit.nro_banos),
-      developmentStage: project.developmentStage,
-      deliveryDate: project.deliveryDate,
-      latitude: project.latitude,
-      longitude: project.longitude,
-      raw: unit,
-    });
-  });
-
-  return [project, ...unitCards];
+      priceAmount: from.amount,
+      priceCurrency: from.currency,
+      priceIsFrom: true,
+      areaMin: num(proyecto.area_desde),
+      areaMax: num(proyecto.area_hasta),
+      bedroomsMin: num(proyecto.dorms_desde),
+      bedroomsMax: num(proyecto.dorms_hasta),
+      unitsCount: num(proyecto.nro_dptos),
+      developmentStage: str(proyecto.etapa),
+      deliveryDate: str(proyecto.fecha_entrega),
+      // coordenada_A is the latitude (about -12 in Lima), coordenada_B the longitude.
+      latitude: num(proyecto.coordenada_A),
+      longitude: num(proyecto.coordenada_B),
+      imageUrls: images,
+      imageUrl: images[0] ?? null,
+      raw: proyecto,
+    }),
+  ];
 }
 
 /**

@@ -15,7 +15,7 @@ import { checkSource, fillRates, type FillRates } from './check-report';
 import { NAVENT_BASE_URL } from './sources/navent/client';
 import { parseNaventPostings } from './sources/navent/parse';
 import { parseNexoListPage } from './sources/nexo/parse';
-import { parseProperProject } from './sources/proper/parse';
+import { parseProperProfile } from './sources/proper/parse';
 import { ADAPTERS } from './sources/registry';
 
 const DISTRICT = 'lince';
@@ -38,7 +38,7 @@ const BASELINES: Partial<Record<SourceId, () => FillRates>> = {
         DISTRICT
       ).cards
     ),
-  proper: () => fillRates(parseProperProject(JSON.parse(fixture('proper/__fixtures__/santa-beatriz.json')), 'santa-beatriz')),
+  proper: () => fillRates(parseProperProfile(JSON.parse(fixture('proper/__fixtures__/orue-profile.json')), 'orue', [])),
   nexo: () => fillRates(parseNexoListPage(fixture('nexo/__fixtures__/p1.html')).cards),
 };
 
