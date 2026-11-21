@@ -73,3 +73,28 @@ export function toListingFilter(f: HomeFilters, knownDistricts: Set<string>): Ho
 export function hasActiveFilters(f: HomeFilters): boolean {
   return Object.entries(f).some(([key, value]) => key !== 'orden' && value != null && !(Array.isArray(value) && value.length === 0));
 }
+
+/**
+ * The filters as the results apply them: junk dropped, unknown districts dropped, ranges in order.
+ * The chips and "Limpiar filtros" read this, so they never show a filter the results ignore.
+ */
+export function shownFilters(f: HomeFilters, knownDistricts: Set<string>): HomeFilters {
+  const q = toListingFilter(f, knownDistricts);
+  return {
+    precio_min: q.priceMin,
+    precio_max: q.priceMax,
+    dorm_min: q.bedroomsMin,
+    dorm_max: q.bedroomsMax,
+    distrito: q.districts.length ? q.districts : null,
+    area_min: q.areaM2Min,
+    area_max: q.areaM2Max,
+    fuente: q.sources.length ? q.sources : null,
+    ubicacion_min: q.locationMin,
+    orden: f.orden,
+  };
+}
+
+/** After a failed load: a new first page shows nothing rather than rows from the old filters. */
+export function failedLoad<T extends { rows: unknown[]; hasMore: boolean }>(data: T, firstPage: boolean): T {
+  return firstPage ? { ...data, rows: [], hasMore: false } : data;
+}

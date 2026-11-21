@@ -156,6 +156,8 @@ const CHECKS = [
       const body = await page.locator('body').innerText();
       if (!body.includes('Recomendados')) fail('no "Recomendados"');
       if ((await page.locator('[style*="--cols"] > div').count()) === 0) fail('junk values hid every card');
+      if (await page.getByRole('button', { name: 'Limpiar filtros' }).count()) fail('junk values show as active filters');
+      if (await page.getByText('desde -3').count()) fail('a negative bedroom count shows on a chip');
     },
   },
   {
