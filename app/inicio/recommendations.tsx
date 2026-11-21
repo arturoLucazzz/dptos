@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useQueryStates } from "nuqs";
 import { LayoutGrid, Table2 } from "lucide-react";
 import { AddButton, ListingCard, pen } from "@/components/listing-card";
@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useInicioInversion } from "./inicio-inversion";
 import { HomeFilterRow, type FilterPatch } from "./home-filters";
-import { hasActiveFilters, homeFilterParsers, serializeHomeFilters } from "@/lib/home-filters";
+import { failedLoad, hasActiveFilters, homeFilterParsers, serializeHomeFilters, shownFilters } from "@/lib/home-filters";
 import type { SourceId } from "@/lib/listing-card";
 import { grossYieldPct } from "@/lib/gross-yield";
 import { COLS_MAX, COLS_MIN, nextCols, parseCols } from "@/lib/inicio-cols";
@@ -154,7 +154,10 @@ export function Recommendations({
       const next = (await res.json()) as Reco;
       if (id === requestId.current) setData(next);
     } catch {
-      if (id === requestId.current) setFailed(true);
+      if (id === requestId.current) {
+        setFailed(true);
+        setData((prev) => failedLoad(prev, n === FIRST));
+      }
     } finally {
       if (id === requestId.current) setLoading(false);
     }
@@ -171,7 +174,10 @@ export function Recommendations({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchKey]);
 
-  const active = hasActiveFilters(filters);
+  // What the results really apply: a junk value or an unknown district never shows as an active chip.
+  const known = useMemo(() => new Set(districtOptions.map((o) => o.value)), [districtOptions]);
+  const shown = shownFilters(filters, known);
+  const active = hasActiveFilters(shown);
   const clear = () => void setFilters(CLEARED);
 
   const list = data.rows;
@@ -181,7 +187,7 @@ export function Recommendations({
     <section className="space-y-3">
         <h2 className="text-lg font-semibold">Recomendados</h2>
         <HomeFilterRow
-          filters={filters}
+          filters={shown}
           districtOptions={districtOptions}
           sourceOptions={sourceOptions}
           active={active}

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { hasActiveFilters, loadHomeFilters, serializeHomeFilters, toListingFilter } from './home-filters';
+import { failedLoad, hasActiveFilters, loadHomeFilters, serializeHomeFilters, shownFilters, toListingFilter } from './home-filters';
 
 test('reads filters from the URL', () => {
   const f = loadHomeFilters('?precio_min=200000&precio_max=400000&dorm_min=2&distrito=lince,miraflores&fuente=urbania&orden=yield');
@@ -63,4 +63,25 @@ test('hasActiveFilters ignores the tab', () => {
   assert.equal(hasActiveFilters(loadHomeFilters('?orden=yield')), false);
   assert.equal(hasActiveFilters(loadHomeFilters('?dorm_min=1')), true);
   assert.equal(hasActiveFilters(loadHomeFilters('')), false);
+});
+
+test('shownFilters drops what the results ignore, so chips never show a dead filter', () => {
+  const f = shownFilters(loadHomeFilters('?precio_min=abc&dorm_min=-3&distrito=nowhere,lince&orden=yield'), new Set(['lince']));
+  assert.equal(f.precio_min, null);
+  assert.equal(f.dorm_min, null);
+  assert.deepEqual(f.distrito, ['lince']);
+  assert.equal(f.orden, 'yield');
+  assert.equal(hasActiveFilters(shownFilters(loadHomeFilters('?dorm_min=-3&distrito=nowhere'), new Set(['lince']))), false);
+});
+
+test('shownFilters puts a reversed range in order, as the results do', () => {
+  const f = shownFilters(loadHomeFilters('?precio_min=500000&precio_max=200000'), new Set());
+  assert.equal(f.precio_min, 200000);
+  assert.equal(f.precio_max, 500000);
+});
+
+test('failedLoad empties the list only for a new first page', () => {
+  const data = { rows: [{ postingId: 'a' }], hasMore: true } as unknown as Parameters<typeof failedLoad>[0];
+  assert.deepEqual(failedLoad(data, true), { rows: [], hasMore: false });
+  assert.equal(failedLoad(data, false), data);
 });
