@@ -5,6 +5,8 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { RunSourceSection } from "@/lib/run-sources";
 import { SOURCE_LABELS } from "@/lib/listing-card";
+import { districtName } from "@/lib/district-name";
+import { formatRunDate, runModeLabel, runStatusLabel } from "@/lib/run-labels";
 
 export interface RunRow {
   id: string;
@@ -70,10 +72,10 @@ export function RunsClient({ runs }: { runs: RunRow[] }) {
             <CardHeader className="cursor-pointer py-3" onClick={() => setOpenId(open ? null : run.id)}>
               <div className="flex flex-wrap items-center gap-3">
                 <CardTitle className="text-base font-medium">
-                  {new Date(run.startedAt).toLocaleString("es-PE")}
+                  {formatRunDate(run.startedAt)}
                 </CardTitle>
-                <Badge className={statusTone(run.status)}>{run.status}</Badge>
-                <span className="text-sm text-muted-foreground">{run.mode}</span>
+                <Badge className={statusTone(run.status)}>{runStatusLabel(run.status)}</Badge>
+                <span className="text-sm text-muted-foreground">{runModeLabel(run.mode)}</span>
                 <span className="text-sm text-muted-foreground">{formatDuration(run.durationMs)}</span>
                 <span className="text-sm text-muted-foreground">
                   {run.sale.toLocaleString("es-PE")} venta · {run.rent.toLocaleString("es-PE")} alquiler
@@ -117,7 +119,7 @@ export function RunsClient({ runs }: { runs: RunRow[] }) {
                                   : "rounded border px-3 py-2"
                               }
                             >
-                              <div className="font-medium">{d.slug}</div>
+                              <div className="font-medium">{districtName(d.slug)}</div>
                               <div className="text-muted-foreground">
                                 venta {d.sale} · alquiler {d.rent}
                               </div>
@@ -127,7 +129,7 @@ export function RunsClient({ runs }: { runs: RunRow[] }) {
                       )}
                       {suspicious.length > 0 && (
                         <p className="text-amber-800">
-                          Distritos con conteos bajos (revisar): {suspicious.map((d) => d.slug).join(", ")}
+                          Distritos con conteos bajos (revisar): {suspicious.map((d) => districtName(d.slug)).join(", ")}
                         </p>
                       )}
                     </section>
@@ -136,7 +138,7 @@ export function RunsClient({ runs }: { runs: RunRow[] }) {
                 {run.skippedDistricts.length > 0 && (
                   <p>
                     Compuerta de sanidad: no se tocó <code>lastSeenAt</code> en{" "}
-                    {run.skippedDistricts.join(", ")}.
+                    {run.skippedDistricts.map(districtName).join(", ")}.
                   </p>
                 )}
                 {run.errors != null && (

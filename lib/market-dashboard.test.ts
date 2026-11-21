@@ -83,7 +83,7 @@ test('sourceStats counts live, new and gone postings per source', () => {
   const day = 86_400_000;
   const ago = (d: number) => new Date(now.getTime() - d * day);
   const cutoffs = new Map([[sliceKey('urbania', 'lince', 'SALE'), ago(2)]]);
-  const base = { districtSlug: 'lince', operation: 'SALE', removedAt: null };
+  const base = { districtSlug: 'lince', operation: 'SALE', removedAt: null, kind: 'UNIT' as const };
   const stats = sourceStats(
     [
       { ...base, source: 'urbania', pricePen: 200_000, firstSeenAt: ago(30), lastSeenAt: ago(0) },
@@ -119,4 +119,51 @@ test('exitDate is removedAt, else lastSeenAt once the cutoff has passed it, else
   assert.deepEqual(exitDate({ ...base, lastSeenAt: seen, removedAt: null }, cutoffs), seen);
   assert.deepEqual(exitDate({ ...base, lastSeenAt: seen, removedAt: removed }, cutoffs), removed);
   assert.equal(exitDate({ ...base, lastSeenAt: new Date('2026-11-12T00:00:00Z'), removedAt: null }, cutoffs), null);
+});
+
+test('sourceStats counts projects only for a source with no live units', () => {
+  const now = new Date('2026-11-20T12:00:00Z');
+  const day = 86_400_000;
+  const ago = (d: number) => new Date(now.getTime() - d * day);
+  const base = { districtSlug: 'lince', operation: 'SALE', removedAt: null, firstSeenAt: ago(30), lastSeenAt: ago(0) };
+  const stats = sourceStats(
+    [
+      // Nexo publishes projects only
+      { ...base, source: 'nexo', kind: 'PROJECT', pricePen: 150_000 },
+      { ...base, source: 'nexo', kind: 'PROJECT', pricePen: 250_000 },
+      { ...base, source: 'nexo', kind: 'PROJECT', pricePen: 350_000 },
+      // Proper emits one project card plus one card per apartment: the units are the count
+      { ...base, source: 'proper', kind: 'PROJECT', pricePen: 400_000 },
+      { ...base, source: 'proper', kind: 'UNIT', pricePen: 600_000 },
+      { ...base, source: 'proper', kind: 'UNIT', pricePen: 800_000 },
+    ],
+    new Map(),
+    now,
+  );
+  const nexo = stats.find((s) => s.source === 'nexo');
+  assert.equal(nexo?.liveCount, 3);
+  assert.equal(nexo?.typicalSalePen, null);
+  const proper = stats.find((s) => s.source === 'proper');
+  assert.equal(proper?.liveCount, 2);
+  assert.equal(proper?.typicalSalePen, 700_000);
+});
+
+test('sourceStats applies the same rule to new and gone counts', () => {
+  const now = new Date('2026-11-20T12:00:00Z');
+  const day = 86_400_000;
+  const ago = (d: number) => new Date(now.getTime() - d * day);
+  const base = { districtSlug: 'lince', operation: 'SALE', source: 'proper' as const, pricePen: 1, lastSeenAt: ago(0) };
+  const [proper] = sourceStats(
+    [
+      { ...base, kind: 'PROJECT', firstSeenAt: ago(1), removedAt: null },
+      { ...base, kind: 'UNIT', firstSeenAt: ago(2), removedAt: null },
+      { ...base, kind: 'PROJECT', firstSeenAt: ago(40), removedAt: ago(1) },
+      { ...base, kind: 'UNIT', firstSeenAt: ago(40), removedAt: ago(1) },
+    ],
+    new Map(),
+    now,
+  );
+  assert.equal(proper.liveCount, 1);
+  assert.equal(proper.newLast7, 1);
+  assert.equal(proper.goneLast7, 1);
 });

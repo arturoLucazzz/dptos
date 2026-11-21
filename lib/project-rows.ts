@@ -5,6 +5,7 @@
  * A project's price is a "desde": the lowest live price among its postings.
  */
 
+import { districtName } from './district-name';
 import { Operation, PostingKind } from './generated/prisma/enums';
 import type { InvestmentFilters } from './investments/filters';
 import { pointInPolygon } from './location/geo';
@@ -51,14 +52,6 @@ export interface ProjectPostingInput {
   } | null;
 }
 
-function titleCaseDistrict(slug: string): string {
-  return slug
-    .split('-')
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ');
-}
-
 function numOrNull(value: unknown): number | null {
   if (value == null) return null;
   const n = Number(value);
@@ -93,7 +86,7 @@ export function groupProjectPostings(postings: ProjectPostingInput[]): ProjectRo
       projectId: project.id,
       name: project.name ?? 'Proyecto sin nombre',
       districtSlug: project.districtSlug,
-      districtName: titleCaseDistrict(project.districtSlug),
+      districtName: districtName(project.districtSlug),
       priceFromPen: prices.length ? Math.min(...prices) : null,
       deliveryDate: project.deliveryDate,
       stage: project.stage,

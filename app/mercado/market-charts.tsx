@@ -23,6 +23,20 @@ import {
   type YieldRow,
 } from "@/lib/market-chart-rows";
 
+/** Own legend: Recharts writes an English "legend icon" label on each swatch. */
+function ChartLegend({ payload }: { payload?: readonly { value?: unknown; color?: string }[] }) {
+  return (
+    <ul className="flex flex-wrap justify-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+      {(payload ?? []).map((p) => (
+        <li key={String(p.value)} className="flex items-center gap-1.5">
+          <span aria-hidden className="inline-block size-2.5 rounded-sm" style={{ background: p.color }} />
+          {String(p.value)}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 const AXIS = { fontSize: 11, fill: "var(--muted-foreground)" };
 const GRID = "var(--border)";
 const SURFACE = "var(--card)";
@@ -95,7 +109,7 @@ export function RentVsSaleChart({ rows }: { rows: RentVsSaleRow[] }) {
               );
             }}
           />
-          <Legend verticalAlign="top" height={24} formatter={(v) => <span style={{ color: "var(--muted-foreground)", fontSize: 12 }}>{v}</span>} />
+          <Legend verticalAlign="top" content={<ChartLegend />} />
           <Bar yAxisId="sale" dataKey="sale" name="Precio de venta (S/, eje izquierdo)" fill="var(--chart-1)" radius={[4, 4, 0, 0]} maxBarSize={28} />
           <Line yAxisId="rent" dataKey="rent" name="Alquiler mensual (S/, eje derecho)" stroke="var(--chart-4)" strokeWidth={2} dot={{ r: 4, fill: "var(--chart-4)", stroke: SURFACE, strokeWidth: 2 }} connectNulls={false} />
         </ComposedChart>
@@ -161,7 +175,7 @@ export function ConstructionChart({ rows }: { rows: ConstructionRow[] }) {
               return <TipBox title={r.name} lines={STAGES.map((s) => ({ label: s.label, value: `${r[s.key]} proyectos`, color: s.color }))} />;
             }}
           />
-          <Legend verticalAlign="top" height={24} formatter={(v) => <span style={{ color: "var(--muted-foreground)", fontSize: 12 }}>{v}</span>} />
+          <Legend verticalAlign="top" content={<ChartLegend />} />
           {STAGES.map((s) => (
             <Bar key={s.key} dataKey={s.key} name={s.label} stackId="stage" fill={s.color} stroke={SURFACE} strokeWidth={2} maxBarSize={32} />
           ))}

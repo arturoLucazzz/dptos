@@ -75,7 +75,7 @@ test('the committed market files parse', () => {
   assert.ok(loadEstudios().length >= 3);
   assert.ok(loadVoces({ onlyReviewed: false }).length >= 8);
   assert.ok(loadVoces({ onlyReviewed: false }).every((v) => !v.revisado));
-  assert.deepEqual(loadFeeds().map((f) => f.nombre), ['Gestión', 'El Comercio', 'Andina']);
+  assert.deepEqual(loadFeeds().map((f) => f.nombre), ['Gestión', 'Gestión Economía', 'Gestión Tu Dinero', 'El Comercio', 'El Comercio Economía', 'Andina']);
   assert.ok(loadNewsKeywords().includes('techo propio'));
 });
 

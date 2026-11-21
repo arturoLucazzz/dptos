@@ -111,6 +111,7 @@ export type SourceStats = {
 
 export type SourcePosting = {
   source: SourceId;
+  kind: 'UNIT' | 'PROJECT';
   districtSlug: string;
   operation: string;
   pricePen: number | null;
@@ -140,14 +141,19 @@ export function exitDate(
 export function sourceStats(postings: SourcePosting[], cutoffs: PossiblySoldCutoffs, now: Date): SourceStats[] {
   const since = now.getTime() - 7 * DAY_MS;
   return SOURCE_IDS.flatMap((source) => {
-    const own = postings.filter((p) => p.source === source);
+    const all = postings.filter((p) => p.source === source);
+    // Proper lists a project card plus a card per apartment; counting both would count the
+    // same inventory twice. Projects count only for a source with no live units (Nexo).
+    const hasLiveUnits = all.some((p) => p.kind === 'UNIT' && isLivePosting(p, cutoffs));
+    const own = hasLiveUnits ? all.filter((p) => p.kind === 'UNIT') : all;
     const live = own.filter((p) => isLivePosting(p, cutoffs));
     const gone = own.filter((p) => {
       const left = exitDate(p, cutoffs)?.getTime();
       return left != null && left > since && left <= now.getTime();
     });
     if (!live.length && !gone.length) return [];
-    const prices = live.flatMap((p) => (p.pricePen == null ? [] : [p.pricePen]));
+    // A project's price is a "desde", so the typical price reads units only.
+    const prices = live.flatMap((p) => (p.kind !== 'UNIT' || p.pricePen == null ? [] : [p.pricePen]));
     return [
       {
         source,
@@ -181,7 +187,7 @@ async function loadSourcePostings(cutoffs: PossiblySoldCutoffs, now: Date): Prom
   const since = new Date(now.getTime() - 7 * DAY_MS);
   const postings = await prisma.posting.findMany({
     where: {
-      kind: PostingKind.UNIT,
+      kind: { in: [PostingKind.UNIT, PostingKind.PROJECT] },
       operation: Operation.SALE,
       currentSnapshot: { isNot: null },
       AND: [
@@ -191,6 +197,7 @@ async function loadSourcePostings(cutoffs: PossiblySoldCutoffs, now: Date): Prom
     },
     select: {
       source: true,
+      kind: true,
       districtSlug: true,
       operation: true,
       firstSeenAt: true,
@@ -205,6 +212,7 @@ async function loadSourcePostings(cutoffs: PossiblySoldCutoffs, now: Date): Prom
     return [
       {
         source,
+        kind: p.kind === PostingKind.PROJECT ? ('PROJECT' as const) : ('UNIT' as const),
         districtSlug: p.districtSlug,
         operation: p.operation,
         pricePen: p.currentSnapshot?.pricePen == null ? null : Number(p.currentSnapshot.pricePen),
@@ -245,7 +253,7 @@ async function loadMarketDashboardUncached(): Promise<MarketDashboard> {
 
 /** Same memo rules as the sale listings: keyed by scrape run, cleared by `invalidateSaleListings`. */
 const MEMO_TTL_MS = 3600 * 1000;
-const SHAPE_VERSION = 'market-v1';
+const SHAPE_VERSION = 'market-v2';
 const memoHolder = globalThis as unknown as {
   __marketDashboardMemo?: { key: string; at: number; value: Promise<MarketDashboard> };
 };

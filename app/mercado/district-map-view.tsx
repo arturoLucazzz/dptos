@@ -9,6 +9,7 @@
 import "maplibre-gl/dist/maplibre-gl.css";
 import { RAMP } from "@/lib/map-ramp";
 import { useMemo, useState } from "react";
+import { MAP_LOCALE } from "@/lib/map-locale";
 import Map, { Layer, NavigationControl, Popup, Source, type MapLayerMouseEvent } from "react-map-gl/maplibre";
 import type { ExpressionSpecification, GeoJSONSourceSpecification } from "maplibre-gl";
 import { MAP_STYLE_DARK, useMapStyle } from "@/app/map-setup";
@@ -97,6 +98,7 @@ export function DistrictMapView({ districts, metrics }: { districts: Districts; 
         <Map
           initialViewState={bounds ? { bounds, fitBoundsOptions: { padding: 40 } } : LIMA_VIEW}
           mapStyle={style}
+          locale={MAP_LOCALE}
           style={{ width: "100%", height: "100%" }}
           interactiveLayerIds={["districts-fill"]}
           onMouseMove={onMove}
