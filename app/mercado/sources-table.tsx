@@ -27,7 +27,7 @@ export function SourcesTable({ sources, repeated }: { sources: SourceStats[]; re
           <TableHeader>
             <TableRow>
               <TableHead>Portal</TableHead>
-              <Head hint="Avisos de venta que el portal sigue mostrando en la última corrida.">Avisos vigentes</Head>
+              <Head hint="Avisos de venta que el portal sigue mostrando en la última corrida. Incluye proyectos.">Avisos vigentes</Head>
               <Head hint="Mediana del precio de los avisos vigentes del portal, en soles.">Precio típico</Head>
               <Head hint="Avisos vistos por primera vez en los últimos 7 días.">Nuevos en 7 días</Head>
               <Head hint="Avisos que dejaron de aparecer o pasaron el corte de posiblemente vendido en los últimos 7 días.">Salieron en 7 días</Head>

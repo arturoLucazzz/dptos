@@ -111,6 +111,7 @@ export type SourceStats = {
 
 export type SourcePosting = {
   source: SourceId;
+  kind: 'UNIT' | 'PROJECT';
   districtSlug: string;
   operation: string;
   pricePen: number | null;
@@ -147,7 +148,8 @@ export function sourceStats(postings: SourcePosting[], cutoffs: PossiblySoldCuto
       return left != null && left > since && left <= now.getTime();
     });
     if (!live.length && !gone.length) return [];
-    const prices = live.flatMap((p) => (p.pricePen == null ? [] : [p.pricePen]));
+    // A project's price is a "desde", so the typical price reads units only.
+    const prices = live.flatMap((p) => (p.kind !== 'UNIT' || p.pricePen == null ? [] : [p.pricePen]));
     return [
       {
         source,
@@ -181,7 +183,7 @@ async function loadSourcePostings(cutoffs: PossiblySoldCutoffs, now: Date): Prom
   const since = new Date(now.getTime() - 7 * DAY_MS);
   const postings = await prisma.posting.findMany({
     where: {
-      kind: PostingKind.UNIT,
+      kind: { in: [PostingKind.UNIT, PostingKind.PROJECT] },
       operation: Operation.SALE,
       currentSnapshot: { isNot: null },
       AND: [
@@ -191,6 +193,7 @@ async function loadSourcePostings(cutoffs: PossiblySoldCutoffs, now: Date): Prom
     },
     select: {
       source: true,
+      kind: true,
       districtSlug: true,
       operation: true,
       firstSeenAt: true,
@@ -205,6 +208,7 @@ async function loadSourcePostings(cutoffs: PossiblySoldCutoffs, now: Date): Prom
     return [
       {
         source,
+        kind: p.kind === PostingKind.PROJECT ? ('PROJECT' as const) : ('UNIT' as const),
         districtSlug: p.districtSlug,
         operation: p.operation,
         pricePen: p.currentSnapshot?.pricePen == null ? null : Number(p.currentSnapshot.pricePen),
@@ -245,7 +249,7 @@ async function loadMarketDashboardUncached(): Promise<MarketDashboard> {
 
 /** Same memo rules as the sale listings: keyed by scrape run, cleared by `invalidateSaleListings`. */
 const MEMO_TTL_MS = 3600 * 1000;
-const SHAPE_VERSION = 'market-v1';
+const SHAPE_VERSION = 'market-v2';
 const memoHolder = globalThis as unknown as {
   __marketDashboardMemo?: { key: string; at: number; value: Promise<MarketDashboard> };
 };

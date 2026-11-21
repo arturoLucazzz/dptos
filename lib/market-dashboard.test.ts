@@ -83,7 +83,7 @@ test('sourceStats counts live, new and gone postings per source', () => {
   const day = 86_400_000;
   const ago = (d: number) => new Date(now.getTime() - d * day);
   const cutoffs = new Map([[sliceKey('urbania', 'lince', 'SALE'), ago(2)]]);
-  const base = { districtSlug: 'lince', operation: 'SALE', removedAt: null };
+  const base = { districtSlug: 'lince', operation: 'SALE', removedAt: null, kind: 'UNIT' as const };
   const stats = sourceStats(
     [
       { ...base, source: 'urbania', pricePen: 200_000, firstSeenAt: ago(30), lastSeenAt: ago(0) },
@@ -119,4 +119,27 @@ test('exitDate is removedAt, else lastSeenAt once the cutoff has passed it, else
   assert.deepEqual(exitDate({ ...base, lastSeenAt: seen, removedAt: null }, cutoffs), seen);
   assert.deepEqual(exitDate({ ...base, lastSeenAt: seen, removedAt: removed }, cutoffs), removed);
   assert.equal(exitDate({ ...base, lastSeenAt: new Date('2026-11-12T00:00:00Z'), removedAt: null }, cutoffs), null);
+});
+
+test('sourceStats counts live projects in "vigentes" but takes the typical price from units only', () => {
+  const now = new Date('2026-11-20T12:00:00Z');
+  const day = 86_400_000;
+  const ago = (d: number) => new Date(now.getTime() - d * day);
+  const base = { districtSlug: 'lince', operation: 'SALE', removedAt: null, firstSeenAt: ago(30), lastSeenAt: ago(0) };
+  const stats = sourceStats(
+    [
+      { ...base, source: 'nexo', kind: 'PROJECT', pricePen: 150_000 },
+      { ...base, source: 'nexo', kind: 'PROJECT', pricePen: 250_000 },
+      { ...base, source: 'proper', kind: 'PROJECT', pricePen: 400_000 },
+      { ...base, source: 'proper', kind: 'UNIT', pricePen: 600_000 },
+    ],
+    new Map(),
+    now,
+  );
+  const nexo = stats.find((s) => s.source === 'nexo');
+  assert.equal(nexo?.liveCount, 2);
+  assert.equal(nexo?.typicalSalePen, null);
+  const proper = stats.find((s) => s.source === 'proper');
+  assert.equal(proper?.liveCount, 2);
+  assert.equal(proper?.typicalSalePen, 600_000);
 });

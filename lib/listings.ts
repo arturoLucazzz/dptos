@@ -6,6 +6,7 @@
  * made the old JSON pipeline count a S/ 1 listing as a sale the next run.
  */
 
+import { districtName } from './district-name';
 import { getFixedAssumptions } from './assumptions';
 import { prisma } from './db';
 import type { Prisma } from './generated/prisma/client';
@@ -22,14 +23,6 @@ import type { LocationReason } from './location/score';
 import { isUsableComparable, pricePerM2OutlierMask } from './quality-flags';
 import { distinctPublisherCount, inventoryMonths, priceCutScore, totalCutFromPeak } from './price-cut';
 import type { FixedAssumptions } from './assumption-defaults';
-
-function titleCaseDistrict(slug: string): string {
-  return slug
-    .split('-')
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ');
-}
 
 function asOfTime(run: { finishedAt: Date | null; startedAt: Date } | null): number {
   return (run?.finishedAt ?? run?.startedAt ?? new Date()).getTime();
@@ -310,7 +303,7 @@ export async function loadSaleListings(): Promise<ListingsPage> {
       sourcePath: posting.sourcePath,
       url: postingUrl(source, posting.sourcePath, snapshot.sourceUrl),
       districtSlug: posting.districtSlug,
-      districtName: titleCaseDistrict(posting.districtSlug),
+      districtName: districtName(posting.districtSlug),
       operation: 'SALE',
       pricePen,
       priceMaxPen: group.priceMaxPen,

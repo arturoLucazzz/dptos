@@ -10,6 +10,7 @@ const PAGES = [
   { path: '/', texts: ['Inicio', 'Continuar', 'Mis inversiones', 'Mercado', 'Supuestos: TEA', 'Recomendados'] },
   { path: '/mercado', texts: ['Alquiler mensual vs precio de venta', 'Nuestras fuentes', 'Estudios', 'Voces del mercado', 'Noticias'] },
   { path: '/inversiones', texts: ['Mis inversiones', '+ Nueva inversión'] },
+  { path: '/runs', texts: ['Corridas'] },
   { path: '/configuracion', texts: ['Configuración', 'Duplicados'] },
   { path: '/configuracion/duplicados', texts: ['Duplicados'] },
 ];
@@ -79,6 +80,11 @@ for (const size of SIZES) {
     });
     try {
       await page.goto(baseUrl + flow.from, { waitUntil: 'networkidle', timeout: 60_000 });
+      if ((await page.locator(flow.link).count()) === 0) {
+        console.log(`skip: no hay inversiones (${label})`);
+        await context.close();
+        continue;
+      }
       await page.locator(flow.link).first().click();
       await page.waitForURL((u) => u.pathname !== flow.from, { timeout: 60_000 });
       await page.waitForLoadState('networkidle', { timeout: 60_000 });

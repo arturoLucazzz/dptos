@@ -3,6 +3,7 @@
  * The full sale universe stays on the server; the browser gets 24 rows at a time.
  */
 
+import { districtName } from '../district-name';
 import type { PanelAssumptions } from '../assumption-defaults';
 import { filterListings, monthlyGainFor, queryDepartamentos } from '../departamentos-query';
 import { toHomeRow, type HomeRow } from '../home-rows';
@@ -135,7 +136,7 @@ export async function loadPickViews(items: PickItemInput[], panel: PanelAssumpti
       item,
       item.propertyId ? (units.get(item.propertyId) ?? null) : null,
       item.projectId ? (projectById.get(item.projectId) ?? null) : null,
-      { districtName: labels.get(slug) ?? slug, lastKnown: fallback?.lastKnown ?? null }
+      { districtName: labels.get(slug) ?? districtName(slug), lastKnown: fallback?.lastKnown ?? null }
     );
   });
 }

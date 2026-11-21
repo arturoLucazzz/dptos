@@ -3,19 +3,12 @@
  * they are an early warning that rent coverage in that district will get harder.
  */
 
+import { districtName } from './district-name';
 import { prisma } from './db';
 import { Operation, PostingKind } from './generated/prisma/enums';
 import { possiblySoldCutoffs } from './market';
 import { livePostingWhere } from './possibly-sold';
 import { collapseProjects } from './property-stats';
-
-function titleCaseDistrict(slug: string): string {
-  return slug
-    .split('-')
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ');
-}
 
 export interface ConstructionPipeline {
   districtSlug: string;
@@ -90,7 +83,7 @@ export async function loadConstructionPipeline(): Promise<ConstructionPipeline[]
       byDistrict.get(project.districtSlug) ??
       ({
         districtSlug: project.districtSlug,
-        districtName: titleCaseDistrict(project.districtSlug),
+        districtName: districtName(project.districtSlug),
         enPlanos: 0,
         enConstruccion: 0,
         entregaInmediata: 0,

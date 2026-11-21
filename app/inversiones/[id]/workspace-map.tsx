@@ -10,6 +10,7 @@
 
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { MAP_LOCALE } from "@/lib/map-locale";
 import Map, { Layer, NavigationControl, Popup, Source, type MapLayerMouseEvent, type MapRef } from "react-map-gl/maplibre";
 import type { GeoJSONSource } from "maplibre-gl";
 import { MAP_STYLE_DARK, useMapStyle } from "@/app/map-setup";
@@ -424,6 +425,7 @@ export function WorkspaceMap({
           ref={mapRef}
           initialViewState={LIMA_VIEW}
           mapStyle={style}
+          locale={MAP_LOCALE}
           style={{ width: "100%", height: "100%" }}
           interactiveLayerIds={drawing ? [] : ["clusters", "point"]}
           cursor={drawing ? "crosshair" : undefined}
