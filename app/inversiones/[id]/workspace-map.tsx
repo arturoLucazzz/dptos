@@ -410,7 +410,7 @@ export function WorkspaceMap({
           onCancel={() => setSaving(false)}
           onSaved={(zone, warning) => {
             setSaving(false);
-            // A new zone changes /zonas and the location scores: Back must not restore a stale page.
+            // A new zone changes the location scores: Back must not restore a stale page.
             markInversionesChanged();
             setMessage(warning ??`Zona "${zone.name}" guardada. Los puntajes ya se recalcularon.`);
             setLocalToken((n) => n + 1);

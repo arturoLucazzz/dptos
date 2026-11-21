@@ -7,7 +7,9 @@
 #   2. Optional git pull, before the run starts, never mid-run.
 #   3. Stale-run catch-up: if the last success was more than STALE_HOURS ago, run anyway
 #      even when launchd fired late after a full shutdown.
-#   4. caffeinate for the duration, so the laptop does not sleep mid-district.
+#   4. News first (daily and weekly): `pnpm news:fetch` runs before the scrape, and a news
+#      failure never stops the scrape.
+#   5. caffeinate for the duration, so the laptop does not sleep mid-district.
 #
 # Usage:
 #   scripts/scrape-wrapper.sh daily
@@ -68,7 +70,7 @@ needs_run() {
     import { ScrapeStatus } from './lib/generated/prisma/enums.ts';
     const hours = Number(process.env.SCRAPER_STALE_HOURS || $STALE_HOURS);
     const latest = await prisma.scrapeRun.findFirst({
-      // A manual /agregar entry records only 'manual' and is not a scrape.
+      // A manual-only entry records only 'manual' and is not a scrape.
       where: { status: { in: [ScrapeStatus.SUCCESS, ScrapeStatus.PARTIAL] }, NOT: { sources: { equals: ['manual'] } } },
       orderBy: { startedAt: 'desc' },
       select: { startedAt: true, status: true },
@@ -87,6 +89,8 @@ case "$MODE" in
     # scraper/src/config/districts.ts; the scraper refuses any other.
     DISTRICTS="${SCRAPER_DAILY_DISTRICTS:-lince,jesus-maria,san-miguel,surquillo,magdalena,pueblo-libre,san-isidro,miraflores,barranco,santiago-de-surco}"
     ARGS=(--mode=TARGET_DAILY --districts="$DISTRICTS" --operations=sale,rent)
+    # News first, so a failed scrape does not skip it. A news failure never stops the scrape.
+    pnpm news:fetch || echo "news:fetch failed; continuing with the scrape"
     if ! needs_run; then
       echo "Last successful run is fresh; daily catch-up not needed."
       # Still run: the calendar interval is the source of truth for "daily". The
@@ -96,6 +100,8 @@ case "$MODE" in
     ;;
   weekly)
     ARGS=(--mode=FULL_WEEKLY --operations=sale,rent)
+    # News first, so a failed scrape does not skip it. A news failure never stops the scrape.
+    pnpm news:fetch || echo "news:fetch failed; continuing with the scrape"
     ;;
   manual|*)
     ARGS=("$@")

@@ -20,6 +20,11 @@ async function fetchText(url: string): Promise<string> {
 }
 
 async function main() {
+  // Hard limit for the whole run: a stalled DB connect or DNS lookup must not block the scrape.
+  setTimeout(() => {
+    console.error('news:fetch tardó más de 2 minutos; se detiene.');
+    process.exit(1);
+  }, 120_000).unref();
   const results = await fetchNews({
     feeds: loadFeeds(),
     keywords: loadNewsKeywords(),

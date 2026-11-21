@@ -11,6 +11,7 @@ import {
   loadNewsKeywords,
   tryLoad,
 } from './market-files';
+import { matchesKeywords } from './news/parse';
 
 const EH = 'titulo,autor,url,frecuencia,precios_de_aviso,nota';
 const VH = 'nombre,plataforma,url,tema,vende_asesoria,revisado';
@@ -91,4 +92,23 @@ test('error row numbers count real file lines, blank lines included', () => {
 test('tryLoad returns data, or the Spanish message when the loader throws', () => {
   assert.deepEqual(tryLoad(() => [1]), { ok: true, data: [1] });
   assert.deepEqual(tryLoad(() => { throw new Error('Fila inválida en x.csv, fila 3'); }), { ok: false, message: 'Fila inválida en x.csv, fila 3' });
+});
+
+test('committed keywords keep market headlines and drop off-topic ones', () => {
+  const kw = loadNewsKeywords();
+  const drop = [
+    'Ministerio de Vivienda culmina construcción de cámaras de bombeo para prevenir aniegos',
+    'Temblor en Junín: reportan daños en viviendas, caída de rocas y corte de energía',
+    'BCRP emite moneda sobre bicentenario del Colegio Nacional de San Carlos de Puno',
+    'Elecciones en el departamento de Cusco',
+  ];
+  const keep = [
+    'Créditos hipotecarios crecen 8% en octubre',
+    'Precio de vivienda en Lima sube en el tercer trimestre',
+    'Mercado inmobiliario: ventas de departamentos caen en Lima',
+    'BCRP mantiene la tasa de referencia en 4.25%',
+    'Precios de alquiler suben en Lima Moderna',
+  ];
+  for (const t of drop) assert.equal(matchesKeywords(t, kw), false, t);
+  for (const t of keep) assert.equal(matchesKeywords(t, kw), true, t);
 });

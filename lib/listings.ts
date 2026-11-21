@@ -42,11 +42,11 @@ export interface ListingsPage {
   districtOptions: { value: string; label: string }[];
 }
 
-/** Runs that are more than one `/agregar` entry, which records only `manual`. */
+/** Runs that are more than a manual-only entry, which records only `manual`. */
 const NOT_A_MANUAL_ENTRY = { NOT: { sources: { equals: ['manual'] } } } satisfies Prisma.ScrapeRunWhereInput;
 
 /**
- * Live sale units for the departamentos table.
+ * Live sale units: the universe Inicio, Mis inversiones, Mercado and the duplicate review read.
  *
  * Projects are excluded: their price is a "desde" and every coverage number built
  * on it would be fiction. Discarded properties stay out of the default view; the
@@ -455,18 +455,6 @@ const memoHolder = globalThis as unknown as {
 
 /** Changes when the row shape does, so a dev reload never serves rows of an older shape. */
 const SHAPE_VERSION = 'rows-v5-coordinates';
-
-/** Flip one favorite in the memoized rows, so a toggle does not drop the whole universe. */
-export async function patchSaleListingFavorite(propertyId: string, favorite: boolean): Promise<void> {
-  const memo = memoHolder.__saleListingsMemo;
-  if (!memo) return;
-  try {
-    const page = await memo.value;
-    for (const row of page.listings) if (row.propertyId === propertyId) row.favorite = favorite;
-  } catch {
-    // A failed load is dropped by its own handler.
-  }
-}
 
 /** Drop the memo; call it wherever a write changes what the rows show. */
 export function invalidateSaleListings(): void {

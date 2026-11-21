@@ -15,9 +15,7 @@ const mainLinks = [
 ];
 
 const moreLinks = [
-  { href: "/zonas", label: "Zonas" },
-  { href: "/alertas", label: "Alertas" },
-  { href: "/agregar", label: "Agregar" },
+  { href: "/configuracion", label: "Configuración" },
   { href: "/runs", label: "Corridas" },
 ];
 

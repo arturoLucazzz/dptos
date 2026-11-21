@@ -10,7 +10,7 @@ import type { InvestmentFilters } from "@/lib/investments/filters";
 import { toPickView, type PickView } from "@/lib/investments/pick-view";
 import type { CardRow, CardsPage } from "@/lib/investments/workspace-data";
 import type { ZoneOutlineInput } from "@/lib/investments/map-features";
-import { saveDrawnZone } from "../../zonas/actions";
+import { saveDrawnZone } from "../zone-actions";
 import type { DepartamentosRow } from "@/lib/departamentos-query";
 import { addPick, removePick, renameInvestment, setPickNote } from "../actions";
 import { FilterChips } from "./filter-chips";

@@ -122,7 +122,7 @@ export type SourcePosting = {
 /**
  * When a posting left the market, or null while it is on it. A removed posting left
  * when it was removed; otherwise it left once its source's cutoff passed it, and
- * `lastSeenAt` is the date `loadPriceIndex` files that exit under.
+ * `lastSeenAt` is the date of that exit.
  */
 export function exitDate(
   posting: Pick<SourcePosting, 'source' | 'districtSlug' | 'operation' | 'lastSeenAt' | 'removedAt'>,

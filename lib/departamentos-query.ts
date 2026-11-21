@@ -1,16 +1,15 @@
 /**
  * Filter / finance / sort / paginate the sale listings universe for the
- * departamentos table. Runs on the server so the browser only holds one page.
+ * sale listings (Inicio and Mis inversiones). Runs on the server so the browser only holds one page.
  */
 
-import { DEFAULT_PANEL, type FixedAssumptions, type PanelAssumptions } from './assumption-defaults';
+import { type FixedAssumptions, type PanelAssumptions } from './assumption-defaults';
 import { financeForListing, loanForListing } from './listing-finance';
 import type { SourceId } from './listing-card';
 import type { ListingRow } from './listing-row';
 import { grossYieldPct, pricePerM2 } from './gross-yield';
 import { median } from './linalg';
 import { pointInPolygon, type Ring } from './location/geo';
-import { isSourceId } from './official-price';
 import { prepaymentLines, prepaymentSavings, type PrepaymentLines, type PrepaymentSavings } from './prepayment';
 
 export const DEPARTAMENTOS_PAGE_SIZE = 50;
@@ -86,68 +85,6 @@ export interface DepartamentosQueryResult {
   page: number;
   pageSize: number;
   stats: DepartamentosStats;
-}
-
-function parseOptionalNumber(raw: string | null): number | null {
-  if (raw == null || raw === '') return null;
-  const n = Number(raw);
-  return Number.isFinite(n) ? n : null;
-}
-
-function parseOptionalInt(raw: string | null): number | null {
-  const n = parseOptionalNumber(raw);
-  return n == null ? null : Math.round(n);
-}
-
-export function isDepartamentosSortId(value: string): value is DepartamentosSortId {
-  return (DEPARTAMENTOS_SORT_IDS as readonly string[]).includes(value);
-}
-
-/** Parse GET /api/departamentos search params into a typed query. */
-export function parseDepartamentosSearchParams(
-  params: URLSearchParams,
-  fallback: PanelAssumptions = DEFAULT_PANEL
-): DepartamentosQueryInput {
-  const districtsRaw = params.get('districts') ?? params.get('distrito') ?? '';
-  const districts = districtsRaw
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean);
-
-  const sources = (params.get('fuentes') ?? '')
-    .split(',')
-    .map((s) => s.trim())
-    .filter(isSourceId);
-
-  const sortRaw = params.get('sort') ?? 'monthlyGain';
-  const sort = isDepartamentosSortId(sortRaw) ? sortRaw : 'monthlyGain';
-  const orderRaw = params.get('order') ?? 'desc';
-  const order = orderRaw === 'asc' ? 'asc' : 'desc';
-
-  const pageRaw = parseOptionalInt(params.get('page'));
-  const page = pageRaw != null && pageRaw >= 1 ? pageRaw : 1;
-
-  return {
-    districts,
-    sources,
-    priceMin: parseOptionalNumber(params.get('priceMin')),
-    priceMax: parseOptionalNumber(params.get('priceMax')),
-    bedroomsMin: parseOptionalInt(params.get('bedroomsMin')),
-    bedroomsMax: parseOptionalInt(params.get('bedroomsMax')),
-    coverageMin: parseOptionalNumber(params.get('coverageMin')),
-    locationMin: parseOptionalNumber(params.get('ubicacion')),
-    panel: {
-      downPaymentPct: parseOptionalNumber(params.get('inicial')) ?? fallback.downPaymentPct,
-      tea: parseOptionalNumber(params.get('tea')) ?? fallback.tea,
-      tcea: parseOptionalNumber(params.get('tcea')) ?? fallback.tcea,
-      termYears: parseOptionalInt(params.get('plazo')) ?? fallback.termYears,
-      cashAvailablePen: parseOptionalNumber(params.get('efectivo')) ?? fallback.cashAvailablePen,
-      extraMonthlyPen: parseOptionalNumber(params.get('extra')) ?? fallback.extraMonthlyPen,
-    },
-    sort,
-    order,
-    page,
-  };
 }
 
 function sortValue(row: DepartamentosRow, sort: DepartamentosSortId): number {

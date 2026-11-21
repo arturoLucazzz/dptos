@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { parsePhotoUrls, rawFromFormEntries, validateManualListing } from './manual-listing';
+import { parsePhotoUrls, validateManualListing } from './manual-listing';
 
 function ids() {
   let n = 0;
@@ -179,28 +179,5 @@ describe('validateManualListing', () => {
 describe('parsePhotoUrls', () => {
   it('splits on newlines and commas and drops non-http', () => {
     assert.deepEqual(parsePhotoUrls('https://a/1.jpg,\nftp://b/2.jpg\n  http://c/3.jpg  ,x'), ['https://a/1.jpg', 'http://c/3.jpg']);
-  });
-});
-
-describe('rawFromFormEntries', () => {
-  it('ignores unit indexes past the cap', () => {
-    const raw = rawFromFormEntries([['mode', 'project'], ['units.0.price', '1'], ['units.5000.price', '2']]);
-    assert.equal((raw.units as unknown[]).length, 1);
-  });
-
-  it('nests project and unit fields in project mode', () => {
-    const raw = rawFromFormEntries([
-      ['mode', 'project'],
-      ['project.name', 'Torre'],
-      ['units.0.price', '1'],
-      ['units.1.price', '2'],
-      ['district', 'ignored'],
-    ]);
-    assert.deepEqual(raw.project, { name: 'Torre' });
-    assert.deepEqual(raw.units, [{ price: '1' }, { price: '2' }]);
-  });
-
-  it('stays flat in unit mode', () => {
-    assert.deepEqual(rawFromFormEntries([['mode', 'unit'], ['price', '5']]), { mode: 'unit', price: '5' });
   });
 });
