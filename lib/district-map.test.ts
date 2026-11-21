@@ -34,6 +34,17 @@ test('a district in an Ipsos zone gets the zone income and label; one outside ge
   assert.equal(by.lince.zone, null);
 });
 
+test('features carry the panel statistics of the district itself', () => {
+  const withPanel = new Map(latest);
+  withPanel.set('lince', new Map([['population', stat(54_000, '2018', 'INEI')], ['stratum_alto_pct', stat(19.9, '2020', 'INEI')]]));
+  const fc = buildDistrictFeatures(boundaries, withPanel, places, []);
+  const by = Object.fromEntries(fc.features.map((f) => [f.properties!.slug, f.properties!]));
+  assert.equal(by.lince.population, 54_000);
+  assert.equal(by.lince.stratum_alto_pct, 19.9);
+  assert.equal(by.lince.stratum_bajo_pct, null);
+  assert.equal(by.comas.population, null);
+});
+
 test('a missing statistic is null, a real zero stays 0', () => {
   const fc = buildDistrictFeatures(boundaries, latest, places, []);
   const by = Object.fromEntries(fc.features.map((f) => [f.properties!.slug, f.properties!]));

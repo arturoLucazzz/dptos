@@ -1,0 +1,6 @@
+stratum,min_pen,max_pen,unit,source,source_ref
+alto,2412.45,,S/ al mes por persona,"INEI, Planos estratificados de Lima Metropolitana a nivel de manzana 2020","Cuadro N° 4 y leyenda de las páginas 17 a 59"
+medio_alto,1449.72,2412.44,S/ al mes por persona,"INEI, Planos estratificados de Lima Metropolitana a nivel de manzana 2020","Cuadro N° 4 y leyenda de las páginas 17 a 59"
+medio,1073.01,1449.71,S/ al mes por persona,"INEI, Planos estratificados de Lima Metropolitana a nivel de manzana 2020","Cuadro N° 4 y leyenda de las páginas 17 a 59"
+medio_bajo,863.72,1073.00,S/ al mes por persona,"INEI, Planos estratificados de Lima Metropolitana a nivel de manzana 2020","Cuadro N° 4 y leyenda de las páginas 17 a 59"
+bajo,0,863.71,S/ al mes por persona,"INEI, Planos estratificados de Lima Metropolitana a nivel de manzana 2020","Cuadro N° 4 y leyenda de las páginas 17 a 59"

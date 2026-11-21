@@ -102,8 +102,14 @@ export default async function MercadoPage() {
       </Section>
 
       <Section title="Cómo se reparte Lima" explain="Los 43 distritos pintados por un dato a la vez, y los niveles socioeconómicos de la ciudad.">
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[2fr_1fr]">
-          <DistrictMap districts={map.features} metrics={map.metrics} />
+        <div className="space-y-4">
+          <DistrictMap
+            districts={map.features}
+            metrics={map.metrics}
+            market={m.districts}
+            construction={m.construction}
+            strataRanges={map.strataRanges}
+          />
           <div className="rounded-xl border border-border bg-card p-4">
             <h3 className="mb-3 text-sm font-semibold">Niveles socioeconómicos de Lima Metropolitana</h3>
             <NseBars nse={map.nse} source={map.nseSource ? `${map.nseSource.source}, ${map.nseSource.period}` : "fuente sin cargar"} />

@@ -40,12 +40,24 @@ export function mapMetrics(latest: LatestStats, indicators: IndicatorDef[]): Map
   });
 }
 
+/** Statistics the district panel shows beyond the map metrics, all of the district itself. */
+export const PANEL_STATS = [
+  'population',
+  'stratum_alto_pct',
+  'stratum_medio_alto_pct',
+  'stratum_medio_pct',
+  'stratum_medio_bajo_pct',
+  'stratum_bajo_pct',
+] as const;
+export type PanelStatKey = (typeof PANEL_STATS)[number];
+
 export type DistrictProps = {
   slug: string;
   name: string;
   tracked: boolean;
   zone: string | null;
-} & Record<MapMetricKey, number | null>;
+} & Record<MapMetricKey, number | null> &
+  Record<PanelStatKey, number | null>;
 
 export function buildDistrictFeatures(
   boundaries: DistrictBoundary[],
@@ -65,6 +77,7 @@ export function buildDistrictFeatures(
       const place = key === 'zone_household_income_pen' ? zone?.place : b.slug;
       props[key] = place ? (latest.get(place)?.get(key)?.value ?? null) : null;
     }
+    for (const key of PANEL_STATS) props[key] = latest.get(b.slug)?.get(key)?.value ?? null;
     features.push({
       type: 'Feature',
       properties: props,
