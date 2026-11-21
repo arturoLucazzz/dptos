@@ -12,7 +12,8 @@ import { checkUnique, parseIndicators, parsePlaces, parseStatFile, type StatRow 
 import { latestStats, type LatestStat } from './latest';
 
 export const STATS_DIR = 'data/stats';
-const CATALOG_FILES = new Set(['indicators.csv', 'places.csv']);
+// Not stat rows: the catalog, and the INEI strata ranges (read by lib/stats/strata.ts).
+const CATALOG_FILES = new Set(['indicators.csv', 'places.csv', 'inei-estratos-2020-rangos.csv']);
 
 /** Every data file in the directory, checked against the catalog, with no repeated rows. */
 export function readStatFiles(dir: string): StatRow[] {

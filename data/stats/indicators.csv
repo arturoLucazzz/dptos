@@ -9,3 +9,8 @@ nse_c_pct,Hogares NSE C,%,Hogares en el nivel socioeconómico C.
 nse_d_pct,Hogares NSE D,%,Hogares en el nivel socioeconómico D.
 nse_e_pct,Hogares NSE E,%,Hogares en el nivel socioeconómico E.
 zone_household_income_pen,Ingreso mensual promedio del hogar en la zona,S/ al mes,"Ingreso mensual promedio de un hogar de la zona, según Ipsos."
+stratum_alto_pct,Estrato alto,%,"Personas del distrito que viven en manzanas del estrato alto de ingreso per cápita del hogar (INEI 2020)."
+stratum_medio_alto_pct,Estrato medio alto,%,"Personas del distrito que viven en manzanas del estrato medio alto de ingreso per cápita del hogar (INEI 2020)."
+stratum_medio_pct,Estrato medio,%,"Personas del distrito que viven en manzanas del estrato medio de ingreso per cápita del hogar (INEI 2020)."
+stratum_medio_bajo_pct,Estrato medio bajo,%,"Personas del distrito que viven en manzanas del estrato medio bajo de ingreso per cápita del hogar (INEI 2020)."
+stratum_bajo_pct,Estrato bajo,%,"Personas del distrito que viven en manzanas del estrato bajo de ingreso per cápita del hogar (INEI 2020)."
