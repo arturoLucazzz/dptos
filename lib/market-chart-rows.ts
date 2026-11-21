@@ -1,7 +1,8 @@
 /** Shapes the market dashboard numbers into chart rows. A missing value stays null: charts say "sin datos", never 0. */
 
 import type { ConstructionPipeline } from './analytics';
-import type { DistrictMarket } from './market-dashboard';
+import { SOURCE_LABELS } from './listing-card';
+import type { DistrictMarket, SourceStats } from './market-dashboard';
 
 /** Districts with fewer sales than this are left out of the rent-vs-price chart. */
 export const MIN_SALES_FOR_CHART = 20;
@@ -33,4 +34,22 @@ export function constructionRows(pipeline: ConstructionPipeline[]): Construction
 
 export function formatPenOrNoData(n: number | null): string {
   return n == null ? 'sin datos' : `S/ ${Math.round(n).toLocaleString('es-PE')}`;
+}
+
+/** The portals the sources table shows, in this order. Manual listings are not a portal. */
+export const PORTAL_ORDER = ['urbania', 'adondevivir', 'proper', 'nexo'] as const;
+
+/** One row per portal; a portal with no postings gets zeros and no typical price. */
+export function portalRows(sources: SourceStats[]): SourceStats[] {
+  return PORTAL_ORDER.map(
+    (source) =>
+      sources.find((s) => s.source === source) ?? {
+        source,
+        label: SOURCE_LABELS[source],
+        liveCount: 0,
+        typicalSalePen: null,
+        newLast7: 0,
+        goneLast7: 0,
+      },
+  );
 }

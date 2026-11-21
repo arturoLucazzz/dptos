@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import type { DistrictMarket } from './market-dashboard';
-import { constructionRows, formatPenOrNoData, rentVsSaleRows, yieldRows } from './market-chart-rows';
+import type { DistrictMarket, SourceStats } from './market-dashboard';
+import { constructionRows, formatPenOrNoData, portalRows, rentVsSaleRows, yieldRows } from './market-chart-rows';
 
 const d = (slug: string, over: Partial<DistrictMarket> = {}): DistrictMarket => ({
   slug,
@@ -51,5 +51,26 @@ describe('formatPenOrNoData', () => {
   it('says sin datos for null', () => {
     assert.equal(formatPenOrNoData(null), 'sin datos');
     assert.match(formatPenOrNoData(2500), /^S\/ 2.?500$/);
+  });
+});
+
+describe('portalRows', () => {
+  const stat = (source: SourceStats['source'], liveCount = 5): SourceStats => ({
+    source,
+    label: source,
+    liveCount,
+    typicalSalePen: 100,
+    newLast7: 1,
+    goneLast7: 2,
+  });
+  it('returns the four portals in order, dropping manual', () => {
+    const rows = portalRows([stat('manual'), stat('nexo'), stat('urbania'), stat('proper')]);
+    assert.deepEqual(rows.map((r) => r.source), ['urbania', 'adondevivir', 'proper', 'nexo']);
+  });
+  it('fills a missing portal with zeros, a null price, and its label', () => {
+    const rows = portalRows([stat('urbania')]);
+    const nexo = rows[3];
+    assert.deepEqual(nexo, { source: 'nexo', label: 'Nexo', liveCount: 0, typicalSalePen: null, newLast7: 0, goneLast7: 0 });
+    assert.equal(rows[0].liveCount, 5);
   });
 });

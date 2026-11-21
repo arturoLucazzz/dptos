@@ -70,7 +70,7 @@ type TipProps<T> = { active?: boolean; payload?: readonly { payload: T }[] };
 
 export function RentVsSaleChart({ rows }: { rows: RentVsSaleRow[] }) {
   return (
-    <div className="h-72">
+    <div role="img" aria-label="Gráfico de barras y línea: precio de venta típico y alquiler mensual típico por distrito." className="h-72">
       <ResponsiveContainer width="100%" height="100%">
         <ComposedChart data={rows} margin={{ top: 8, right: 4, bottom: 0, left: 0 }}>
           <CartesianGrid stroke={GRID} vertical={false} />
@@ -107,7 +107,7 @@ export function RentVsSaleChart({ rows }: { rows: RentVsSaleRow[] }) {
 export function YieldChart({ rows }: { rows: YieldRow[] }) {
   const data = rows.map((r) => ({ ...r, bar: r.yieldPct ?? 0, axisLabel: r.yieldPct == null ? `${r.name} (sin datos)` : r.name }));
   return (
-    <div style={{ height: Math.max(220, rows.length * 28 + 30) }}>
+    <div role="img" aria-label="Gráfico de barras horizontales: rentabilidad bruta por distrito, con los tres más altos resaltados." style={{ height: Math.max(220, rows.length * 28 + 30) }}>
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} layout="vertical" margin={{ top: 4, right: 12, bottom: 0, left: 0 }}>
           <CartesianGrid stroke={GRID} horizontal={false} />
@@ -147,7 +147,7 @@ const STAGES = [
 
 export function ConstructionChart({ rows }: { rows: ConstructionRow[] }) {
   return (
-    <div className="h-72">
+    <div role="img" aria-label="Gráfico de barras apiladas: proyectos por etapa (en planos, en construcción, entrega inmediata) en cada distrito." className="h-72">
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={rows} margin={{ top: 8, right: 4, bottom: 0, left: 0 }}>
           <CartesianGrid stroke={GRID} vertical={false} />
@@ -175,7 +175,7 @@ type Bin = { label: string; from: number; to: number | null; count: number };
 
 export function HistogramChart({ bins }: { bins: Bin[] }) {
   return (
-    <div className="h-72">
+    <div role="img" aria-label="Histograma: cantidad de avisos en venta por tramo de precio de S/ 100 mil." className="h-72">
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={bins} margin={{ top: 8, right: 4, bottom: 0, left: 0 }} barCategoryGap={2}>
           <CartesianGrid stroke={GRID} vertical={false} />

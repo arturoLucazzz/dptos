@@ -1,21 +1,16 @@
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { formatPenOrNoData } from "@/lib/market-chart-rows";
+import { formatPenOrNoData, portalRows } from "@/lib/market-chart-rows";
 import type { SourceStats } from "@/lib/market-dashboard";
-
-/** The portals the table shows, in this order. Manual listings are not a portal. */
-export const PORTAL_ORDER = ["urbania", "adondevivir", "proper", "nexo"];
-
-export function portalRows(sources: SourceStats[]): SourceStats[] {
-  return PORTAL_ORDER.flatMap((id) => sources.filter((s) => s.source === id));
-}
 
 function Head({ children, hint }: { children: string; hint: string }) {
   return (
     <TableHead className="text-right">
       <Tooltip>
         <TooltipTrigger asChild>
-          <span className="cursor-help underline decoration-dotted underline-offset-4">{children}</span>
+          <button type="button" aria-label={`${children}: ${hint}`} className="cursor-help underline decoration-dotted underline-offset-4">
+            {children}
+          </button>
         </TooltipTrigger>
         <TooltipContent className="max-w-xs">{hint}</TooltipContent>
       </Tooltip>
