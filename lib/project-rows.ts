@@ -5,6 +5,7 @@
  * A project's price is a "desde": the lowest live price among its postings.
  */
 
+import { sourceBadges, type SourceBadge } from './source-badges';
 import { districtName } from './district-name';
 import { Operation, PostingKind } from './generated/prisma/enums';
 import type { InvestmentFilters } from './investments/filters';
@@ -27,6 +28,8 @@ export interface ProjectRow {
   postingIds: string[];
   /** ISO time of the newest posting (first online date, else first seen); only for the `newest` sort. */
   newestAt: string | null;
+  /** One badge per portal that publishes the project. */
+  sources: SourceBadge[];
 }
 
 /** What the grouping step reads from a PROJECT posting. Decimals are already numbers or strings. */
@@ -96,6 +99,12 @@ export function groupProjectPostings(postings: ProjectPostingInput[]): ProjectRo
       lon: numOrNull(project.longitude),
       postingIds: group.map((p) => p.id),
       newestAt: times.length ? new Date(Math.max(...times)).toISOString() : null,
+      sources: sourceBadges(
+        priced.map((x) => {
+          const source = postingSource(x.p.source);
+          return { source, url: postingUrl(source, x.p.sourcePath, x.p.currentSnapshot?.sourceUrl ?? null) };
+        }),
+      ),
     });
   }
   return rows;

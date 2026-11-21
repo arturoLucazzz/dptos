@@ -37,6 +37,7 @@ const project: ProjectRow = {
   lon: null,
   postingIds: ['a'],
   newestAt: null,
+  sources: [],
 };
 
 test('a unit pick maps the price, the district, and the money line', () => {

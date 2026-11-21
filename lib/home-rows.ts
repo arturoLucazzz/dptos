@@ -5,6 +5,7 @@
 
 import type { DepartamentosRow } from './departamentos-query';
 import { RECO_TABS, type RecoMode } from './home';
+import { sourceBadges, type SourceBadge } from './source-badges';
 
 export const HOME_ROW_KEYS = [
   'postingId',
@@ -25,11 +26,12 @@ export const HOME_ROW_KEYS = [
   'locationReasons',
 ] as const;
 
-export type HomeRow = Pick<DepartamentosRow, (typeof HOME_ROW_KEYS)[number]>;
+export type HomeRow = Pick<DepartamentosRow, (typeof HOME_ROW_KEYS)[number]> & { sources: SourceBadge[] };
 
 export function toHomeRow(row: DepartamentosRow): HomeRow {
   const out: Record<string, unknown> = {};
   for (const key of HOME_ROW_KEYS) out[key] = row[key];
+  out.sources = sourceBadges(row.copies ?? []);
   return out as HomeRow;
 }
 

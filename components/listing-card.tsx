@@ -5,6 +5,7 @@ import { Plus, Check } from "lucide-react";
 import { ScoreBadge } from "@/components/score-badge";
 import { moneyLine } from "@/lib/home";
 import type { HomeRow } from "@/lib/home-rows";
+import { SourceBadges } from "@/components/source-badges";
 
 export function pen(n: number): string {
   return `S/ ${Math.round(n).toLocaleString("es-PE")}`;
@@ -59,12 +60,15 @@ export function CardFrame({
   imageUrl,
   topLeft,
   topRight,
+  footer,
   children,
 }: {
   url: string | null;
   imageUrl: string | null;
   topLeft?: React.ReactNode;
   topRight?: React.ReactNode;
+  /** Shown under the body, outside the card link, so it can hold links of its own. */
+  footer?: React.ReactNode;
   children: React.ReactNode;
 }) {
   const body = (
@@ -82,6 +86,7 @@ export function CardFrame({
       ) : (
         body
       )}
+      {footer && <div className="px-3 pb-3">{footer}</div>}
       {topLeft && <div className="absolute left-2 top-2">{topLeft}</div>}
       {topRight && <div className="absolute right-2 top-2">{topRight}</div>}
     </div>
@@ -97,6 +102,7 @@ export function ListingCard({ row, added, onAdd }: { row: HomeRow; added: boolea
       // A row without a property cannot be a pick.
       topLeft={row.propertyId ? <AddButton added={added} onAdd={onAdd} /> : null}
       topRight={<ScoreBadge score={row.locationScore} reasons={row.locationReasons} />}
+      footer={<SourceBadges badges={row.sources} />}
     >
       <p className="text-base font-semibold">{pen(row.pricePen)}</p>
       <p className="truncate text-xs text-muted-foreground">

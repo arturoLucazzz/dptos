@@ -4,6 +4,7 @@ import { useState, useSyncExternalStore } from "react";
 import { LayoutGrid, Table2 } from "lucide-react";
 import { AddButton, ListingCard, pen } from "@/components/listing-card";
 import { ScoreBadge } from "@/components/score-badge";
+import { SourceBadges } from "@/components/source-badges";
 import {
   Table,
   TableBody,
@@ -217,6 +218,7 @@ export function Recommendations({ initial }: { initial: Reco }) {
                 <TableRow>
                   <TableHead />
                   <Head label="Departamento" />
+                  <Head label="Fuente" />
                   <Head label="Precio" />
                   <Head label="Alquiler est." />
                   <Head label="Ganancia" />
@@ -261,6 +263,9 @@ export function Recommendations({ initial }: { initial: Reco }) {
                         <div className="text-xs text-muted-foreground">
                           {r.bedrooms ?? "-"} dorm · {r.areaM2 ?? "-"} m²
                         </div>
+                      </TableCell>
+                      <TableCell>
+                        <SourceBadges badges={r.sources} />
                       </TableCell>
                       <TableCell>{pen(r.pricePen)}</TableCell>
                       <TableCell>
