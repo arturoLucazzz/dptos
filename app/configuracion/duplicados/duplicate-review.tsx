@@ -3,17 +3,29 @@
 import { useState, useTransition } from "react";
 import { Badge } from "@/components/ui/badge";
 import { SOURCE_LABELS } from "@/lib/listing-card";
+import { copySummary } from "@/lib/duplicate-queue";
 import type { DuplicateFlag } from "@/lib/listing-row";
 import type { ListingCopy } from "@/lib/official-price";
 import { confirmDuplicate, markManualRemoved, rejectDuplicate, splitPosting, type ReviewResult } from "./actions";
 
+/** The other property of a flagged pair, for deciding from the card. */
+export type Partner = {
+  source: ListingCopy["source"];
+  url: string | null;
+  pricePen: number;
+  areaM2: number | null;
+  bedrooms: number | null;
+  /** Address, or the title when there is no address. */
+  place: string | null;
+};
+
+export type ReviewFlag = DuplicateFlag & { partner: Partner | null };
+
 export type ReviewRow = {
   key: string;
   districtName: string;
-  pricePen: number;
-  priceMaxPen: number;
   copies: ListingCopy[];
-  duplicateFlags: DuplicateFlag[];
+  duplicateFlags: ReviewFlag[];
 };
 
 const DUPLICATE_BADGES: Partial<Record<string, string>> = {
@@ -39,10 +51,41 @@ function ReviewButton({ label, disabled, onClick }: { label: string; disabled: b
   );
 }
 
+function PartnerLine({ partner }: { partner: Partner | null }) {
+  if (!partner) {
+    return <p className="text-muted-foreground">La otra propiedad ya no está publicada</p>;
+  }
+  const label = partner.source ? SOURCE_LABELS[partner.source] : "Otra fuente";
+  const facts = [
+    formatPenK(partner.pricePen),
+    partner.areaM2 != null ? `${partner.areaM2} m²` : null,
+    partner.bedrooms != null ? `${partner.bedrooms} dorm.` : null,
+    partner.place,
+  ].filter(Boolean);
+  return (
+    <p className="flex flex-wrap items-center gap-x-2 text-muted-foreground">
+      <span>Contra:</span>
+      {partner.url ? (
+        <a
+          href={partner.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-primary underline-offset-2 hover:underline"
+        >
+          {label}
+        </a>
+      ) : (
+        <span>{label}</span>
+      )}
+      <span>{facts.join(" · ")}</span>
+    </p>
+  );
+}
+
 /**
- * One property: its copies, a split per copy when there are several, and its duplicate flags.
- * A refused decision keeps the row and shows the message under it; a saved one drops the
- * row when the page renders again.
+ * One property: its copies, a split per copy when there are several, and its duplicate flags,
+ * each with the other property of the pair. A refused decision keeps the row and shows the
+ * message under it; a saved one is reported to the list, which updates the card at once.
  */
 export type Decided = { candidateId: string } | { postingId: string };
 
@@ -51,8 +94,9 @@ export function DuplicateReview({ row, onDecided }: { row: ReviewRow; onDecided:
   const [error, setError] = useState<string | null>(null);
   const { copies, duplicateFlags } = row;
   const several = copies.length > 1;
+  const summary = copySummary(copies);
 
-  // The row leaves the list at once on success. A refusal keeps it, with the message.
+  // The list updates at once on success. A refusal keeps it, with the message.
   const run = (what: Decided, action: () => Promise<ReviewResult>) => {
     setError(null);
     startTransition(async () => {
@@ -72,8 +116,8 @@ export function DuplicateReview({ row, onDecided }: { row: ReviewRow; onDecided:
         <h3 className="font-semibold">{row.districtName}</h3>
         <span className="text-muted-foreground">
           {several
-            ? `${copies.length} fuentes · ${formatPenK(row.pricePen)} a ${formatPenK(row.priceMaxPen)}`
-            : formatPenK(row.pricePen)}
+            ? `${summary.copyCount} copias · ${formatPenK(summary.minPen)} a ${formatPenK(summary.maxPen)}`
+            : formatPenK(summary.minPen)}
         </span>
       </div>
       {copies.map((copy) => {
@@ -120,12 +164,15 @@ export function DuplicateReview({ row, onDecided }: { row: ReviewRow; onDecided:
         // A level the page does not know is not shown rather than guessed.
         if (!badge) return null;
         return (
-          <div key={flag.candidateId} className="flex flex-wrap items-center gap-2">
-            <Badge variant="outline" className="border-amber-400 text-amber-400">
-              {badge}
-            </Badge>
-            <ReviewButton label="es el mismo" disabled={pending} onClick={() => run({ candidateId: flag.candidateId }, () => confirmDuplicate(flag.candidateId))} />
-            <ReviewButton label="no es el mismo" disabled={pending} onClick={() => run({ candidateId: flag.candidateId }, () => rejectDuplicate(flag.candidateId))} />
+          <div key={flag.candidateId} className="space-y-1 rounded-lg border border-border p-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="outline" className="border-amber-400 text-amber-400">
+                {badge}
+              </Badge>
+              <ReviewButton label="es el mismo" disabled={pending} onClick={() => run({ candidateId: flag.candidateId }, () => confirmDuplicate(flag.candidateId))} />
+              <ReviewButton label="no es el mismo" disabled={pending} onClick={() => run({ candidateId: flag.candidateId }, () => rejectDuplicate(flag.candidateId))} />
+            </div>
+            <PartnerLine partner={flag.partner} />
           </div>
         );
       })}

@@ -7,7 +7,9 @@
 #   2. Optional git pull, before the run starts, never mid-run.
 #   3. Stale-run catch-up: if the last success was more than STALE_HOURS ago, run anyway
 #      even when launchd fired late after a full shutdown.
-#   4. caffeinate for the duration, so the laptop does not sleep mid-district.
+#   4. News first (daily and weekly): `pnpm news:fetch` runs before the scrape, and a news
+#      failure never stops the scrape.
+#   5. caffeinate for the duration, so the laptop does not sleep mid-district.
 #
 # Usage:
 #   scripts/scrape-wrapper.sh daily

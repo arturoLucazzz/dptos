@@ -1,6 +1,6 @@
 /**
  * Filter / finance / sort / paginate the sale listings universe for the
- * departamentos table. Runs on the server so the browser only holds one page.
+ * sale listings (Inicio and Mis inversiones). Runs on the server so the browser only holds one page.
  */
 
 import { type FixedAssumptions, type PanelAssumptions } from './assumption-defaults';

@@ -107,6 +107,7 @@ test('committed keywords keep market headlines and drop off-topic ones', () => {
     'Precio de vivienda en Lima sube en el tercer trimestre',
     'Mercado inmobiliario: ventas de departamentos caen en Lima',
     'BCRP mantiene la tasa de referencia en 4.25%',
+    'Precios de alquiler suben en Lima Moderna',
   ];
   for (const t of drop) assert.equal(matchesKeywords(t, kw), false, t);
   for (const t of keep) assert.equal(matchesKeywords(t, kw), true, t);

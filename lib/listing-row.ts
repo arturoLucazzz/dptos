@@ -1,5 +1,5 @@
 /**
- * The thin listing projection shared by the API and (for favorites) the RSC pages.
+ * The thin listing projection shared by the API and the server pages (Inicio, Mis inversiones, Mercado).
  *
  * Roughly ten numbers per row plus a few strings. Coverage, payment and entry cost
  * are *not* here: they depend on Hipoteca params and are computed per request in

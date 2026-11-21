@@ -12,12 +12,20 @@ Más adelante, un chat con IA podrá responder preguntas sobre todos estos datos
 
 ## Qué hace
 
-Herramienta para analizar departamentos en venta en Lima: lee varias fuentes (Urbania, Adondevivir, Proper, Nexo y avisos agregados a mano), une las copias de un mismo departamento, guarda solo lo observado en Postgres, y calcula en el cliente cobertura de cuota, precio justo y probabilidad de rebaja.
+Herramienta para analizar departamentos en venta en Lima: lee varias fuentes (Urbania, Adondevivir, Proper y Nexo), une las copias de un mismo departamento, guarda solo lo observado en Postgres, y calcula cobertura de cuota, precio justo, rendimiento y probabilidad de rebaja.
+
+Pantallas:
+
+- **Inicio**: resumen y recomendaciones de departamentos.
+- **Mis inversiones**: tus espacios de trabajo, cada uno con su lista, su mapa y las zonas que dibujas (con nota de 0 a 10) para el puntaje de ubicación.
+- **Mercado**: distritos, precios, estudios, voces y noticias.
+- **Configuración → Duplicados**: la revisión de posibles duplicados entre fuentes.
+- **Corridas** (`/runs`): salud de cada corrida del scraper, una tabla por fuente.
 
 ## Arquitectura
 
 ```
-Urbania · Adondevivir · Proper · Nexo · /agregar
+Urbania · Adondevivir · Proper · Nexo
     │
     ▼
 scraper/  (adaptadores por fuente; Playwright headed donde hace falta) ──NDJSON──► data/runs/
@@ -37,14 +45,14 @@ Postgres (Prisma)
 lib/  (dominio puro + loaders)
     │
     ▼ proyecciones delgadas (~10 números/fila)
-app/  (Next.js) ── panel de supuestos en URL ──► tablas y dashboards
+app/  (Next.js) ── supuestos en una cookie ──► pantallas
 ```
 
 ### Principio: guardar poco, calcular mucho
 
 Solo se persiste lo que no se puede reconstruir mañana (`firstSeenAt`, `lastSeenAt`, el precio publicado, el `rawCard`). Todo lo demás — cobertura, descuento, yield, predial, probabilidad de rebaja — se calcula on-demand.
 
-Por eso el panel de supuestos (inicial, TEA, TCEA, plazo) vive en el query string y recalcula la tabla en el cliente: los controles del panel se envían a `/api/departamentos` (con la URL como estado) y el servidor devuelve las filas ya calculadas.
+Por eso los supuestos (inicial, TEA, TCEA, plazo) viven en una cookie y se editan en la ventana "Tus supuestos". Todas las pantallas y la API leen la misma cookie, y el servidor devuelve las filas ya calculadas.
 
 ### Identidad
 
@@ -82,7 +90,6 @@ Es por fuente, distrito y operación. Si una porción trae &lt;20% de lo que tra
 | Adondevivir | Igual que Urbania (mismo backend Navent) | Muchos avisos son copia de Urbania; se unen solos |
 | Proper | JSON público | Precios por unidad. Las estimaciones de alquiler y ROI de Proper no se usan. Los departamentos de "entrega inmediata" son ventas con inquilino |
 | Nexo | Páginas HTML de la lista, con fetch simple | Solo proyectos, con precios "desde"; no hay precio por unidad. Rechaza un User-Agent de navegador, así que se pide sin él |
-| Manual | `/agregar` | Modo unidad y modo proyecto. Un aviso manual solo sale al marcarlo "vendido o retirado" |
 | Remax | **pendiente** | Ver abajo |
 
 El proyecto no intenta pasar controles anti-bot. Solo se leen distritos de la app: los 11 de `LIMA_DISTRICT_SLUGS` (Lince, Jesús María, San Isidro, Pueblo Libre, Magdalena, Surquillo, Miraflores, San Borja, Santiago de Surco, San Miguel, Barranco). Los avisos de otros distritos (Chorrillos, ...) cuentan como fuera y no se guardan. `pnpm scrape --districts=...` rechaza cualquier slug que no esté en esa lista (por ejemplo `magdalena-del-mar`; el slug es `magdalena`).
@@ -103,7 +110,7 @@ https://www.remax.pe/web/search/all/propertys/list/?type__in=departament&contrac
 | miraflores | 1298 | santiago-de-surco | 1316 |
 | pueblo-libre | 1297 | surquillo | 1317 |
 
-Mientras tanto, los avisos de Remax entran por `/agregar`.
+Por ahora los avisos de Remax no tienen cómo entrar: ya no hay carga manual (`/agregar` se quitó).
 
 ### Probar una fuente
 
@@ -126,13 +133,13 @@ La unión vive en `lib/dedupe.ts`. Un merge equivocado saca un aviso real de tod
 | MEDIUM | Se marca para revisar | Mismo edificio o desarrolladora, mismos dormitorios, área ±2 m², precio ±10% y, si ambos tienen coordenadas, a menos de 150 m |
 | LOW | Se marca para revisar | Misma calle, mismos dormitorios, área ±5 m² y precio ±10% |
 
-En la tabla de departamentos, los posibles duplicados se revisan con "es el mismo" o "no es el mismo". Un par rechazado no se vuelve a marcar. "No es el mismo" sobre una copia ya unida deshace un merge equivocado. Las decisiones quedan en `DuplicateDecision`; `scripts/export-duplicate-decisions.ts` las escribe en `lib/__fixtures__/duplicate-decisions.json`, y el test de dedupe reporta dónde las reglas discrepan de ellas.
+Los posibles duplicados se revisan en Configuración → Duplicados, con "es el mismo" o "no es el mismo"; cada tarjeta muestra la otra propiedad del par (fuente, precio, área, dormitorios y dirección). Un par rechazado no se vuelve a marcar. "No es el mismo" sobre una copia ya unida deshace un merge equivocado. Las decisiones quedan en `DuplicateDecision`; `scripts/export-duplicate-decisions.ts` las escribe en `lib/__fixtures__/duplicate-decisions.json`, y el test de dedupe reporta dónde las reglas discrepan de ellas.
 
-Precio oficial de un departamento = la copia viva más barata. Las filas con varias copias muestran "{n} fuentes · S/ ...k a S/ ...k", y las estadísticas cuentan cada propiedad una sola vez.
+Precio oficial de un departamento = la copia viva más barata. Las filas con varias copias muestran "{n} copias · S/ ...k a S/ ...k", y las estadísticas cuentan cada propiedad una sola vez.
 
 ## Ubicación
 
-Cada departamento en Lima tiene un puntaje de ubicación de 0 a 10, en la columna "Ubicación". La mitad es calidad de la zona y la otra mitad es demanda de inquilinos. Al pasar el mouse sobre el número se ven las razones.
+Cada departamento en Lima tiene un puntaje de ubicación de 0 a 10. La mitad es calidad de la zona y la otra mitad es demanda de inquilinos. Al pasar el mouse sobre el número se ven las razones.
 
 - Calidad de la zona: tus zonas y los lugares a menos de 500 m (restaurantes, parques, supermercados, farmacias y colegios, paraderos). Dentro de una zona, el 60% sale de tu nota. Cerca de ella, menos, hasta 500 m del borde.
 - Demanda: cuántos alquileres hay a menos de 1 km y qué tan rápido se van, más dos estadísticas del distrito: la parte de vecinos en manzanas de ingreso alto (INEI) y la pobreza (INEI).
@@ -150,7 +157,7 @@ pnpm location:places
 pnpm location:refresh
 ```
 
-En `/zonas` marcas un distrito completo o un punto con radio (enlace de Google Maps o "lat, lon", radio de 400 m por defecto) y le pones nota de 0 a 10. Una zona mala, por ejemplo una vía ruidosa con nota 2, baja el puntaje de lo que tiene al lado. Guardar recalcula todo.
+En el mapa de un espacio de Mis inversiones dibujas tus zonas y les pones nota de 0 a 10. Una zona mala, por ejemplo una vía ruidosa con nota 2, baja el puntaje de lo que tiene al lado. Guardar recalcula todo.
 
 Fuentes: OpenStreetMap por la API de Overpass, los alquileres de la plataforma, y las estadísticas de `data/stats/`.
 
@@ -173,12 +180,13 @@ El puntaje usa solo el ingreso alto y la pobreza. Antes de entrar al puntaje, un
 
 ```
 app/                  Next.js (App Router)
-  departamentos/      ranking por cobertura + panel de supuestos
-  estadisticas/       precios (vivos vs salidas), inventario, pipeline
-  alertas/            bajadas y nuevos con cobertura alta (24h)
-  favoritos/          Property.favorite (sobrevive a reposts)
-  agregar/            alta manual de unidades y proyectos
-  runs/               salud de ScrapeRun, una tabla por fuente
+  page.tsx            Inicio
+  inicio/             piezas de Inicio
+  inversiones/        Mis inversiones: espacios, mapa, zonas dibujadas
+  mercado/            distritos, precios, estudios, voces y noticias
+  configuracion/      Configuración; duplicados/ es la revisión de duplicados
+  runs/               Corridas: salud de ScrapeRun, una tabla por fuente
+  api/                rutas de Inicio y de los espacios
 lib/                  dominio compartido (app + scraper)
   finance.ts          cuota, cobertura, año de cruce
   fair-price.ts       regresión de precio justo
@@ -186,8 +194,7 @@ lib/                  dominio compartido (app + scraper)
   dedupe.ts           reglas de unión entre fuentes (HIGH/MEDIUM/LOW)
   sanity-gate.ts      compuerta de sanidad por fuente
   listings.ts         proyección delgada para la UI
-  analytics.ts        índices y pipeline
-  alerts.ts           cambios recientes
+  analytics.ts        pipeline de construcción
 scraper/              worker de scraping
   src/sources/        un adaptador por fuente (navent, proper, nexo) y registro
   src/scrapers/urbania/ crawler HTML de respaldo (__PRELOADED_STATE__ + DOM)
@@ -245,6 +252,7 @@ pnpm stats:load
 |---|---|
 | `pnpm dev` | App en http://localhost:3000 |
 | `pnpm scrape` | Scrapea y escribe a Postgres + NDJSON |
+| `pnpm news:fetch` | Baja las noticias del mercado (las corridas diaria y semanal lo hacen antes de scrapear) |
 | `pnpm scrape --districts=lince --operations=sale,rent` | Un subconjunto |
 | `pnpm scrape --sources=urbania,proper` | Solo esas fuentes (por defecto, todas las registradas) |
 | `pnpm scrape --accept-gate=urbania:lince` | Acepta una caída de la compuerta en esa corrida |
@@ -277,20 +285,16 @@ Urbania y Adondevivir bloquean Chromium headless (403). El scraper corre **heade
 ## Flujo de datos de una corrida
 
 0. Se eligen las fuentes (`--sources`, por defecto todas) y se recorren una por una.
-1. Wrapper revisa `SCRAPER_ENABLED`, hace `git pull --ff-only`, arranca con `caffeinate`.
+1. Wrapper revisa `SCRAPER_ENABLED`, hace `git pull --ff-only`, arranca con `caffeinate`. En las corridas diaria y semanal baja primero las noticias (`pnpm news:fetch`); si eso falla, la corrida sigue.
 2. Por distrito y operación: probe → si hay demasiados resultados, bisecta por precio (`sort=low_price`).
 3. Cada página: clasifica (ok / fin / bloqueo) y parsea según la fuente (JSON, o `__PRELOADED_STATE__` y DOM en el respaldo de Urbania).
 4. Cards van a NDJSON incremental y se bufferizan por distrito.
 5. Sanity gate por fuente y distrito → `ingestCards` (Property match, unión entre fuentes, snapshot-on-change, qualityFlags).
 6. `ScrapeRun` queda con conteos por fuente, fuentes registradas, errores (incluye por qué una fuente no se registró) y `gitSha`. `/runs` muestra una tabla por fuente.
 
-## UI: supuestos en la URL
+## UI: supuestos
 
-```
-/departamentos?inicial=20&tea=8&tcea=9&plazo=20
-```
-
-Cambiar un control recalcula cobertura, aporte y cuota en todas las filas y reordena el ranking. Los avisos del panel:
+Los supuestos (inicial, TEA, TCEA, plazo) se editan en la ventana "Tus supuestos" y quedan en una cookie. Cambiarlos recalcula cobertura, aporte y cuota en todas las pantallas. Los avisos de la ventana:
 
 - Inicial &lt; 20%: bancos suelen pedir más en segunda vivienda.
 - TCEA &lt; TEA: inconsistente (la TCEA incluye seguros).

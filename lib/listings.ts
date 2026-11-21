@@ -46,7 +46,7 @@ export interface ListingsPage {
 const NOT_A_MANUAL_ENTRY = { NOT: { sources: { equals: ['manual'] } } } satisfies Prisma.ScrapeRunWhereInput;
 
 /**
- * Live sale units for the departamentos table.
+ * Live sale units: the universe Inicio, Mis inversiones, Mercado and the duplicate review read.
  *
  * Projects are excluded: their price is a "desde" and every coverage number built
  * on it would be fiction. Discarded properties stay out of the default view; the
