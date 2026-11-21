@@ -26,7 +26,6 @@
     "news:fetch": "tsx --env-file-if-exists=.env scripts/news-fetch.ts",
     "scrape:daily": "bash scripts/scrape-wrapper.sh daily",
     "scrape:weekly": "bash scripts/scrape-wrapper.sh weekly",
-    "ops:install-launchd": "bash ops/launchd/install.sh",
     "build:scraper": "tsc -p tsconfig.scraper.json",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p scraper/tsconfig.json && tsc --noEmit -p tsconfig.scraper.json",
     "lint": "eslint .",

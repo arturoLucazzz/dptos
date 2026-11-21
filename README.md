@@ -200,8 +200,7 @@ scraper/              worker de scraping
   src/scrapers/urbania/ crawler HTML de respaldo (__PRELOADED_STATE__ + DOM)
   src/db/ingest.ts    escritura a Prisma + sanity gate
 prisma/               schema + migraciones + seed sintético
-ops/launchd/          jobs diarios/semanales
-scripts/              wrapper con kill switch y caffeinate
+scripts/              corrida diaria/semanal a mano, con kill switch y caffeinate
 ```
 
 ## Setup
@@ -265,16 +264,19 @@ pnpm stats:load
 | `pnpm test` | Tests del dominio y del scraper |
 | `pnpm typecheck` | `tsc` de la app y del scraper |
 | `pnpm lint` | ESLint (flat config, Next) |
-| `pnpm ops:install-launchd` | Instala jobs 3am diario + sábado |
+| `pnpm scrape:daily` | Noticias y luego venta y alquiler de los 11 distritos (cerca de una hora) |
+| `pnpm scrape:weekly` | Noticias y luego toda Lima (de 5 a 7 horas) |
 
 ### Kill switch y operación
 
+Nada corre solo: tú lanzas cada corrida. La programación automática queda para una versión futura.
+
 ```bash
-# Pausar sin tocar launchd
+# Pausar
 SCRAPER_ENABLED=false   # en .env
 
 # Correr ahora
-launchctl kickstart -k gui/$(id -u)/com.dptos.scrape.daily
+pnpm scrape:daily
 
 # Logs
 tail -f ~/Library/Logs/dptos/scrape-$(date +%Y-%m-%d).log
@@ -285,7 +287,7 @@ Urbania y Adondevivir bloquean Chromium headless (403). El scraper corre **heade
 ## Flujo de datos de una corrida
 
 0. Se eligen las fuentes (`--sources`, por defecto todas) y se recorren una por una.
-1. Wrapper revisa `SCRAPER_ENABLED`, hace `git pull --ff-only`, arranca con `caffeinate`. En las corridas diaria y semanal baja primero las noticias (`pnpm news:fetch`); si eso falla, la corrida sigue.
+1. Wrapper revisa `SCRAPER_ENABLED` y arranca con `caffeinate`. En las corridas diaria y semanal baja primero las noticias (`pnpm news:fetch`); si eso falla, la corrida sigue.
 2. Por distrito y operación: probe → si hay demasiados resultados, bisecta por precio (`sort=low_price`).
 3. Cada página: clasifica (ok / fin / bloqueo) y parsea según la fuente (JSON, o `__PRELOADED_STATE__` y DOM en el respaldo de Urbania).
 4. Cards van a NDJSON incremental y se bufferizan por distrito.
